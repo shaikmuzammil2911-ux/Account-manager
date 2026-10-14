@@ -1,7 +1,8 @@
 import { getClientInitialData } from '../utils/initialData';
 import { parseDate, getDaysDiff } from '../utils/dateUtils';
+import { syncSaleToGoogleSheet, syncAllSalesToGoogleSheet, downloadSalesCsv, DEFAULT_CELL_MAPPINGS } from '../utils/googleSheets';
 
-const STORAGE_KEY = 'accounts_manager_app_data_v2';
+const STORAGE_KEY = 'accounts_manager_app_data_v3';
 
 // Initialize or load from LocalStorage
 function getLocalData() {
@@ -10,6 +11,12 @@ function getLocalData() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.brands && parsed.brands.length > 0) {
+        // Ensure default settings structure exists if upgraded
+        if (!parsed.settings?.saleFormFields) {
+          const init = getClientInitialData();
+          parsed.settings = { ...init.settings, ...parsed.settings };
+          saveLocalData(parsed);
+        }
         return parsed;
       }
     }
@@ -33,7 +40,6 @@ function saveLocalData(data) {
 export const api = {
   async getBrands() {
     const local = getLocalData();
-    // Also try fetching from API in background if available
     fetch('/api/brands')
       .then(res => res.ok ? res.json() : null)
       .then(serverBrands => {
@@ -253,11 +259,29 @@ export const api = {
       status: 'Active',
       notificationSent: false,
       lastNotifiedAt: null,
-      inventoryId: assignedAccount?.id || null
+      inventoryId: assignedAccount?.id || null,
+      customValues: saleData.customValues || {},
+      googleSheetSynced: false,
+      syncedAt: null
     };
 
     local.sales.unshift(newSale);
     saveLocalData(local);
+
+    // Auto-sync to Google Sheet if Webhook is configured
+    const gSheetConfig = local.settings?.googleSheetConfig;
+    if (gSheetConfig && gSheetConfig.webhookUrl && gSheetConfig.autoSyncOnSale) {
+      syncSaleToGoogleSheet(newSale, gSheetConfig)
+        .then(result => {
+          if (result.success) {
+            newSale.googleSheetSynced = true;
+            newSale.syncedAt = new Date().toISOString();
+            local.settings.googleSheetConfig.lastSyncTime = new Date().toISOString();
+            saveLocalData(local);
+          }
+        })
+        .catch(err => console.warn('Background Google Sheet sync notice:', err));
+    }
 
     fetch('/api/sales', {
       method: 'POST',
@@ -389,6 +413,25 @@ export const api = {
       body: JSON.stringify(settings)
     }).catch(() => {});
     return local.settings;
+  },
+
+  async syncAllToGoogleSheet() {
+    const local = getLocalData();
+    const config = local.settings?.googleSheetConfig;
+    const sales = local.sales || [];
+    const res = await syncAllSalesToGoogleSheet(sales, config);
+    if (res.success) {
+      local.settings.googleSheetConfig.lastSyncTime = new Date().toISOString();
+      local.sales.forEach(s => s.googleSheetSynced = true);
+      saveLocalData(local);
+    }
+    return res;
+  },
+
+  exportSalesCsv() {
+    const local = getLocalData();
+    const mappings = local.settings?.googleSheetConfig?.cellMappings || DEFAULT_CELL_MAPPINGS;
+    downloadSalesCsv(local.sales || [], mappings);
   },
 
   async resetData() {
