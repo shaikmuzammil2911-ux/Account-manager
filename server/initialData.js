@@ -109,6 +109,39 @@ export function getInitialData() {
       screensCount: 6,
       plans: ['01 Month', '03 Months', '12 Months'],
       prices: { '01 Month': 119, '03 Months': 299, '12 Months': 999 }
+    },
+    {
+      id: 'apple_tv',
+      name: 'Apple TV+',
+      displayName: 'Apple TV+ 4K',
+      color: '#334155',
+      bgDark: '#09090b',
+      badgeColor: '#475569',
+      screensCount: 6,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 269, '12 Months': 999 }
+    },
+    {
+      id: 'jiocinema',
+      name: 'JioCinema',
+      displayName: 'JioCinema Premium',
+      color: '#e11d48',
+      bgDark: '#4c0519',
+      badgeColor: '#be123c',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 89, '03 Months': 199, '12 Months': 499 }
+    },
+    {
+      id: 'aha',
+      name: 'aha',
+      displayName: 'Aha Telugu & Tamil',
+      color: '#ff5400',
+      bgDark: '#431407',
+      badgeColor: '#ea580c',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 249, '12 Months': 699 }
     }
   ];
 
@@ -205,20 +238,19 @@ export function getInitialData() {
     },
     {
       id: 'inv_6',
-      brandId: 'netflix',
-      recordNumber: '05',
-      email: 'aarav.mehta23@gmail.com',
-      password: 'Nf!x@2025#',
+      brandId: 'disney_hotstar',
+      recordNumber: '01',
+      email: 'hotstar.vip2026@gmail.com',
+      password: 'Disney@Hot2026',
       validity: '12 Months',
       isLocked: true,
       isSelected: false,
-      createdAt: '2025-05-10',
+      createdAt: '2025-06-01',
       screens: [
-        { screenNumber: 1, name: 'Screen-1', pin: '1234', status: 'occupied', saleId: 'sale_aarav', expiryDate: yesterdayStr },
-        { screenNumber: 2, name: 'Screen-2', pin: '1234', status: 'empty', saleId: null, expiryDate: null },
-        { screenNumber: 3, name: 'Screen-3', pin: '1234', status: 'empty', saleId: null, expiryDate: null },
-        { screenNumber: 4, name: 'Screen-4', pin: '1234', status: 'empty', saleId: null, expiryDate: null },
-        { screenNumber: 5, name: 'Screen-5', pin: '1234', status: 'empty', saleId: null, expiryDate: null }
+        { screenNumber: 1, name: 'Screen-1', pin: '1010', status: 'empty', saleId: null, expiryDate: null },
+        { screenNumber: 2, name: 'Screen-2', pin: '2020', status: 'occupied', saleId: 'sale_hotstar', expiryDate: '15-Aug-2026' },
+        { screenNumber: 3, name: 'Screen-3', pin: '3030', status: 'empty', saleId: null, expiryDate: null },
+        { screenNumber: 4, name: 'Screen-4', pin: '4040', status: 'empty', saleId: null, expiryDate: null }
       ]
     }
   ];
@@ -239,7 +271,7 @@ export function getInitialData() {
       screenNumber: '02',
       screenPin: '2222',
       activationDate: oneMonthAgoStr,
-      expiryDate: todayStr, // Expiring TODAY for the Today filter!
+      expiryDate: todayStr,
       amount: 199,
       deviceName: 'OnePlus TV',
       saleDate: oneMonthAgoStr,
@@ -261,7 +293,7 @@ export function getInitialData() {
       screenNumber: '04',
       screenPin: '4444',
       activationDate: '17-Jun-2026',
-      expiryDate: inTwoDaysStr, // Expiring in 2 days!
+      expiryDate: inTwoDaysStr,
       amount: 799,
       deviceName: 'Samsung TV',
       saleDate: '17-Jun-2026',
@@ -283,7 +315,7 @@ export function getInitialData() {
       screenNumber: '1 Screen',
       screenPin: '1234',
       activationDate: twelveMonthsAgoStr,
-      expiryDate: yesterdayStr, // Expired yesterday!
+      expiryDate: yesterdayStr,
       amount: 1499,
       deviceName: 'LG OLED',
       saleDate: twelveMonthsAgoStr,
@@ -305,7 +337,7 @@ export function getInitialData() {
       screenNumber: '2 Screens',
       screenPin: '5678',
       activationDate: '28-Apr-2024',
-      expiryDate: '28-Apr-2025',
+      expiryDate: inTwoDaysStr,
       amount: 999,
       deviceName: 'Firestick 4K',
       saleDate: '28-Apr-2024',

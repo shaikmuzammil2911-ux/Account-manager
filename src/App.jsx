@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Smartphone, Monitor, Wifi, Battery, Signal } from 'lucide-react';
 import { api } from './api/client';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
@@ -16,7 +15,6 @@ import BrandsScreen from './screens/BrandsScreen';
 import SettingsScreen from './screens/SettingsScreen';
 
 export default function App() {
-  const [viewportMode, setViewportMode] = useState('mobile'); // 'mobile' or 'desktop'
   const [currentScreen, setCurrentScreen] = useState('home');
   const [screenParams, setScreenParams] = useState({});
   const [history, setHistory] = useState(['home']);
@@ -44,8 +42,10 @@ export default function App() {
     try {
       const brandsList = await api.getBrands();
       setBrands(brandsList);
-      if (brandsList.length > 0 && !selectedBrand) {
-        setSelectedBrand(brandsList[0]);
+      if (brandsList && brandsList.length > 0) {
+        if (!selectedBrand) {
+          setSelectedBrand(brandsList[0]);
+        }
       }
       const liveStats = await api.getStats();
       setStats(liveStats);
@@ -88,7 +88,6 @@ export default function App() {
     await api.createSale(salePayload);
     const updatedStats = await api.getStats();
     setStats(updatedStats);
-    // After sale submission, navigate to recent sales as shown in flow
     navigateTo('recent-sales');
   };
 
@@ -103,128 +102,100 @@ export default function App() {
     }
   };
 
-  // Determine active bottom tab
+  // Handle selecting an OTT platform from the modal
+  const handleSelectBrandAndOpen = (brand) => {
+    setSelectedBrand(brand);
+    // Directly open that OTT platform's inventory as requested!
+    navigateTo('inventory');
+    showToast(`Opened ${brand.displayName} Inventory`, 'success');
+  };
+
   const activeTab = currentScreen === 'expiry' ? 'expiry' : 'home';
 
   return (
-    <div className="app-container">
-      {/* Viewport Switcher Banner for pairs testing */}
-      <div className="viewport-switcher">
-        <button
-          type="button"
-          className={`viewport-btn ${viewportMode === 'mobile' ? 'active' : ''}`}
-          onClick={() => setViewportMode('mobile')}
-        >
-          <Smartphone size={15} />
-          <span>Mobile Device View</span>
-        </button>
-        <button
-          type="button"
-          className={`viewport-btn ${viewportMode === 'desktop' ? 'active' : ''}`}
-          onClick={() => setViewportMode('desktop')}
-        >
-          <Monitor size={15} />
-          <span>Desktop Wide View</span>
-        </button>
-      </div>
+    <div className="mobile-app-root">
+      {/* Toast Notification Container */}
+      <Toast message={toast.message} type={toast.type} />
 
-      {/* Main Device Shell */}
-      <div className={`device-shell ${viewportMode === 'desktop' ? 'desktop-mode' : ''}`}>
-        <div className="screen-viewport">
-          {/* Toast Notification Container */}
-          <Toast message={toast.message} type={toast.type} />
+      {/* Main Responsive Mobile Viewport */}
+      <div className="mobile-app-viewport">
+        {/* Top Header */}
+        <TopHeader
+          showBack={currentScreen !== 'home'}
+          onBack={handleBack}
+          title={currentScreen === 'home' ? '' : undefined}
+          selectedBrand={currentScreen !== 'settings' ? selectedBrand : null}
+          onBrandClick={() => setShowBrandSelector(true)}
+          showSettings={currentScreen !== 'settings'}
+          onSettings={() => navigateTo('settings')}
+          showMenu={currentScreen === 'inventory' || currentScreen === 'expiry' || currentScreen === 'recent-sales'}
+          onMenu={() => setShowBrandSelector(true)}
+        />
 
-          {/* Mobile Status Bar (9:41, Dynamic Island, Signal, Battery) */}
-          <div className="phone-status-bar">
-            <span>9:41</span>
-            <div className="dynamic-island">
-              <div className="dynamic-island-camera" />
-            </div>
-            <div className="status-icons">
-              <Signal size={13} strokeWidth={2.5} />
-              <Wifi size={13} strokeWidth={2.5} />
-              <Battery size={15} strokeWidth={2.5} />
-            </div>
-          </div>
-
-          {/* Top Header */}
-          <TopHeader
-            showBack={currentScreen !== 'home'}
-            onBack={handleBack}
-            title={currentScreen === 'home' ? '' : undefined}
-            selectedBrand={currentScreen !== 'settings' ? selectedBrand : null}
-            onBrandClick={() => setShowBrandSelector(true)}
-            showSettings={currentScreen !== 'settings'}
-            onSettings={() => navigateTo('settings')}
-            showMenu={currentScreen === 'inventory' || currentScreen === 'expiry' || currentScreen === 'recent-sales'}
-            onMenu={() => navigateTo('brands')}
+        {/* Screen Routing */}
+        {currentScreen === 'home' && (
+          <HomeScreen
+            stats={stats}
+            selectedBrand={selectedBrand}
+            onNavigate={navigateTo}
+            onOpenBrandSelector={() => setShowBrandSelector(true)}
           />
+        )}
 
-          {/* Screen Routing */}
-          {currentScreen === 'home' && (
-            <HomeScreen
-              stats={stats}
-              selectedBrand={selectedBrand}
-              onNavigate={navigateTo}
-              onOpenBrandSelector={() => setShowBrandSelector(true)}
-            />
-          )}
+        {currentScreen === 'sale' && (
+          <SaleScreen
+            brands={brands}
+            selectedBrand={selectedBrand}
+            onSelectBrand={setSelectedBrand}
+            prefillData={screenParams.prefill}
+            onSaleSuccess={handleSaleSuccess}
+            showToast={showToast}
+          />
+        )}
 
-          {currentScreen === 'sale' && (
-            <SaleScreen
-              brands={brands}
-              selectedBrand={selectedBrand}
-              onSelectBrand={setSelectedBrand}
-              prefillData={screenParams.prefill}
-              onSaleSuccess={handleSaleSuccess}
-              showToast={showToast}
-            />
-          )}
+        {currentScreen === 'inventory' && (
+          <InventoryScreen
+            selectedBrand={selectedBrand}
+            onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
+            showToast={showToast}
+          />
+        )}
 
-          {currentScreen === 'inventory' && (
-            <InventoryScreen
-              selectedBrand={selectedBrand}
-              onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
-              showToast={showToast}
-            />
-          )}
+        {currentScreen === 'recent-sales' && (
+          <RecentSalesScreen
+            selectedBrand={selectedBrand}
+            onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
+            showToast={showToast}
+          />
+        )}
 
-          {currentScreen === 'recent-sales' && (
-            <RecentSalesScreen
-              selectedBrand={selectedBrand}
-              onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
-              showToast={showToast}
-            />
-          )}
+        {currentScreen === 'expiry' && (
+          <ExpiryScreen
+            selectedBrand={selectedBrand}
+            initialFilter={screenParams.filter || 'ALL'}
+            onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
+            showToast={showToast}
+          />
+        )}
 
-          {currentScreen === 'expiry' && (
-            <ExpiryScreen
-              selectedBrand={selectedBrand}
-              initialFilter={screenParams.filter || 'ALL'}
-              onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
-              showToast={showToast}
-            />
-          )}
+        {currentScreen === 'brands' && (
+          <BrandsScreen
+            brands={brands}
+            selectedBrand={selectedBrand}
+            onSelectBrand={handleSelectBrandAndOpen}
+            onNavigate={navigateTo}
+          />
+        )}
 
-          {currentScreen === 'brands' && (
-            <BrandsScreen
-              brands={brands}
-              selectedBrand={selectedBrand}
-              onSelectBrand={setSelectedBrand}
-              onNavigate={navigateTo}
-            />
-          )}
+        {currentScreen === 'settings' && (
+          <SettingsScreen
+            onResetComplete={loadInitial}
+            showToast={showToast}
+          />
+        )}
 
-          {currentScreen === 'settings' && (
-            <SettingsScreen
-              onResetComplete={loadInitial}
-              showToast={showToast}
-            />
-          )}
-
-          {/* Bottom Fixed Navigation Bar */}
-          <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
-        </div>
+        {/* Fixed Bottom Navigation Bar */}
+        <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
 
       {/* Brand Selector Modal */}
@@ -232,7 +203,7 @@ export default function App() {
         isOpen={showBrandSelector}
         brands={brands}
         selectedBrandId={selectedBrand?.id}
-        onSelect={(b) => setSelectedBrand(b)}
+        onSelect={handleSelectBrandAndOpen}
         onClose={() => setShowBrandSelector(false)}
       />
 
