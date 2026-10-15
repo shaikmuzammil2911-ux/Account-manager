@@ -252,10 +252,51 @@ export function getInitialData() {
         { screenNumber: 3, name: 'Screen-3', pin: '3030', status: 'empty', saleId: null, expiryDate: null },
         { screenNumber: 4, name: 'Screen-4', pin: '4040', status: 'empty', saleId: null, expiryDate: null }
       ]
+    },
+    {
+      id: 'inv_aha_1',
+      brandId: 'aha',
+      recordNumber: '01',
+      email: 'aha.family.sub@gmail.com',
+      password: 'Aha@Telugu2026',
+      validity: '12 Months',
+      isLocked: true,
+      isSelected: true,
+      createdAt: '2026-01-20',
+      screens: [
+        { screenNumber: 1, name: 'Screen-1', pin: '1122', status: 'empty', saleId: null, expiryDate: null },
+        { screenNumber: 2, name: 'Screen-2', pin: '3344', status: 'occupied', saleId: 'sale_aha_1', expiryDate: '15-Dec-2026' },
+        { screenNumber: 3, name: 'Screen-3', pin: '5566', status: 'empty', saleId: null, expiryDate: null },
+        { screenNumber: 4, name: 'Screen-4', pin: '7788', status: 'empty', saleId: null, expiryDate: null }
+      ]
     }
   ];
 
   const sales = [
+    {
+      id: 'sale_aha_1',
+      recordNumber: '06',
+      customerName: 'Venkat Rao',
+      customerNumber: '9440123456',
+      referenceName: 'Srinivas',
+      referenceNumber: '9849012345',
+      brandId: 'aha',
+      brandName: 'Aha Telugu & Tamil',
+      accountEmail: 'aha.family.sub@gmail.com',
+      accountPassword: 'Aha@Telugu2026',
+      validity: '12 Months',
+      screenNumber: '02',
+      screenPin: '3344',
+      activationDate: '15-Dec-2025',
+      expiryDate: '15-Dec-2026',
+      amount: 699,
+      deviceName: 'Sony Bravia TV',
+      saleDate: '15-Dec-2025',
+      status: 'Active',
+      notificationSent: false,
+      lastNotifiedAt: null,
+      inventoryId: 'inv_aha_1'
+    },
     {
       id: 'sale_bharath',
       recordNumber: '01',
@@ -377,6 +418,22 @@ export function getInitialData() {
       requireReference: false,
       allowDeviceName: true,
       autoSelectEmptyScreen: true
+    },
+    googleSheetConfig: {
+      enabled: false,
+      spreadsheetId: '',
+      webhookUrl: '',
+      sheetNames: {
+        netflix: 'Netflix',
+        amazon: 'Amazon',
+        aha: 'Aha',
+        allData: 'All Data',
+        sales: 'Sales'
+      },
+      autoSyncOnSale: true,
+      lastSyncTime: null,
+      status: 'Disconnected',
+      lastError: null
     }
   };
 

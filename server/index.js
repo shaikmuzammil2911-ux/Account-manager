@@ -218,6 +218,106 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
+// Google Sheets Integration Routes
+app.get('/api/sheets/config', (req, res) => {
+  try {
+    const config = db.getSheetsConfig();
+    res.json(config);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sheets/config', (req, res) => {
+  try {
+    const updated = db.updateSheetsConfig(req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/sheets/test', async (req, res) => {
+  try {
+    const webhookUrl = req.body.webhookUrl || db.getSheetsConfig()?.webhookUrl;
+    if (!webhookUrl || !webhookUrl.trim()) {
+      return res.status(400).json({ connected: false, message: 'Google Sheet Webhook URL is required' });
+    }
+
+    const testUrl = new URL(webhookUrl.trim());
+    testUrl.searchParams.set('action', 'test_connection');
+    testUrl.searchParams.set('_t', String(Date.now()));
+
+    const response = await fetch(testUrl.toString(), {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!response.ok) {
+      db.updateSheetsConfig({ status: 'Error', lastError: `HTTP ${response.status}` });
+      return res.status(response.status).json({
+        connected: false,
+        message: `HTTP error ${response.status}: ${response.statusText}`
+      });
+    }
+
+    const data = await response.json();
+    const isConnected = data.status === 'connected';
+    db.updateSheetsConfig({
+      status: isConnected ? 'Connected' : 'Error',
+      lastError: isConnected ? null : data.message
+    });
+
+    res.json({
+      connected: isConnected,
+      spreadsheetName: data.spreadsheetName || 'Google Spreadsheet',
+      spreadsheetId: data.spreadsheetId,
+      sheets: data.sheets || [],
+      message: isConnected ? 'Spreadsheet connected successfully!' : 'Spreadsheet ping failed'
+    });
+  } catch (err) {
+    db.updateSheetsConfig({ status: 'Error', lastError: err.message });
+    res.status(500).json({
+      connected: false,
+      message: `Connection test failed: ${err.message}. Check URL and permissions.`
+    });
+  }
+});
+
+app.post('/api/sheets/validate', async (req, res) => {
+  try {
+    const webhookUrl = req.body.webhookUrl || db.getSheetsConfig()?.webhookUrl;
+    const autoCreate = req.body.autoCreate || false;
+
+    if (!webhookUrl || !webhookUrl.trim()) {
+      return res.status(400).json({ valid: false, message: 'Google Sheet Webhook URL is required' });
+    }
+
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'validate_sheets', autoCreate })
+    });
+
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ valid: false, message: err.message });
+  }
+});
+
+app.post('/api/sheets/sync', async (req, res) => {
+  try {
+    const result = await db.syncAllToGoogleSheets();
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Reset
 app.post('/api/reset', (req, res) => {
   try {

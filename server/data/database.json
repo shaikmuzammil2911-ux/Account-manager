@@ -136,6 +136,63 @@
         "03 Months": 299,
         "12 Months": 999
       }
+    },
+    {
+      "id": "apple_tv",
+      "name": "Apple TV+",
+      "displayName": "Apple TV+ 4K",
+      "color": "#334155",
+      "bgDark": "#09090b",
+      "badgeColor": "#475569",
+      "screensCount": 6,
+      "plans": [
+        "01 Month",
+        "03 Months",
+        "12 Months"
+      ],
+      "prices": {
+        "01 Month": 99,
+        "03 Months": 269,
+        "12 Months": 999
+      }
+    },
+    {
+      "id": "jiocinema",
+      "name": "JioCinema",
+      "displayName": "JioCinema Premium",
+      "color": "#e11d48",
+      "bgDark": "#4c0519",
+      "badgeColor": "#be123c",
+      "screensCount": 4,
+      "plans": [
+        "01 Month",
+        "03 Months",
+        "12 Months"
+      ],
+      "prices": {
+        "01 Month": 89,
+        "03 Months": 199,
+        "12 Months": 499
+      }
+    },
+    {
+      "id": "aha",
+      "name": "aha",
+      "displayName": "Aha Telugu & Tamil",
+      "color": "#ff5400",
+      "bgDark": "#431407",
+      "badgeColor": "#ea580c",
+      "screensCount": 4,
+      "plans": [
+        "01 Month",
+        "03 Months",
+        "12 Months"
+      ],
+      "prices": {
+        "01 Month": 99,
+        "03 Months": 249,
+        "12 Months": 699
+      }
     }
   ],
   "inventory": [
@@ -456,9 +513,126 @@
           "expiryDate": null
         }
       ]
+    },
+    {
+      "id": "inv_aha_1",
+      "brandId": "aha",
+      "recordNumber": "01",
+      "email": "aha.family.sub@gmail.com",
+      "password": "Aha@Telugu2026",
+      "validity": "12 Months",
+      "isLocked": true,
+      "isSelected": true,
+      "createdAt": "2026-01-20",
+      "screens": [
+        {
+          "screenNumber": 1,
+          "name": "Screen-01",
+          "pin": "1122",
+          "status": "occupied",
+          "saleId": "sale_1792083889030",
+          "expiryDate": "15-Oct-2027"
+        },
+        {
+          "screenNumber": 2,
+          "name": "Screen-02",
+          "pin": "3344",
+          "status": "occupied",
+          "saleId": "sale_aha_1",
+          "expiryDate": "15-Dec-2026"
+        },
+        {
+          "screenNumber": 3,
+          "name": "Screen-03",
+          "pin": "5566",
+          "status": "occupied",
+          "saleId": "sale_1792083970933",
+          "expiryDate": "15-Oct-2027"
+        },
+        {
+          "screenNumber": 4,
+          "name": "Screen-04",
+          "pin": "7788",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        }
+      ]
     }
   ],
   "sales": [
+    {
+      "id": "sale_1792083970933",
+      "recordNumber": "09",
+      "customerName": "Rao Test",
+      "customerNumber": "9988112233",
+      "referenceName": "",
+      "referenceNumber": "",
+      "brandId": "aha",
+      "brandName": "Aha Telugu & Tamil",
+      "accountEmail": "aha.family.sub@gmail.com",
+      "accountPassword": "Aha@Telugu2026",
+      "validity": "12 Months",
+      "screenNumber": "03",
+      "screenPin": "5566",
+      "activationDate": "15-Oct-2026",
+      "expiryDate": "15-Oct-2027",
+      "amount": 699,
+      "deviceName": "Personal Device",
+      "saleDate": "15-Oct-2026",
+      "status": "Active",
+      "notificationSent": false,
+      "lastNotifiedAt": null,
+      "inventoryId": "inv_aha_1"
+    },
+    {
+      "id": "sale_1792083889030",
+      "recordNumber": "08",
+      "customerName": "Harish Test",
+      "customerNumber": "9988776655",
+      "referenceName": "",
+      "referenceNumber": "",
+      "brandId": "netflix",
+      "brandName": "Netflix",
+      "accountEmail": "aha.family.sub@gmail.com",
+      "accountPassword": "Aha@Telugu2026",
+      "validity": "12 Months",
+      "screenNumber": "01",
+      "screenPin": "1122",
+      "activationDate": "15-Oct-2026",
+      "expiryDate": "15-Oct-2027",
+      "amount": 1599,
+      "deviceName": "Personal Device",
+      "saleDate": "15-Oct-2026",
+      "status": "Active",
+      "notificationSent": false,
+      "lastNotifiedAt": null,
+      "inventoryId": "inv_aha_1"
+    },
+    {
+      "id": "sale_aha_1",
+      "recordNumber": "07",
+      "customerName": "Venkat Rao",
+      "customerNumber": "9440123456",
+      "referenceName": "Srinivas",
+      "referenceNumber": "9849012345",
+      "brandId": "aha",
+      "brandName": "Aha Telugu & Tamil",
+      "accountEmail": "aha.family.sub@gmail.com",
+      "accountPassword": "Aha@Telugu2026",
+      "validity": "12 Months",
+      "screenNumber": "02",
+      "screenPin": "3344",
+      "activationDate": "15-Dec-2025",
+      "expiryDate": "15-Dec-2026",
+      "amount": 699,
+      "deviceName": "Sony Bravia TV",
+      "saleDate": "15-Dec-2025",
+      "status": "Active",
+      "notificationSent": false,
+      "lastNotifiedAt": null,
+      "inventoryId": "inv_aha_1"
+    },
     {
       "id": "sale_1791987356924",
       "recordNumber": "06",
@@ -603,6 +777,22 @@
       "requireReference": false,
       "allowDeviceName": true,
       "autoSelectEmptyScreen": true
+    },
+    "googleSheetConfig": {
+      "enabled": false,
+      "spreadsheetId": "",
+      "webhookUrl": "",
+      "sheetNames": {
+        "netflix": "Netflix",
+        "amazon": "Amazon",
+        "aha": "Aha",
+        "allData": "All Data",
+        "sales": "Sales"
+      },
+      "autoSyncOnSale": true,
+      "lastSyncTime": null,
+      "status": "Disconnected",
+      "lastError": null
     }
   }
 }

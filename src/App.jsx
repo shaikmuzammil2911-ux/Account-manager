@@ -5,11 +5,13 @@ import BottomNav from './components/BottomNav';
 import Toast from './components/Toast';
 import BrandSelectorModal from './components/BrandSelectorModal';
 import NotifyModal from './components/NotifyModal';
+import HomeMenuDrawer from './components/HomeMenuDrawer';
 
 import HomeScreen from './screens/HomeScreen';
 import SaleScreen from './screens/SaleScreen';
 import InventoryScreen from './screens/InventoryScreen';
 import RecentSalesScreen from './screens/RecentSalesScreen';
+import CellsLinkupScreen from './screens/CellsLinkupScreen';
 import ExpiryScreen from './screens/ExpiryScreen';
 import BrandsScreen from './screens/BrandsScreen';
 import SettingsScreen from './screens/SettingsScreen';
@@ -25,6 +27,7 @@ export default function App() {
 
   // Modals state
   const [showBrandSelector, setShowBrandSelector] = useState(false);
+  const [showMenuDrawer, setShowMenuDrawer] = useState(false);
   const [notifySaleItem, setNotifySaleItem] = useState(null);
 
   // Toast state
@@ -62,6 +65,7 @@ export default function App() {
     setScreenParams(params);
     setCurrentScreen(screenName);
     setHistory(prev => [...prev, screenName]);
+    setShowMenuDrawer(false);
   };
 
   const handleBack = () => {
@@ -102,15 +106,39 @@ export default function App() {
     }
   };
 
-  // Handle selecting an OTT platform from the modal
   const handleSelectBrandAndOpen = (brand) => {
     setSelectedBrand(brand);
-    // Directly open that OTT platform's inventory as requested!
-    navigateTo('inventory');
-    showToast(`Opened ${brand.displayName} Inventory`, 'success');
+    navigateTo('data');
+    showToast(`Opened ${brand.displayName} Accounts`, 'success');
   };
 
   const activeTab = currentScreen === 'expiry' ? 'expiry' : 'home';
+
+  // Compute Header Title
+  const getHeaderTitle = () => {
+    switch (currentScreen) {
+      case 'home':
+        return '';
+      case 'sale':
+      case 'create-form':
+        return 'Sale & Create Form';
+      case 'data':
+      case 'inventory':
+        return 'Data — Accounts';
+      case 'recent-sales':
+        return "Recent Sale's";
+      case 'cells-linkup':
+        return 'Cells Linkup';
+      case 'expiry':
+        return 'Expiry Alerts';
+      case 'settings':
+        return 'Settings';
+      case 'brands':
+        return 'OTT Brands';
+      default:
+        return 'OTT Sellers';
+    }
+  };
 
   return (
     <div className="mobile-app-root">
@@ -121,28 +149,25 @@ export default function App() {
       <div className="mobile-app-viewport">
         {/* Top Header */}
         <TopHeader
+          isHome={currentScreen === 'home'}
           showBack={currentScreen !== 'home'}
           onBack={handleBack}
-          title={currentScreen === 'home' ? '' : undefined}
-          selectedBrand={currentScreen !== 'settings' ? selectedBrand : null}
+          title={getHeaderTitle()}
+          selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' ? selectedBrand : null}
           onBrandClick={() => setShowBrandSelector(true)}
-          showSettings={currentScreen !== 'settings'}
-          onSettings={() => navigateTo('settings')}
-          showMenu={currentScreen === 'inventory' || currentScreen === 'expiry' || currentScreen === 'recent-sales'}
-          onMenu={() => setShowBrandSelector(true)}
+          onOpenMenu={() => setShowMenuDrawer(true)}
         />
 
         {/* Screen Routing */}
         {currentScreen === 'home' && (
           <HomeScreen
             stats={stats}
-            selectedBrand={selectedBrand}
+            brands={brands}
             onNavigate={navigateTo}
-            onOpenBrandSelector={() => setShowBrandSelector(true)}
           />
         )}
 
-        {currentScreen === 'sale' && (
+        {(currentScreen === 'sale' || currentScreen === 'create-form') && (
           <SaleScreen
             brands={brands}
             selectedBrand={selectedBrand}
@@ -153,9 +178,11 @@ export default function App() {
           />
         )}
 
-        {currentScreen === 'inventory' && (
+        {(currentScreen === 'data' || currentScreen === 'inventory') && (
           <InventoryScreen
+            brands={brands}
             selectedBrand={selectedBrand}
+            onSelectBrand={setSelectedBrand}
             onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
             showToast={showToast}
           />
@@ -163,9 +190,17 @@ export default function App() {
 
         {currentScreen === 'recent-sales' && (
           <RecentSalesScreen
+            brands={brands}
             selectedBrand={selectedBrand}
             onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
             showToast={showToast}
+          />
+        )}
+
+        {currentScreen === 'cells-linkup' && (
+          <CellsLinkupScreen
+            showToast={showToast}
+            onBack={handleBack}
           />
         )}
 
@@ -197,6 +232,15 @@ export default function App() {
         {/* Fixed Bottom Navigation Bar */}
         <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
+
+      {/* Hamburger Home Menu Drawer: Create Form & Cells Linkup */}
+      <HomeMenuDrawer
+        isOpen={showMenuDrawer}
+        onClose={() => setShowMenuDrawer(false)}
+        onSelectCreateForm={() => navigateTo('sale')}
+        onSelectCellsLinkup={() => navigateTo('cells-linkup')}
+        onSelectSettings={() => navigateTo('settings')}
+      />
 
       {/* Brand Selector Modal */}
       <BrandSelectorModal

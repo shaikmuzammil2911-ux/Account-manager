@@ -1,20 +1,19 @@
 import React from 'react';
-import { ArrowLeft, Settings, Menu } from 'lucide-react';
+import { ArrowLeft, Menu, Sparkles } from 'lucide-react';
 
 export default function TopHeader({
   title,
   showBack = false,
   onBack,
-  showSettings = true,
-  onSettings,
-  showMenu = false,
-  onMenu,
+  isHome = false,
+  onOpenMenu,
   selectedBrand,
   onBrandClick
 }) {
   return (
     <header className="app-header">
-      <div style={{ width: '40px' }}>
+      {/* Left Action Button (Back or Spacer) */}
+      <div style={{ width: '42px', display: 'flex', alignItems: 'center' }}>
         {showBack ? (
           <button
             type="button"
@@ -23,15 +22,42 @@ export default function TopHeader({
             aria-label="Go back"
             title="Back"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={20} />
           </button>
         ) : (
-          <div style={{ width: '38px' }} />
+          <div style={{ width: '40px' }} />
         )}
       </div>
 
+      {/* Center Title / Brand Area */}
       <div className="header-title-container">
-        {selectedBrand ? (
+        {isHome ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 6px rgba(30, 64, 175, 0.35)'
+              }}
+            >
+              <Sparkles size={18} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.3px', lineHeight: 1.1 }}>
+                OTT SELLERS
+              </span>
+              <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                Management System
+              </span>
+            </div>
+          </div>
+        ) : selectedBrand ? (
           <button
             type="button"
             className="brand-logo-btn"
@@ -42,47 +68,52 @@ export default function TopHeader({
               cursor: onBrandClick ? 'pointer' : 'default',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px'
+              gap: '8px'
             }}
           >
-            {selectedBrand.id === 'netflix' ? (
-              <span className="brand-logo-text netflix">NETFLIX</span>
-            ) : selectedBrand.id === 'prime_video' ? (
-              <span style={{ color: '#00a8e1', fontWeight: 900, fontSize: '20px' }}>prime video</span>
-            ) : (
-              <span style={{ color: selectedBrand.color || '#0f172a', fontWeight: 900, fontSize: '18px' }}>
-                {selectedBrand.displayName || selectedBrand.name}
-              </span>
-            )}
+            <span
+              style={{
+                width: '10px',
+                height: '10px',
+                borderRadius: '50%',
+                backgroundColor: selectedBrand.color || '#3b82f6',
+                display: 'inline-block'
+              }}
+            />
+            <span style={{ color: '#0f172a', fontWeight: 900, fontSize: '19px' }}>
+              {selectedBrand.displayName || selectedBrand.name}
+            </span>
           </button>
         ) : (
-          <h1 style={{ fontSize: '18px', fontWeight: 800, color: '#0f172a' }}>{title || 'Accounts Manager'}</h1>
+          <h1 style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+            {title || 'OTT Management'}
+          </h1>
         )}
       </div>
 
-      <div style={{ width: '40px', display: 'flex', justifyContent: 'flex-end' }}>
-        {showMenu ? (
+      {/* Right Action Button (Hamburger Menu on Home or Context Action) */}
+      <div style={{ width: '42px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        {isHome ? (
           <button
             type="button"
-            className="header-btn"
-            onClick={onMenu}
-            aria-label="Menu"
-            title="Menu / OTT Platforms"
+            className="header-btn header-menu-btn"
+            onClick={onOpenMenu}
+            aria-label="Open Menu"
+            title="Menu (Create Form, Cells Linkup)"
+            id="home-header-menu-btn"
           >
-            <Menu size={18} />
-          </button>
-        ) : showSettings ? (
-          <button
-            type="button"
-            className="header-btn"
-            onClick={onSettings}
-            aria-label="Settings"
-            title="Settings"
-          >
-            <Settings size={18} />
+            <Menu size={22} color="#0f172a" strokeWidth={2.3} />
           </button>
         ) : (
-          <div style={{ width: '38px' }} />
+          <button
+            type="button"
+            className="header-btn"
+            onClick={onOpenMenu}
+            aria-label="Menu"
+            title="Menu"
+          >
+            <Menu size={20} color="#475569" />
+          </button>
         )}
       </div>
     </header>

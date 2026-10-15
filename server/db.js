@@ -83,7 +83,7 @@ export const db = {
 
   getInventory({ brandId, selectedOnly, emptyOnly, validity, sortOrder } = {}) {
     const data = readDb();
-    let items = [...(data.inventory || [])];
+    let items = (data.inventory || []).filter(item => !item.isDeleted);
 
     if (brandId && brandId !== 'all') {
       items = items.filter(item => item.brandId === brandId);
@@ -114,7 +114,7 @@ export const db = {
 
   getInventoryItem(id) {
     const data = readDb();
-    return data.inventory.find(i => i.id === id);
+    return data.inventory.find(i => i.id === id && !i.isDeleted);
   },
 
   createInventory(itemData) {
@@ -124,27 +124,42 @@ export const db = {
     const nextNum = String(brandItems.length + 1).padStart(2, '0');
 
     const brand = data.brands.find(b => b.id === brandId);
-    const screensCount = brand ? brand.screensCount : 5;
+    const screensCount = Math.min(10, Math.max(1, parseInt(itemData.screensCount || itemData.screens?.length || brand?.screensCount || 5, 10)));
 
-    const screens = itemData.screens || Array.from({ length: screensCount }, (_, i) => ({
-      screenNumber: i + 1,
-      name: `Screen-${i + 1}`,
-      pin: String(1111 * (i + 1)),
-      status: 'empty',
-      saleId: null,
-      expiryDate: null
-    }));
+    let screens = [];
+    if (itemData.screens && Array.isArray(itemData.screens) && itemData.screens.length > 0) {
+      screens = itemData.screens.map((s, idx) => ({
+        screenNumber: idx + 1,
+        name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
+        pin: String(s.pin || itemData.pin || `${(idx + 1) * 1111}`.slice(0, 4)),
+        status: s.status || 'empty',
+        saleId: s.saleId || null,
+        expiryDate: s.expiryDate || null
+      }));
+    } else {
+      screens = Array.from({ length: screensCount }, (_, i) => ({
+        screenNumber: i + 1,
+        name: `Screen-${String(i + 1).padStart(2, '0')}`,
+        pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
+        status: 'empty',
+        saleId: null,
+        expiryDate: null
+      }));
+    }
 
     const newItem = {
-      id: `inv_${Date.now()}`,
+      id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       brandId,
       recordNumber: itemData.recordNumber || nextNum,
-      email: itemData.email || '',
-      password: itemData.password || '',
+      email: itemData.email ? itemData.email.trim() : '',
+      password: itemData.password ? itemData.password.trim() : '',
       validity: itemData.validity || '01 Month',
+      notes: itemData.notes || '',
       isLocked: itemData.isLocked ?? true,
       isSelected: itemData.isSelected ?? false,
-      createdAt: new Date().toISOString(),
+      isDeleted: false,
+      createdAt: itemData.createdAt || new Date().toISOString().slice(0, 10),
+      updatedAt: new Date().toISOString().slice(0, 10),
       screens
     };
 
@@ -158,10 +173,31 @@ export const db = {
     const idx = data.inventory.findIndex(i => i.id === id);
     if (idx === -1) return null;
 
+    const existing = data.inventory[idx];
+
+    // Carefully merge screens to preserve existing sales and occupancies
+    let mergedScreens = existing.screens;
+    if (updates.screens && Array.isArray(updates.screens)) {
+      mergedScreens = updates.screens.map((newScreen, sIdx) => {
+        const oldScreen = existing.screens ? existing.screens[sIdx] : null;
+        return {
+          screenNumber: sIdx + 1,
+          name: newScreen.name || oldScreen?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
+          pin: newScreen.pin !== undefined ? String(newScreen.pin) : (oldScreen?.pin || '1234'),
+          // Preserve existing saleId and occupancy status unless explicitly changed
+          status: newScreen.status || oldScreen?.status || 'empty',
+          saleId: newScreen.saleId !== undefined ? newScreen.saleId : (oldScreen?.saleId || null),
+          expiryDate: newScreen.expiryDate !== undefined ? newScreen.expiryDate : (oldScreen?.expiryDate || null)
+        };
+      });
+    }
+
     data.inventory[idx] = {
-      ...data.inventory[idx],
+      ...existing,
       ...updates,
-      id // preserve ID
+      screens: mergedScreens,
+      updatedAt: new Date().toISOString().slice(0, 10),
+      id // preserve immutable ID
     };
 
     writeDb(data);
@@ -188,7 +224,11 @@ export const db = {
 
   deleteInventory(id) {
     const data = readDb();
-    data.inventory = data.inventory.filter(i => i.id !== id);
+    const item = data.inventory.find(i => i.id === id);
+    if (!item) return false;
+    // Soft delete to preserve historical sales records and auditing
+    item.isDeleted = true;
+    item.deletedAt = new Date().toISOString();
     writeDb(data);
     return true;
   },
@@ -235,36 +275,52 @@ export const db = {
     let assignedScreen = null;
 
     if (saleData.inventoryId) {
-      assignedAccount = data.inventory.find(i => i.id === saleData.inventoryId);
+      assignedAccount = data.inventory.find(i => i.id === saleData.inventoryId && !i.isDeleted);
     } else if (saleData.accountEmail) {
-      assignedAccount = data.inventory.find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase());
+      assignedAccount = data.inventory.find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase() && !i.isDeleted);
     }
 
     // If no explicit account, auto-pick first available account with empty screen
     if (!assignedAccount) {
       assignedAccount = data.inventory.find(i =>
+        !i.isDeleted &&
         i.brandId === saleData.brandId &&
         i.screens && i.screens.some(s => s.status === 'empty')
       );
     }
 
+    if (!assignedAccount) {
+      throw new Error(`No available ${brand.displayName || 'OTT'} account found in inventory.`);
+    }
+
     const saleId = `sale_${Date.now()}`;
 
-    if (assignedAccount) {
-      const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '1', 10);
-      assignedScreen = assignedAccount.screens.find(s => s.screenNumber === screenNum && s.status === 'empty');
-
-      if (!assignedScreen) {
-        // Fallback to first empty screen in this account
-        assignedScreen = assignedAccount.screens.find(s => s.status === 'empty');
-      }
-
-      if (assignedScreen) {
-        assignedScreen.status = 'occupied';
-        assignedScreen.saleId = saleId;
-        assignedScreen.expiryDate = saleData.expiryDate;
-      }
+    // Target screen identification
+    const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '0', 10);
+    if (screenNum > 0) {
+      assignedScreen = assignedAccount.screens.find(s => s.screenNumber === screenNum);
+    } else if (saleData.screenNumber) {
+      assignedScreen = assignedAccount.screens.find(s => s.name?.toLowerCase() === saleData.screenNumber?.toString().toLowerCase());
     }
+
+    // If still not identified, pick first empty screen
+    if (!assignedScreen) {
+      assignedScreen = assignedAccount.screens.find(s => s.status === 'empty');
+    }
+
+    if (!assignedScreen) {
+      throw new Error('No empty screen is available on this account.');
+    }
+
+    // Atomic double-booking prevention check
+    if (assignedScreen.status !== 'empty') {
+      throw new Error(`Double-booking prevented: Screen ${assignedScreen.name || assignedScreen.screenNumber} has already been sold (Expires: ${assignedScreen.expiryDate || 'Active'}). Please choose an available screen.`);
+    }
+
+    // Commit screen occupancy
+    assignedScreen.status = 'occupied';
+    assignedScreen.saleId = saleId;
+    assignedScreen.expiryDate = saleData.expiryDate;
 
     const newSale = {
       id: saleId,
@@ -414,6 +470,156 @@ export const db = {
     data.settings = { ...data.settings, ...newSettings };
     writeDb(data);
     return data.settings;
+  },
+
+  getSheetsConfig() {
+    const data = readDb();
+    return data.settings?.googleSheetConfig || {
+      enabled: false,
+      spreadsheetId: '',
+      webhookUrl: '',
+      sheetNames: {
+        netflix: 'Netflix',
+        amazon: 'Amazon',
+        aha: 'Aha',
+        allData: 'All Data',
+        sales: 'Sales'
+      },
+      autoSyncOnSale: true,
+      lastSyncTime: null,
+      status: 'Disconnected',
+      lastError: null
+    };
+  },
+
+  updateSheetsConfig(config) {
+    const data = readDb();
+    data.settings = data.settings || {};
+    data.settings.googleSheetConfig = {
+      ...(data.settings.googleSheetConfig || {}),
+      ...config
+    };
+    writeDb(data);
+    return data.settings.googleSheetConfig;
+  },
+
+  buildSheetsPayload() {
+    const data = readDb();
+    const brandMap = {};
+    (data.brands || []).forEach(b => {
+      brandMap[b.id] = b.displayName || b.name;
+    });
+
+    const getSheetName = (brandId) => {
+      const id = (brandId || '').toLowerCase();
+      if (id === 'netflix') return 'Netflix';
+      if (id === 'prime_video' || id.includes('prime') || id.includes('amazon')) return 'Amazon';
+      if (id === 'aha') return 'Aha';
+      if (id === 'disney_hotstar') return 'Disney+ Hotstar';
+      if (id === 'sonyliv') return 'SonyLIV';
+      if (id === 'zee5') return 'ZEE5';
+      if (id === 'youtube_premium') return 'YouTube Premium';
+      if (id === 'spotify') return 'Spotify';
+      if (id === 'apple_tv') return 'Apple TV+';
+      if (id === 'jiocinema') return 'JioCinema';
+      return brandMap[brandId] || 'Other Brand';
+    };
+
+    const brandSheets = {};
+    const allDataRows = [];
+
+    (data.inventory || []).filter(item => !item.isDeleted).forEach(item => {
+      const brandName = brandMap[item.brandId] || item.brandId;
+      const sheetName = getSheetName(item.brandId);
+
+      if (!brandSheets[sheetName]) {
+        brandSheets[sheetName] = [];
+      }
+
+      (item.screens || []).forEach(screen => {
+        const row = [
+          String(item.id || ''),
+          String(brandName),
+          String(item.email || ''),
+          String(item.password || ''),
+          String(item.screens?.length || 5),
+          String(screen.name || `Screen-${screen.screenNumber}`),
+          String(screen.pin || '1234'),
+          String(item.validity || '01 Month'),
+          item.isLocked ? 'Active' : 'Editing',
+          screen.status === 'occupied' ? `Sold (${screen.expiryDate || 'Active'})` : 'Empty',
+          String(item.createdAt || ''),
+          new Date().toISOString().slice(0, 10)
+        ];
+
+        brandSheets[sheetName].push(row);
+        allDataRows.push(row);
+      });
+    });
+
+    const salesRows = (data.sales || []).map(sale => [
+      String(sale.id || ''),
+      String(sale.inventoryId || ''),
+      String(sale.brandName || sale.brandId || ''),
+      String(sale.screenNumber || ''),
+      String(sale.screenPin || ''),
+      String(sale.customerName || ''),
+      String(sale.customerNumber || ''),
+      String(sale.amount || ''),
+      String(sale.activationDate || sale.saleDate || ''),
+      String(sale.expiryDate || ''),
+      String(sale.status || 'Active')
+    ]);
+
+    return {
+      brandSheets,
+      allDataRows,
+      salesRows
+    };
+  },
+
+  async syncAllToGoogleSheets() {
+    const config = this.getSheetsConfig();
+    const webhookUrl = config.webhookUrl;
+    if (!webhookUrl || !webhookUrl.trim()) {
+      return { success: false, reason: 'No Google Sheet Webhook URL configured in Cells Linkup.' };
+    }
+
+    try {
+      const payload = {
+        action: 'sync_all',
+        ...this.buildSheetsPayload()
+      };
+
+      const res = await fetch(webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+
+      const json = await res.json().catch(() => ({ status: 'success' }));
+      const now = new Date().toISOString();
+
+      this.updateSheetsConfig({
+        lastSyncTime: now,
+        status: 'Connected',
+        lastError: null
+      });
+
+      return {
+        success: true,
+        message: 'All accounts and sales synchronized to Google Sheets successfully!',
+        timestamp: now,
+        details: json
+      };
+    } catch (err) {
+      console.error('Google Sheets sync error:', err);
+      this.updateSheetsConfig({
+        status: 'Error',
+        lastError: err.message
+      });
+      return { success: false, error: err.message };
+    }
   },
 
   resetDatabase() {
