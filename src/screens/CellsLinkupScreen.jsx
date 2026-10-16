@@ -25,6 +25,22 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [scriptCopied, setScriptCopied] = useState(false);
 
+  // Cells Linking State
+  const [customForms, setCustomForms] = useState([]);
+  const [selectedFormId, setSelectedFormId] = useState('default');
+  const [cellMappings, setCellMappings] = useState({
+    email: 'A1/B16',
+    password: 'A2/C16',
+    screenNumber: 'A3/D16',
+    screenPin: 'A4/E16',
+    expiryDate: 'A5/F16',
+    amount: 'A6/G16',
+    customerName: 'A7/H16',
+    customerNumber: 'A8/I16'
+  });
+  const [pickingField, setPickingField] = useState(null);
+  const [showCellPickerModal, setShowCellPickerModal] = useState(false);
+
   // Load existing config on mount
   useEffect(() => {
     async function loadConfig() {
@@ -44,6 +60,63 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
     }
     loadConfig();
   }, []);
+
+  useEffect(() => {
+    async function loadFormsAndMappings() {
+      try {
+        const forms = await api.getCustomForms();
+        setCustomForms(forms || []);
+        const mappingData = await api.getCellMappings(selectedFormId);
+        if (mappingData?.mappings) {
+          setCellMappings(mappingData.mappings);
+        }
+      } catch (err) {
+        console.warn('Error loading forms/mappings', err);
+      }
+    }
+    loadFormsAndMappings();
+  }, [selectedFormId]);
+
+  const handleFormChange = async (formId) => {
+    setSelectedFormId(formId);
+    try {
+      const mappingData = await api.getCellMappings(formId);
+      if (mappingData?.mappings) {
+        setCellMappings(mappingData.mappings);
+      }
+    } catch (e) {}
+  };
+
+  const handleUpdateCellRef = (fieldKey, refValue) => {
+    setCellMappings(prev => ({ ...prev, [fieldKey]: refValue }));
+  };
+
+  const handleOpenCellPicker = (fieldKey, currentRef) => {
+    setPickingField({ key: fieldKey, ref: currentRef });
+    setShowCellPickerModal(true);
+  };
+
+  const handleSelectCellInGrid = (cellName) => {
+    if (!pickingField) return;
+    const webCell = pickingField.ref?.split('/')[0] || 'A1';
+    const newRef = `${webCell}/${cellName}`;
+    handleUpdateCellRef(pickingField.key, newRef);
+    setShowCellPickerModal(false);
+    setPickingField(null);
+    showToast(`Linked ${pickingField.key} to ${newRef}`, 'success');
+  };
+
+  const handleSaveCellMappings = async () => {
+    try {
+      await api.saveCellMappings(selectedFormId, {
+        spreadsheetId,
+        mappings: cellMappings
+      });
+      showToast('Cells linking formats saved successfully!', 'success');
+    } catch (err) {
+      showToast('Failed to save cells linking', 'error');
+    }
+  };
 
   // Helper to extract clean spreadsheet ID if user pastes full URL
   const handleSpreadsheetIdChange = (val) => {
@@ -355,25 +428,158 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
         )}
       </div>
 
-      {/* Required Worksheets Validation Card */}
+      {/* Interactive Form Cells Linking Section (as specified in Master Prompt) */}
+      <div className="linkup-settings-card" style={{ marginTop: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+          <div>
+            <h3 style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a', margin: '0 0 4px' }}>
+              Form &amp; GSheet Cells Linking
+            </h3>
+            <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
+              Link website form cells to Google Sheets cells (e.g. A1/B16)
+            </p>
+          </div>
+          <span style={{ fontSize: '12px', fontWeight: 800, color: '#16a34a', background: '#dcfce7', padding: '4px 8px', borderRadius: '6px' }}>
+            Live Linker
+          </span>
+        </div>
+
+        {/* Available Forms Selector */}
+        <div style={{ marginBottom: '16px' }}>
+          <label className="form-label" style={{ fontWeight: 800 }}>
+            Select Available Form to Link
+          </label>
+          <select
+            value={selectedFormId}
+            onChange={(e) => handleFormChange(e.target.value)}
+            className="form-input-pill"
+            style={{ width: '100%', fontWeight: 700 }}
+          >
+            <option value="default">Default Master Sale Form</option>
+            {customForms.map(f => (
+              <option key={f.id} value={f.id}>{f.name} ({f.type === 'sale' ? 'Sale Form' : 'Data Base Form'})</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Fields Grid to Link with Reference (e.g. A1/B16) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {[
+            { key: 'email', label: 'Mail ID / Account Email', defaultRef: 'A1/B16' },
+            { key: 'password', label: 'Account Password', defaultRef: 'A2/C16' },
+            { key: 'screenNumber', label: 'Screen Number', defaultRef: 'A3/D16' },
+            { key: 'screenPin', label: 'Screen PIN', defaultRef: 'A4/E16' },
+            { key: 'expiryDate', label: 'Expiry Date', defaultRef: 'A5/F16' },
+            { key: 'amount', label: 'Sale Amount', defaultRef: 'A6/G16' },
+            { key: 'customerName', label: 'Customer Name', defaultRef: 'A7/H16' },
+            { key: 'customerNumber', label: 'Customer Number', defaultRef: 'A8/I16' }
+          ].map(field => {
+            const currentRef = cellMappings[field.key] || field.defaultRef;
+
+            return (
+              <div
+                key={field.key}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: '10px 12px',
+                  borderRadius: '12px',
+                  border: '1.5px solid #e2e8f0',
+                  background: '#f8fafc'
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
+                    {field.label}
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#64748b' }}>
+                    Reference: <strong style={{ color: '#2563eb' }}>{currentRef}</strong> (Web / GSheet)
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={currentRef}
+                    onChange={(e) => handleUpdateCellRef(field.key, e.target.value)}
+                    placeholder="e.g. A1/B16"
+                    style={{
+                      width: '90px',
+                      padding: '6px 8px',
+                      borderRadius: '8px',
+                      border: '1px solid #cbd5e1',
+                      fontSize: '12.5px',
+                      fontWeight: 800,
+                      textAlign: 'center',
+                      fontFamily: 'monospace',
+                      color: '#1e40af'
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleOpenCellPicker(field.key, currentRef)}
+                    style={{
+                      background: '#eff6ff',
+                      border: '1px solid #bfdbfe',
+                      color: '#1d4ed8',
+                      borderRadius: '8px',
+                      padding: '6px 10px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Pick
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveCellMappings}
+          className="glossy-btn glossy-btn-blue"
+          style={{ width: '100%', padding: '12px', fontSize: '14px', marginTop: '14px', borderRadius: '12px' }}
+        >
+          Save Cells Linking Formats
+        </button>
+      </div>
+
+      {/* Required Worksheets Validation Card (with user's exact Sheet1-7 list) */}
       <div className="linkup-sheets-card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-            Required Worksheets Status
-          </h3>
+          <div>
+            <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
+              Required Google Worksheets (7 Sheets)
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
+              Multi-sheet structure with individual brand accounts and sold history
+            </p>
+          </div>
           <span style={{ fontSize: '12px', fontWeight: 700, color: '#3b82f6' }}>
-            1 Spreadsheet • Multi-Sheet
+            1 Spreadsheet
           </span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {REQUIRED_WORKSHEETS.map((sheetName, sIdx) => {
-            const isMissing = missingSheets.includes(sheetName);
-            const isPresent = existingSheets.includes(sheetName);
+          {[
+            { name: 'Netflix', desc: 'Account Details (Mail, Password, Screens, Pins, Expiry Date)' },
+            { name: 'Netflix-Sold', desc: 'Sold data stored for Netflix' },
+            { name: 'Amazon', desc: 'Amazon Account & Screen Details' },
+            { name: 'Amazon-Sold', desc: 'Amazon Sold History' },
+            { name: 'Hotstar', desc: 'Hotstar Account & Screen Details' },
+            { name: 'Hotstar-Sold', desc: 'Hotstar Sold History' },
+            { name: 'All-In-One', desc: 'Consolidated view of all brands sales' }
+          ].map((sheet, sIdx) => {
+            const isMissing = missingSheets.includes(sheet.name);
+            const isPresent = existingSheets.includes(sheet.name);
 
             return (
               <div
-                key={sheetName}
+                key={sheet.name}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -386,8 +592,8 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{
-                    width: '24px',
-                    height: '24px',
+                    width: '26px',
+                    height: '26px',
                     borderRadius: '6px',
                     background: '#1e3a8a',
                     color: '#ffffff',
@@ -399,12 +605,14 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
                   }}>
                     0{sIdx + 1}
                   </span>
-                  <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a' }}>
-                    {sheetName}
-                  </span>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>
-                    {sheetName === 'Sales' ? '(History & Active)' : sheetName === 'All Data' ? '(Consolidated)' : '(Brand Records)'}
-                  </span>
+                  <div>
+                    <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a' }}>
+                      Sheet{sIdx + 1} - {sheet.name}
+                    </span>
+                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                      {sheet.desc}
+                    </div>
+                  </div>
                 </div>
 
                 <div>
@@ -506,6 +714,87 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
               {scriptCopied ? <Check size={16} /> : <Copy size={16} />}
               <span>{scriptCopied ? 'Copied to Clipboard!' : 'Copy Apps Script Code'}</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Visual GSheet Cell Picker Modal */}
+      {showCellPickerModal && pickingField && (
+        <div className="modal-overlay" onClick={() => setShowCellPickerModal(false)} style={{ zIndex: 1250 }}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <div>
+                <h3 style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+                  Pick Google Sheet Cell for "{pickingField.key}"
+                </h3>
+                <p style={{ fontSize: '12px', color: '#64748b', margin: '2px 0 0' }}>
+                  Tap any cell below to link it (e.g. B16)
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCellPickerModal(false)}
+                style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: '18px', color: '#64748b' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: '350px', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#ffffff' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'center' }}>
+                <thead>
+                  <tr style={{ background: '#f1f5f9', position: 'sticky', top: 0 }}>
+                    <th style={{ padding: '6px', border: '1px solid #cbd5e1', width: '32px' }}>#</th>
+                    {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].map(col => (
+                      <th key={col} style={{ padding: '6px', border: '1px solid #cbd5e1', fontWeight: 800, color: '#1e3a8a', minWidth: '40px' }}>
+                        {col}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(row => (
+                    <tr key={row}>
+                      <td style={{ padding: '6px', border: '1px solid #cbd5e1', background: '#f8fafc', fontWeight: 800, color: '#64748b' }}>
+                        {row}
+                      </td>
+                      {['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].map(col => {
+                        const cellId = `${col}${row}`;
+                        const isSelected = pickingField.ref?.endsWith(cellId);
+
+                        return (
+                          <td
+                            key={cellId}
+                            onClick={() => handleSelectCellInGrid(cellId)}
+                            style={{
+                              padding: '6px',
+                              border: '1px solid #e2e8f0',
+                              cursor: 'pointer',
+                              fontWeight: isSelected ? 800 : 600,
+                              background: isSelected ? '#bfdbfe' : '#ffffff',
+                              color: isSelected ? '#1d4ed8' : '#334155'
+                            }}
+                          >
+                            {cellId}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="glossy-btn glossy-btn-gray"
+                onClick={() => setShowCellPickerModal(false)}
+                style={{ padding: '8px 16px', fontSize: '13px' }}
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

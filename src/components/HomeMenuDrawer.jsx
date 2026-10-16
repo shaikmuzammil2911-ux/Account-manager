@@ -1,12 +1,17 @@
 import React from 'react';
-import { X, FileText, Link2, Sparkles, ChevronRight, Settings } from 'lucide-react';
+import {
+  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers
+} from 'lucide-react';
 
 export default function HomeMenuDrawer({
   isOpen,
   onClose,
+  onSelectBrands,
+  onSelectForms,
   onSelectCreateForm,
   onSelectCellsLinkup,
-  onSelectSettings
+  onSelectSettings,
+  onLogout
 }) {
   if (!isOpen) return null;
 
@@ -39,49 +44,89 @@ export default function HomeMenuDrawer({
           </button>
         </div>
 
-        {/* The Two Primary Menu Buttons as Required */}
+        {/* Menu Buttons as Requested */}
         <div className="menu-drawer-items">
-          {/* Button 1: Create Form */}
+          {/* Button 1: Brands (as per prompt: 1st He will click on Top Right side Menu / Then he will Click on Brands) */}
           <button
             type="button"
             className="menu-action-card menu-card-orange"
             onClick={() => {
               onClose();
-              onSelectCreateForm();
+              if (onSelectBrands) onSelectBrands();
             }}
-            id="menu-btn-create-form"
+            id="menu-btn-brands"
           >
             <div className="menu-card-icon orange">
-              <FileText size={22} color="#ea580c" strokeWidth={2.3} />
+              <Tv size={22} color="#ea580c" strokeWidth={2.3} />
             </div>
             <div className="menu-card-text">
-              <span className="menu-card-title">1. Create Form</span>
-              <span className="menu-card-desc">Sell account, select screens & auto-fill customer credentials</span>
+              <span className="menu-card-title">Brands</span>
+              <span className="menu-card-desc">Add brand, upload logo & set validities + prices</span>
             </div>
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
-          {/* Button 2: Cells Linkup */}
+          {/* Button 2: Forms (as per prompt: opens 02 buttons: 1. Sale Form, 2. Data Base Form) */}
           <button
             type="button"
             className="menu-action-card menu-card-green"
             onClick={() => {
               onClose();
-              onSelectCellsLinkup();
+              if (onSelectForms) onSelectForms();
             }}
-            id="menu-btn-cells-linkup"
+            id="menu-btn-forms"
           >
             <div className="menu-card-icon green">
-              <Link2 size={22} color="#16a34a" strokeWidth={2.3} />
+              <Layers size={22} color="#16a34a" strokeWidth={2.3} />
             </div>
             <div className="menu-card-text">
-              <span className="menu-card-title">2. Cells Linkup</span>
-              <span className="menu-card-desc">Google Spreadsheet ID, worksheets & live sync connection</span>
+              <span className="menu-card-title">Forms</span>
+              <span className="menu-card-desc">Custom Canva-style Sale Forms & Data Base Forms</span>
             </div>
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
-          {/* Additional Settings Quick Link */}
+          {/* Button 3: Cells Linking (as per prompt: Opens Cells Linking) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-neutral"
+            onClick={() => {
+              onClose();
+              if (onSelectCellsLinkup) onSelectCellsLinkup();
+            }}
+            id="menu-btn-cells-linkup"
+          >
+            <div className="menu-card-icon blue">
+              <Link2 size={22} color="#2563eb" strokeWidth={2.3} />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Cells Linking</span>
+              <span className="menu-card-desc">Link Website Form cells to GSheet cells (e.g. A1/B16)</span>
+            </div>
+            <ChevronRight size={20} className="menu-card-arrow" />
+          </button>
+
+          {/* Button 4: Create Form (Sale direct shortcut) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-neutral"
+            onClick={() => {
+              onClose();
+              if (onSelectCreateForm) onSelectCreateForm();
+            }}
+            id="menu-btn-create-form"
+          >
+            <div className="menu-card-icon orange">
+              <FileText size={20} color="#ea580c" />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Create Form (Sale)</span>
+              <span className="menu-card-desc">Open Sale form with auto-fill empty screens</span>
+            </div>
+            <ChevronRight size={18} className="menu-card-arrow" />
+          </button>
+
+          {/* Button 5: General Settings */}
           {onSelectSettings && (
             <button
               type="button"
@@ -91,14 +136,36 @@ export default function HomeMenuDrawer({
                 onSelectSettings();
               }}
               id="menu-btn-settings"
-              style={{ marginTop: '8px' }}
             >
               <div className="menu-card-icon gray">
                 <Settings size={20} color="#475569" />
               </div>
               <div className="menu-card-text">
-                <span className="menu-card-title" style={{ fontSize: '15px' }}>General Settings</span>
-                <span className="menu-card-desc">System preferences & database utilities</span>
+                <span className="menu-card-title">General Settings</span>
+                <span className="menu-card-desc">System configuration & database reset</span>
+              </div>
+              <ChevronRight size={18} className="menu-card-arrow" />
+            </button>
+          )}
+
+          {/* Logout */}
+          {onLogout && (
+            <button
+              type="button"
+              className="menu-action-card menu-card-neutral"
+              onClick={() => {
+                onClose();
+                onLogout();
+              }}
+              id="menu-btn-logout"
+              style={{ marginTop: '8px', border: '1px solid #fee2e2', background: '#fff5f5' }}
+            >
+              <div className="menu-card-icon red">
+                <LogOut size={18} color="#dc2626" />
+              </div>
+              <div className="menu-card-text">
+                <span className="menu-card-title" style={{ color: '#dc2626' }}>Logout</span>
+                <span className="menu-card-desc">Sign out of admin session</span>
               </div>
               <ChevronRight size={18} className="menu-card-arrow" />
             </button>
@@ -106,7 +173,7 @@ export default function HomeMenuDrawer({
         </div>
 
         <div className="menu-drawer-footer">
-          <span>OTT Sellers System v2.0 • Real-time Synchronized</span>
+          <span>OTT Sellers System • Fixyourmobiles10@gmail.com</span>
         </div>
       </div>
     </div>

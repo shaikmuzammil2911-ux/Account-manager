@@ -622,6 +622,223 @@ export const db = {
     }
   },
 
+  // --- USERS & AUTHENTICATION ---
+  getUserByEmail(email) {
+    const data = readDb();
+    if (!data.users) data.users = [];
+    const normalized = (email || '').trim().toLowerCase();
+    let user = data.users.find(u => (u.email || '').trim().toLowerCase() === normalized);
+    if (!user && normalized === 'fixyourmobiles10@gmail.com') {
+      user = {
+        id: 'admin_1',
+        email: 'Fixyourmobiles10@gmail.com',
+        password: 'Password@123',
+        name: 'Admin',
+        role: 'admin',
+        createdAt: '2026-10-16'
+      };
+      data.users.push(user);
+      writeDb(data);
+    }
+    return user;
+  },
+
+  validateUser(email, password) {
+    const user = this.getUserByEmail(email);
+    if (!user) return null;
+    if (user.password === password) {
+      const { password: _, ...safeUser } = user;
+      return safeUser;
+    }
+    return null;
+  },
+
+  saveOtp(email, otp) {
+    const data = readDb();
+    if (!data.otps) data.otps = [];
+    const normalized = (email || '').trim().toLowerCase();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    data.otps = data.otps.filter(o => o.email !== normalized);
+    data.otps.push({ email: normalized, otp, expiresAt });
+    writeDb(data);
+    return true;
+  },
+
+  verifyOtp(email, otp) {
+    const data = readDb();
+    if (!data.otps) return false;
+    const normalized = (email || '').trim().toLowerCase();
+    const entry = data.otps.find(o => o.email === normalized && o.otp === String(otp).trim());
+    if (!entry) return false;
+    if (Date.now() > entry.expiresAt) return false;
+    return true;
+  },
+
+  resetPassword(email, newPassword, otp) {
+    const isValidOtp = this.verifyOtp(email, otp);
+    if (!isValidOtp) return { success: false, message: 'Invalid or expired OTP code.' };
+
+    const data = readDb();
+    if (!data.users) data.users = [];
+    const normalized = (email || '').trim().toLowerCase();
+    let user = data.users.find(u => (u.email || '').trim().toLowerCase() === normalized);
+    if (!user) {
+      user = {
+        id: `user_${Date.now()}`,
+        email: email.trim(),
+        password: newPassword,
+        name: 'User',
+        role: 'admin',
+        createdAt: new Date().toISOString().slice(0, 10)
+      };
+      data.users.push(user);
+    } else {
+      user.password = newPassword;
+      user.updatedAt = new Date().toISOString().slice(0, 10);
+    }
+
+    data.otps = (data.otps || []).filter(o => o.email !== normalized);
+    writeDb(data);
+    return { success: true, message: 'Password reset successfully!' };
+  },
+
+  // --- BRAND MANAGEMENT ---
+  createBrand(brandData) {
+    const data = readDb();
+    if (!data.brands) data.brands = [];
+
+    const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const existing = data.brands.find(b => b.id === id);
+    if (existing) {
+      throw new Error(`Brand with ID "${id}" already exists`);
+    }
+
+    const newBrand = {
+      id,
+      name: brandData.name.trim(),
+      displayName: brandData.displayName || brandData.name.trim(),
+      logo: brandData.logo || '',
+      color: brandData.color || '#3b82f6',
+      bgDark: brandData.bgDark || '#0f172a',
+      badgeColor: brandData.badgeColor || brandData.color || '#3b82f6',
+      screensCount: Number(brandData.screensCount) || 5,
+      plans: Array.isArray(brandData.plans) && brandData.plans.length > 0
+        ? brandData.plans
+        : Object.keys(brandData.prices || { '01 Month': 199 }),
+      prices: brandData.prices || { '01 Month': 199 }
+    };
+
+    data.brands.push(newBrand);
+    writeDb(data);
+    return newBrand;
+  },
+
+  updateBrand(id, updates) {
+    const data = readDb();
+    const idx = (data.brands || []).findIndex(b => b.id === id);
+    if (idx === -1) return null;
+    data.brands[idx] = { ...data.brands[idx], ...updates };
+    writeDb(data);
+    return data.brands[idx];
+  },
+
+  deleteBrand(id) {
+    const data = readDb();
+    data.brands = (data.brands || []).filter(b => b.id !== id);
+    writeDb(data);
+    return true;
+  },
+
+  // --- CUSTOM FORMS ---
+  getCustomForms(type) {
+    const data = readDb();
+    let forms = data.customForms || [];
+    if (type) {
+      forms = forms.filter(f => f.type === type);
+    }
+    return forms;
+  },
+
+  getCustomForm(id) {
+    const data = readDb();
+    return (data.customForms || []).find(f => f.id === id);
+  },
+
+  createCustomForm(formData) {
+    const data = readDb();
+    if (!data.customForms) data.customForms = [];
+
+    const newForm = {
+      id: `form_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: formData.name || 'Untitled Form',
+      type: formData.type || 'sale',
+      brands: formData.brands || [],
+      elements: formData.elements || [],
+      backgroundColor: formData.backgroundColor || '#f8fafc',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    data.customForms.push(newForm);
+    writeDb(data);
+    return newForm;
+  },
+
+  updateCustomForm(id, formData) {
+    const data = readDb();
+    const idx = (data.customForms || []).findIndex(f => f.id === id);
+    if (idx === -1) return null;
+
+    data.customForms[idx] = {
+      ...data.customForms[idx],
+      ...formData,
+      updatedAt: new Date().toISOString()
+    };
+
+    writeDb(data);
+    return data.customForms[idx];
+  },
+
+  deleteCustomForm(id) {
+    const data = readDb();
+    data.customForms = (data.customForms || []).filter(f => f.id !== id);
+    writeDb(data);
+    return true;
+  },
+
+  // --- CELL MAPPINGS ---
+  getCellMappings(formId = 'default') {
+    const data = readDb();
+    const all = data.cellMappings || {};
+    return all[formId] || {
+      formId,
+      spreadsheetId: data.settings?.googleSheetConfig?.spreadsheetId || '',
+      mappings: {
+        email: 'A1/B2',
+        password: 'A2/C2',
+        screenNumber: 'A3/D2',
+        screenPin: 'A4/E2',
+        expiryDate: 'A5/F2',
+        amount: 'A6/G2',
+        customerName: 'A7/H2',
+        customerNumber: 'A8/I2'
+      },
+      updatedAt: new Date().toISOString()
+    };
+  },
+
+  saveCellMappings(formId = 'default', mappingsData) {
+    const data = readDb();
+    if (!data.cellMappings) data.cellMappings = {};
+    data.cellMappings[formId] = {
+      formId,
+      ...mappingsData,
+      updatedAt: new Date().toISOString()
+    };
+    writeDb(data);
+    return data.cellMappings[formId];
+  },
+
   resetDatabase() {
     const initial = getInitialData();
     writeDb(initial);

@@ -7,6 +7,7 @@ import BrandSelectorModal from './components/BrandSelectorModal';
 import NotifyModal from './components/NotifyModal';
 import HomeMenuDrawer from './components/HomeMenuDrawer';
 
+import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
 import SaleScreen from './screens/SaleScreen';
 import InventoryScreen from './screens/InventoryScreen';
@@ -14,9 +15,21 @@ import RecentSalesScreen from './screens/RecentSalesScreen';
 import CellsLinkupScreen from './screens/CellsLinkupScreen';
 import ExpiryScreen from './screens/ExpiryScreen';
 import BrandsScreen from './screens/BrandsScreen';
+import BrandsManagementScreen from './screens/BrandsManagementScreen';
+import FormsManagementScreen from './screens/FormsManagementScreen';
 import SettingsScreen from './screens/SettingsScreen';
 
 export default function App() {
+  // Authentication State
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('accounts_manager_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  });
+
   const [currentScreen, setCurrentScreen] = useState('home');
   const [screenParams, setScreenParams] = useState({});
   const [history, setHistory] = useState(['home']);
@@ -58,8 +71,19 @@ export default function App() {
   };
 
   useEffect(() => {
-    loadInitial();
-  }, []);
+    if (currentUser) {
+      loadInitial();
+    }
+  }, [currentUser]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('accounts_manager_user');
+    localStorage.removeItem('accounts_manager_token');
+    setCurrentUser(null);
+    setCurrentScreen('home');
+    setHistory(['home']);
+    showToast('Logged out successfully', 'info');
+  };
 
   const navigateTo = (screenName, params = {}) => {
     setScreenParams(params);
@@ -112,6 +136,22 @@ export default function App() {
     showToast(`Opened ${brand.displayName} Accounts`, 'success');
   };
 
+  // If not logged in, show Login Screen (with Forgot Password & OTP)
+  if (!currentUser) {
+    return (
+      <div className="mobile-app-root">
+        <Toast message={toast.message} type={toast.type} />
+        <LoginScreen
+          onLoginSuccess={(user) => {
+            setCurrentUser(user);
+            loadInitial();
+          }}
+          showToast={showToast}
+        />
+      </div>
+    );
+  }
+
   const activeTab = currentScreen === 'expiry' ? 'expiry' : 'home';
 
   // Compute Header Title
@@ -121,20 +161,22 @@ export default function App() {
         return '';
       case 'sale':
       case 'create-form':
-        return 'Sale & Create Form';
+        return 'Sale';
       case 'data':
       case 'inventory':
-        return 'Data — Accounts';
+        return 'Data';
       case 'recent-sales':
         return "Recent Sale's";
       case 'cells-linkup':
-        return 'Cells Linkup';
+        return 'Cells Linking';
+      case 'brands-mgmt':
+        return 'Brands';
+      case 'forms-mgmt':
+        return 'Forms';
       case 'expiry':
         return 'Expiry Alerts';
       case 'settings':
         return 'Settings';
-      case 'brands':
-        return 'OTT Brands';
       default:
         return 'OTT Sellers';
     }
@@ -153,7 +195,7 @@ export default function App() {
           showBack={currentScreen !== 'home'}
           onBack={handleBack}
           title={getHeaderTitle()}
-          selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' ? selectedBrand : null}
+          selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' && currentScreen !== 'forms-mgmt' ? selectedBrand : null}
           onBrandClick={() => setShowBrandSelector(true)}
           onOpenMenu={() => setShowMenuDrawer(true)}
         />
@@ -204,6 +246,25 @@ export default function App() {
           />
         )}
 
+        {currentScreen === 'brands-mgmt' && (
+          <BrandsManagementScreen
+            onBack={handleBack}
+            onBrandCreated={(newBrand) => {
+              loadInitial();
+              setSelectedBrand(newBrand);
+            }}
+            showToast={showToast}
+          />
+        )}
+
+        {currentScreen === 'forms-mgmt' && (
+          <FormsManagementScreen
+            brands={brands}
+            onBack={handleBack}
+            showToast={showToast}
+          />
+        )}
+
         {currentScreen === 'expiry' && (
           <ExpiryScreen
             selectedBrand={selectedBrand}
@@ -233,13 +294,16 @@ export default function App() {
         <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
 
-      {/* Hamburger Home Menu Drawer: Create Form & Cells Linkup */}
+      {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Create Form, Settings, Logout */}
       <HomeMenuDrawer
         isOpen={showMenuDrawer}
         onClose={() => setShowMenuDrawer(false)}
-        onSelectCreateForm={() => navigateTo('sale')}
+        onSelectBrands={() => navigateTo('brands-mgmt')}
+        onSelectForms={() => navigateTo('forms-mgmt')}
         onSelectCellsLinkup={() => navigateTo('cells-linkup')}
+        onSelectCreateForm={() => navigateTo('sale')}
         onSelectSettings={() => navigateTo('settings')}
+        onLogout={handleLogout}
       />
 
       {/* Brand Selector Modal */}

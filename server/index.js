@@ -4,14 +4,27 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { db } from './db.js';
 
+import nodemailer from 'nodemailer';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 5001;
 
+const SMTP_USER = process.env.SMTP_USER || 'Fixyourmobiles10@gmail.com';
+const SMTP_PASS = process.env.SMTP_PASS || 'wgupwtpbbczbnbhq';
+
+const mailTransporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: SMTP_USER,
+    pass: SMTP_PASS
+  }
+});
+
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Request logger for API calls
 app.use((req, res, next) => {
@@ -19,6 +32,96 @@ app.use((req, res, next) => {
     console.log(`[API] ${req.method} ${req.path}`);
   }
   next();
+});
+
+// Auth Routes
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    const user = db.validateUser(email, password);
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    res.json({
+      success: true,
+      user,
+      token: `token_${Date.now()}_${Math.random().toString(36).slice(2)}`
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    db.saveOtp(email, otp);
+
+    const mailOptions = {
+      from: `"OTT Sellers Management" <${SMTP_USER}>`,
+      to: email.trim(),
+      subject: 'Your Password Reset OTP - OTT Sellers Management',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
+          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">Password Reset OTP</h2>
+          <p style="color: #475569; font-size: 14px;">You requested to reset your password for the OTT Sellers Management System.</p>
+          <div style="background: #eff6ff; border: 1px dashed #3b82f6; padding: 18px; border-radius: 10px; text-align: center; margin: 20px 0;">
+            <div style="font-size: 13px; color: #1e40af; font-weight: 700; margin-bottom: 6px;">YOUR VERIFICATION OTP</div>
+            <div style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #1d4ed8;">${otp}</div>
+          </div>
+          <p style="color: #64748b; font-size: 13px;">This OTP is valid for 10 minutes. Enter this code on the website to set a new password.</p>
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="color: #94a3b8; font-size: 12px; text-align: center;">Fixyourmobiles &bull; OTT Sellers Management System</p>
+        </div>
+      `
+    };
+
+    let emailSent = false;
+    let mailError = null;
+    try {
+      await mailTransporter.sendMail(mailOptions);
+      emailSent = true;
+      console.log(`[AUTH] OTP sent successfully via SMTP to ${email}`);
+    } catch (sendErr) {
+      console.warn(`[AUTH] SMTP send failed: ${sendErr.message}. Development fallback active.`);
+      mailError = sendErr.message;
+    }
+
+    res.json({
+      success: true,
+      message: emailSent
+        ? `OTP has been sent to ${email}`
+        : `OTP generated for ${email}. (Note: SMTP notice: ${mailError || 'Check email'})`,
+      emailSent,
+      devOtp: otp
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/auth/reset-password', (req, res) => {
+  try {
+    const { email, newPassword, otp } = req.body;
+    if (!email || !newPassword || !otp) {
+      return res.status(400).json({ error: 'Email, new password, and OTP are required' });
+    }
+    const result = db.resetPassword(email, newPassword, otp);
+    if (!result.success) {
+      return res.status(400).json({ error: result.message });
+    }
+    res.json({ success: true, message: 'Password has been reset successfully! You can now login.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // Brands
@@ -36,6 +139,104 @@ app.get('/api/brands/:id', (req, res) => {
     const brand = db.getBrand(req.params.id);
     if (!brand) return res.status(404).json({ error: 'Brand not found' });
     res.json(brand);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/brands', (req, res) => {
+  try {
+    const newBrand = db.createBrand(req.body);
+    res.status(201).json(newBrand);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/brands/:id', (req, res) => {
+  try {
+    const updated = db.updateBrand(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Brand not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/brands/:id', (req, res) => {
+  try {
+    const success = db.deleteBrand(req.params.id);
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Custom Forms
+app.get('/api/forms', (req, res) => {
+  try {
+    const { type } = req.query;
+    const forms = db.getCustomForms(type);
+    res.json(forms);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/forms/:id', (req, res) => {
+  try {
+    const form = db.getCustomForm(req.params.id);
+    if (!form) return res.status(404).json({ error: 'Form not found' });
+    res.json(form);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/forms', (req, res) => {
+  try {
+    const newForm = db.createCustomForm(req.body);
+    res.status(201).json(newForm);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/forms/:id', (req, res) => {
+  try {
+    const updated = db.updateCustomForm(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Form not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/forms/:id', (req, res) => {
+  try {
+    const success = db.deleteCustomForm(req.params.id);
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Cell Mappings
+app.get('/api/cells/mapping', (req, res) => {
+  try {
+    const { formId } = req.query;
+    const mappings = db.getCellMappings(formId || 'default');
+    res.json(mappings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/cells/mapping', (req, res) => {
+  try {
+    const { formId = 'default', mappings, spreadsheetId } = req.body;
+    const saved = db.saveCellMappings(formId, { mappings, spreadsheetId });
+    res.json(saved);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

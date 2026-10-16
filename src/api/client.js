@@ -683,6 +683,192 @@ export const api = {
     return local.settings;
   },
 
+  // AUTHENTICATION
+  async login(email, password) {
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      localStorage.setItem('accounts_manager_user', JSON.stringify(data.user));
+      localStorage.setItem('accounts_manager_token', data.token);
+      return data;
+    } catch (e) {
+      // offline fallback
+      if (email.toLowerCase() === 'fixyourmobiles10@gmail.com' && (password === 'Password@123' || password === 'Password@321')) {
+        const user = { id: 'admin_1', email: 'Fixyourmobiles10@gmail.com', name: 'Admin', role: 'admin' };
+        localStorage.setItem('accounts_manager_user', JSON.stringify(user));
+        return { success: true, user, token: 'local_token' };
+      }
+      throw e;
+    }
+  },
+
+  async forgotPassword(email) {
+    try {
+      const res = await fetch('/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to send OTP');
+      return data;
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  async resetPassword(email, newPassword, otp) {
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, newPassword, otp })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+      return data;
+    } catch (e) {
+      throw e;
+    }
+  },
+
+  // BRANDS CRUD
+  async createBrand(brandData) {
+    try {
+      const res = await fetch('/api/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(brandData)
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.brands) local.brands = [];
+    const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const newBrand = { ...brandData, id };
+    local.brands.push(newBrand);
+    saveLocalData(local);
+    return newBrand;
+  },
+
+  async updateBrand(id, updates) {
+    try {
+      const res = await fetch(`/api/brands/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    const idx = (local.brands || []).findIndex(b => b.id === id);
+    if (idx !== -1) {
+      local.brands[idx] = { ...local.brands[idx], ...updates };
+      saveLocalData(local);
+      return local.brands[idx];
+    }
+    return null;
+  },
+
+  async deleteBrand(id) {
+    try {
+      const res = await fetch(`/api/brands/${id}`, { method: 'DELETE' });
+      if (res.ok) return true;
+    } catch (e) {}
+    const local = getLocalData();
+    local.brands = (local.brands || []).filter(b => b.id !== id);
+    saveLocalData(local);
+    return true;
+  },
+
+  // CUSTOM FORMS
+  async getCustomForms(type) {
+    try {
+      const q = type ? `?type=${type}` : '';
+      const res = await fetch(`/api/forms${q}`);
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    let forms = local.customForms || [];
+    if (type) forms = forms.filter(f => f.type === type);
+    return forms;
+  },
+
+  async createCustomForm(formData) {
+    try {
+      const res = await fetch('/api/forms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.customForms) local.customForms = [];
+    const newForm = {
+      id: `form_${Date.now()}`,
+      ...formData,
+      createdAt: new Date().toISOString()
+    };
+    local.customForms.push(newForm);
+    saveLocalData(local);
+    return newForm;
+  },
+
+  async deleteCustomForm(id) {
+    try {
+      const res = await fetch(`/api/forms/${id}`, { method: 'DELETE' });
+      if (res.ok) return true;
+    } catch (e) {}
+    const local = getLocalData();
+    local.customForms = (local.customForms || []).filter(f => f.id !== id);
+    saveLocalData(local);
+    return true;
+  },
+
+  // CELL MAPPINGS
+  async getCellMappings(formId = 'default') {
+    try {
+      const res = await fetch(`/api/cells/mapping?formId=${formId}`);
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    return (local.cellMappings && local.cellMappings[formId]) || {
+      formId,
+      mappings: {
+        email: 'A1/B2',
+        password: 'A2/C2',
+        screenNumber: 'A3/D2',
+        screenPin: 'A4/E2',
+        expiryDate: 'A5/F2',
+        amount: 'A6/G2',
+        customerName: 'A7/H2',
+        customerNumber: 'A8/I2'
+      }
+    };
+  },
+
+  async saveCellMappings(formId = 'default', mappingsData) {
+    try {
+      const res = await fetch('/api/cells/mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formId, ...mappingsData })
+      });
+      if (res.ok) return await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.cellMappings) local.cellMappings = {};
+    local.cellMappings[formId] = { formId, ...mappingsData };
+    saveLocalData(local);
+    return local.cellMappings[formId];
+  },
+
   async resetData() {
     try {
       const res = await fetch('/api/reset', { method: 'POST' });

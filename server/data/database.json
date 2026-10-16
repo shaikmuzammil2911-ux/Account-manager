@@ -794,5 +794,17 @@
       "status": "Disconnected",
       "lastError": null
     }
-  }
+  },
+  "users": [
+    {
+      "id": "admin_1",
+      "email": "Fixyourmobiles10@gmail.com",
+      "password": "Password@321",
+      "name": "Admin",
+      "role": "admin",
+      "createdAt": "2026-10-16",
+      "updatedAt": "2026-10-16"
+    }
+  ],
+  "otps": []
 }

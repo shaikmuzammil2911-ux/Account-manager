@@ -437,5 +437,19 @@ export function getInitialData() {
     }
   };
 
-  return { brands, inventory, sales, settings };
+  const users = [
+    {
+      id: 'admin_1',
+      email: 'Fixyourmobiles10@gmail.com',
+      password: 'Password@123',
+      name: 'Admin',
+      role: 'admin',
+      createdAt: '2026-10-16'
+    }
+  ];
+
+  const customForms = [];
+  const cellMappings = {};
+
+  return { brands, inventory, sales, settings, users, customForms, cellMappings };
 }
