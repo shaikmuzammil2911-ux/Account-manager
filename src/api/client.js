@@ -6,7 +6,7 @@ import {
   buildSpreadsheetPayload
 } from '../utils/googleSheets';
 
-const STORAGE_KEY = 'accounts_manager_app_data_v4';
+const STORAGE_KEY = 'accounts_manager_app_data_v5';
 
 // Initialize or load from LocalStorage as fallback cache
 function getLocalData() {

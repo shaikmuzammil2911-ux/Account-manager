@@ -260,6 +260,9 @@ export default function App() {
         {currentScreen === 'forms-mgmt' && (
           <FormsManagementScreen
             brands={brands}
+            selectedBrand={selectedBrand}
+            onSelectBrand={setSelectedBrand}
+            onNavigateToSale={handleSaleSuccess}
             onBack={handleBack}
             showToast={showToast}
           />

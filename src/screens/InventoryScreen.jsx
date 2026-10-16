@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
+import OttBrandsGrid from '../components/OttBrandsGrid';
 
 export default function InventoryScreen({
   brands = [],
@@ -13,10 +14,18 @@ export default function InventoryScreen({
   onNavigateToSaleWithSlot,
   showToast
 }) {
-  // If no brand selected yet or user wants to pick brand, show 3-column brands grid
-  const [currentBrand, setCurrentBrand] = useState(selectedBrand || null);
+  // If no brand selected yet, default to selectedBrand or first brand
+  const [currentBrand, setCurrentBrand] = useState(selectedBrand || brands[0] || null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (selectedBrand) {
+      setCurrentBrand(selectedBrand);
+    } else if (!currentBrand && brands && brands.length > 0) {
+      setCurrentBrand(brands[0]);
+    }
+  }, [selectedBrand, brands]);
 
   // Top 4 Filter Controls (from image copy 10.png)
   const [filterSelectedOnly, setFilterSelectedOnly] = useState(false);
@@ -207,76 +216,17 @@ export default function InventoryScreen({
   // ========================================================
   if (!currentBrand) {
     return (
-      <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '16px' }}>
-        <div style={{ marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: '0 0 4px' }}>
-            Data — OTT Accounts
-          </h2>
-          <p style={{ fontSize: '13px', color: '#64748b', margin: 0 }}>
-            Select an OTT Brand to view and manage its accounts database
-          </p>
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '12px'
-        }}>
-          {brands.map(brand => (
-            <button
-              key={brand.id}
-              type="button"
-              onClick={() => handleSelectBrand(brand)}
-              style={{
-                background: '#ffffff',
-                border: '1.5px solid #e2e8f0',
-                borderRadius: '16px',
-                padding: '16px 8px',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                cursor: 'pointer',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-                transition: 'transform 0.15s ease'
-              }}
-            >
-              <div style={{
-                width: '48px',
-                height: '48px',
-                borderRadius: '12px',
-                background: brand.bgDark || '#0f172a',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: '4px'
-              }}>
-                {brand.logo ? (
-                  <img
-                    src={brand.logo}
-                    alt={brand.displayName}
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <span style={{ color: '#ffffff', fontWeight: 900, fontSize: '18px' }}>
-                    {(brand.displayName || brand.name)[0]}
-                  </span>
-                )}
-              </div>
-              <span style={{
-                fontSize: '13px',
-                fontWeight: 800,
-                color: '#0f172a',
-                textAlign: 'center',
-                lineHeight: '1.2'
-              }}>
-                {brand.displayName || brand.name}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <OttBrandsGrid
+        brands={brands}
+        onSelectBrand={(brand) => {
+          handleSelectBrand(brand);
+        }}
+        onBack={() => {
+          if (brands && brands.length > 0) {
+            handleSelectBrand(brands[0]);
+          }
+        }}
+      />
     );
   }
 
@@ -572,7 +522,7 @@ export default function InventoryScreen({
                 ))}
               </div>
 
-              {/* Screen Buttons row (Orange pills) */}
+              {/* Screen Buttons row (Orange pills matching image copy 20.png) */}
               <div className="screens-grid-row">
                 {(item.screens || []).map((screen, sIdx) => (
                   <div
@@ -585,18 +535,24 @@ export default function InventoryScreen({
                       textAlign: 'center',
                       fontWeight: 800,
                       fontSize: '11px',
-                      boxShadow: '0 2px 4px rgba(234,88,12,0.3)'
+                      boxShadow: '0 2px 4px rgba(234,88,12,0.3)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '3px'
                     }}
                   >
-                    {screen.name || `Screen-${sIdx + 1}`}
+                    <Tv size={11} strokeWidth={2.5} />
+                    <span>{screen.name || `Screen-${sIdx + 1}`}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Status / Expiry Pills Row */}
+              {/* Status / Expiry Pills Row (image copy 20.png) */}
               <div className="screens-grid-row" style={{ marginTop: '6px' }}>
                 {(item.screens || []).map((screen, sIdx) => {
                   const isEmpty = screen.status === 'empty';
+                  const isExpiringSoon = screen.expiryDate && (screen.expiryDate.includes('Jun') || screen.expiryDate.includes('May'));
 
                   return (
                     <div
@@ -615,63 +571,69 @@ export default function InventoryScreen({
                         }
                       }}
                       style={{
-                        padding: '4px 2px',
+                        padding: '5px 2px',
                         borderRadius: '6px',
                         textAlign: 'center',
-                        fontSize: '10px',
+                        fontSize: '9.5px',
                         fontWeight: 800,
                         cursor: isEmpty ? 'pointer' : 'default',
-                        background: isEmpty ? '#dcfce7' : '#fee2e2',
-                        color: isEmpty ? '#16a34a' : '#dc2626',
-                        border: isEmpty ? '1.5px dashed #22c55e' : '1px solid #fca5a5'
+                        background: isEmpty ? '#ffffff' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
+                        color: isEmpty ? '#64748b' : '#ffffff',
+                        border: isEmpty ? '1.5px dashed #cbd5e1' : 'none',
+                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.15)',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap'
                       }}
                       title={isEmpty ? 'Click to sell this screen' : `Expires: ${screen.expiryDate || 'Active'}`}
                     >
-                      {isEmpty ? '+' : (screen.expiryDate ? screen.expiryDate.slice(0, 6) : 'SOLD')}
+                      {isEmpty ? '+' : (screen.expiryDate || 'Active')}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Bottom 3 Action Buttons (Exact from image copy 10.png) */}
+              {/* Bottom 02 Action Buttons (Exact matching image copy 20.png) */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1.2fr 1fr 1fr',
-                gap: '8px',
+                gridTemplateColumns: isEditing ? '1fr 1fr auto' : '1fr 1fr',
+                gap: '10px',
                 marginTop: '12px'
               }}>
                 {/* 1. Edit (Unlock) */}
                 <button
                   type="button"
                   className={`glossy-btn ${isEditing ? 'glossy-btn-orange' : 'glossy-btn-blue'}`}
-                  style={{ padding: '8px 10px', fontSize: '13px', borderRadius: '10px' }}
+                  style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
                   onClick={() => handleToggleLock(item)}
                 >
-                  {isEditing ? <Unlock size={14} /> : <Lock size={14} />}
-                  <span>{isEditing ? 'Cancel' : 'Edit (UnLock)'}</span>
+                  {isEditing ? <Unlock size={16} /> : <Lock size={16} />}
+                  <span>{isEditing ? 'Lock' : 'Edit (UnLock)'}</span>
                 </button>
 
                 {/* 2. Save */}
                 <button
                   type="button"
                   className="glossy-btn glossy-btn-green"
-                  style={{ padding: '8px 10px', fontSize: '13px', borderRadius: '10px' }}
+                  style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
                   onClick={() => handleSaveCard(item)}
                 >
-                  <Save size={14} />
+                  <Save size={16} />
                   <span>Save</span>
                 </button>
 
-                {/* 3. Delete */}
-                <button
-                  type="button"
-                  className="glossy-btn glossy-btn-red"
-                  style={{ padding: '8px 10px', fontSize: '13px', borderRadius: '10px' }}
-                  onClick={() => setDeleteConfirmItem(item)}
-                >
-                  <Trash2 size={14} />
-                  <span>Delete</span>
-                </button>
+                {/* Subtle Delete when in edit mode */}
+                {isEditing && (
+                  <button
+                    type="button"
+                    className="glossy-btn glossy-btn-red"
+                    style={{ padding: '10px 12px', fontSize: '13px', borderRadius: '10px' }}
+                    onClick={() => setDeleteConfirmItem(item)}
+                    title="Delete account"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                )}
               </div>
             </div>
           );

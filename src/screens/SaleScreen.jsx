@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar, Eye, EyeOff, ChevronDown, Check, X, ArrowLeft,
-  Copy, CheckCheck, Tv, Plus, Search, Filter, Lock, Unlock, Layers
+  User, Lock, Eye, EyeOff, ChevronDown, Check,
+  Tv, Sparkles
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { formatDate, calculateExpiryDate } from '../utils/dateUtils';
-import DatePickerModal from '../components/DatePickerModal';
-import CopyButton from '../components/CopyButton';
+import { buildWhatsAppLink, formatSaleConfirmationMessage } from '../utils/whatsapp';
+import OttBrandsGrid from '../components/OttBrandsGrid';
+import OttLogo from '../components/OttLogos';
 import { api } from '../api/client';
 
 export default function SaleScreen({
@@ -22,15 +23,15 @@ export default function SaleScreen({
   // Form Fields
   const [brandId, setBrandId] = useState(prefillData?.brandId || selectedBrand?.id || brands[0]?.id || 'netflix');
   const [validity, setValidity] = useState(prefillData?.validity || '01 Month');
-  const [activationDate, setActivationDate] = useState(prefillData?.activationDate || initialDateStr);
+  const [activationDate] = useState(prefillData?.activationDate || initialDateStr);
   const [expiryDate, setExpiryDate] = useState('');
 
   const [accountEmail, setAccountEmail] = useState(prefillData?.email || '');
   const [accountPassword, setAccountPassword] = useState(prefillData?.password || '');
   const [showPassword, setShowPassword] = useState(false);
 
-  const [screenNumber, setScreenNumber] = useState(prefillData?.screenName || '');
-  const [screenPin, setScreenPin] = useState(prefillData?.pin || '');
+  const [screenNumber, setScreenNumber] = useState(prefillData?.screenName || 'Screen-1');
+  const [screenPin, setScreenPin] = useState(prefillData?.pin || '1111');
   const [amount, setAmount] = useState('199');
   const [deviceName, setDeviceName] = useState(prefillData?.deviceName || '');
 
@@ -40,24 +41,17 @@ export default function SaleScreen({
   const [referenceNumber, setReferenceNumber] = useState('');
   const [selectedInventoryId, setSelectedInventoryId] = useState(prefillData?.inventoryId || null);
 
-  // Overlays state
-  // pickerStep: null | 'brands_grid' | 'accounts_database'
-  const [pickerStep, setPickerStep] = useState(null);
-  const [pickerBrand, setPickerBrand] = useState(null);
-  const [pickerAccounts, setPickerAccounts] = useState([]);
-  const [pickerLoading, setPickerLoading] = useState(false);
-  const [pickerEmptyOnly, setPickerEmptyOnly] = useState(true);
-  const [pickerSearch, setPickerSearch] = useState('');
-
-  // Dropdown menus
+  // UI state
+  const [isPickingBrand, setIsPickingBrand] = useState(false);
   const [showValidityMenu, setShowValidityMenu] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [brandAccounts, setBrandAccounts] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const validityOptions = ['01 Month', '03 Months', '06 Months', '12 Months'];
   const currentBrand = brands.find(b => b.id === brandId) || selectedBrand || brands[0];
 
-  // Auto calculate expiry date
+  // Auto calculate expiry date whenever validity changes
   useEffect(() => {
     if (activationDate && validity) {
       const calculated = calculateExpiryDate(activationDate, validity);
@@ -72,6 +66,19 @@ export default function SaleScreen({
     }
   }, [currentBrand, validity]);
 
+  // Load accounts for current brand to provide easy dropdown selection
+  useEffect(() => {
+    let active = true;
+    if (currentBrand?.id) {
+      api.getInventory({ brandId: currentBrand.id }).then(items => {
+        if (active) {
+          setBrandAccounts(items || []);
+        }
+      }).catch(() => {});
+    }
+    return () => { active = false; };
+  }, [currentBrand?.id]);
+
   // Handle prefill updates
   useEffect(() => {
     if (prefillData) {
@@ -85,51 +92,32 @@ export default function SaleScreen({
     }
   }, [prefillData]);
 
-  // Open Brands 3-column Grid
-  const handleOpenBrandPicker = () => {
-    setPickerStep('brands_grid');
+  // When user selects a brand from 3-column Select OTT Grid
+  const handleSelectBrandInGrid = (brand) => {
+    setBrandId(brand.id);
+    if (onSelectBrand) onSelectBrand(brand);
+    setIsPickingBrand(false);
+    showToast(`Selected ${brand.displayName}`, 'info');
   };
 
-  // When user selects a brand from 3-column grid, open its Accounts Database
-  const handleSelectBrandInGrid = async (brand) => {
-    setPickerBrand(brand);
-    setPickerStep('accounts_database');
-    setPickerLoading(true);
-    try {
-      const items = await api.getInventory({ brandId: brand.id });
-      setPickerAccounts(items);
-    } catch (e) {
-      showToast('Failed to load accounts for ' + brand.displayName, 'error');
-    } finally {
-      setPickerLoading(false);
-    }
-  };
-
-  // When user clicks an empty screen inside the Accounts Database
-  const handleSelectEmptyScreen = (account, screen) => {
-    // Populate form automatically
-    setBrandId(pickerBrand.id);
-    if (onSelectBrand) onSelectBrand(pickerBrand);
+  // When user picks an account from dropdown
+  const handleSelectAccount = (account) => {
     setAccountEmail(account.email || '');
     setAccountPassword(account.password || '');
-    setScreenNumber(screen.name || `Screen-${screen.screenNumber}`);
-    setScreenPin(screen.pin || '');
     setSelectedInventoryId(account.id);
 
-    // Set validity from account if available
+    const emptyScreen = (account.screens || []).find(s => s.status === 'empty') || (account.screens || [])[0];
+    if (emptyScreen) {
+      setScreenNumber(emptyScreen.name || `Screen-${emptyScreen.screenNumber}`);
+      setScreenPin(emptyScreen.pin || '');
+    }
+
     if (account.validity) {
       setValidity(account.validity);
     }
 
-    // Set price for this validity
-    if (pickerBrand.prices && pickerBrand.prices[account.validity || validity]) {
-      setAmount(String(pickerBrand.prices[account.validity || validity]));
-    }
-
-    // Close both opened pages!
-    setPickerStep(null);
-    setPickerBrand(null);
-    showToast(`Selected ${pickerBrand.displayName} ${screen.name || 'Screen'}! Credentials auto-filled.`, 'success');
+    setShowAccountMenu(false);
+    showToast(`Auto-filled account credentials`, 'success');
   };
 
   const handleSubmit = async (e) => {
@@ -144,21 +132,29 @@ export default function SaleScreen({
       return;
     }
     if (!accountEmail.trim()) {
-      showToast('Please enter Account Email or ID (or select an account)', 'error');
+      showToast('Please enter Account ID / Email', 'error');
+      return;
+    }
+
+    const cleanNumber = customerNumber.replace(/\D/g, '');
+    if (cleanNumber.length < 10) {
+      showToast('Please enter a valid 10-digit WhatsApp number', 'error');
       return;
     }
 
     try {
       setIsSubmitting(true);
+
       const salePayload = {
         brandId,
+        brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
         validity,
         activationDate,
         expiryDate,
         accountEmail: accountEmail.trim(),
         accountPassword: accountPassword.trim(),
         screenNumber: screenNumber.trim() || '01',
-        screenPin: screenPin.trim() || '1234',
+        screenPin: screenPin.trim() || '1111',
         amount: Number(amount) || 199,
         deviceName: deviceName.trim() || 'Personal Device',
         customerName: customerName.trim(),
@@ -168,6 +164,24 @@ export default function SaleScreen({
         inventoryId: selectedInventoryId || null
       };
 
+      // 1). Format WhatsApp confirmation message and DIRECTLY open WhatsApp
+      const waMsg = formatSaleConfirmationMessage({
+        customerName: customerName.trim(),
+        brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
+        accountEmail: accountEmail.trim(),
+        accountPassword: accountPassword.trim(),
+        screenNumber: screenNumber.trim() || '01',
+        screenPin: screenPin.trim() || '1111',
+        deviceName: deviceName.trim(),
+        validity,
+        expiryDate
+      });
+
+      const waLink = buildWhatsAppLink(customerNumber.trim(), waMsg);
+      // Immediately open WhatsApp in new window/app
+      window.open(waLink, '_blank');
+
+      // 2). Saves on DataBase
       await onSaleSuccess(salePayload);
 
       confetti({
@@ -176,7 +190,7 @@ export default function SaleScreen({
         origin: { y: 0.7 }
       });
 
-      showToast('Sale recorded successfully!', 'success');
+      showToast('Saved to Database & WhatsApp opened!', 'success');
     } catch (err) {
       showToast(err.message || 'Failed to submit sale', 'error');
     } finally {
@@ -184,197 +198,248 @@ export default function SaleScreen({
     }
   };
 
+  // ========================================================
+  // VIEW: 3-COLUMN BRANDS GRID MATCHING image copy 13.png
+  // ========================================================
+  if (isPickingBrand) {
+    return (
+      <OttBrandsGrid
+        brands={brands}
+        onSelectBrand={handleSelectBrandInGrid}
+        onBack={() => setIsPickingBrand(false)}
+      />
+    );
+  }
+
+  // ========================================================
+  // VIEW: COMPACT SALE FORM ADJUSTED IN SCREEN (image copy 16 & 19)
+  // ========================================================
   return (
-    <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '12px' }}>
-      {/* Exact Old Design Classic Sale Form (as per image copy.png) */}
-      <form onSubmit={handleSubmit} className="sale-form-container">
-        {/* Row 1: Brand & Validity */}
-        <div className="form-row-2">
-          {/* Brand Dropdown Button - Clicking opens 3-column Brands List */}
+    <div className="sale-form-compact" style={{ paddingBottom: '90px' }}>
+      <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: '580px', margin: '0 auto' }}>
+        
+        {/* Row 1: Brand & Validity (with compact Expiry preview) */}
+        <div className="sale-row-2-compact">
+          {/* Brand Box -> Clicking opens Brands List (image copy 13.png) */}
           <div style={{ position: 'relative' }}>
-            <label className="form-label">Brand</label>
+            <div className="sale-label-compact">
+              <span>Brand</span>
+            </div>
             <div
-              className="brand-select-pill"
-              onClick={handleOpenBrandPicker}
+              onClick={() => setIsPickingBrand(true)}
               id="sale-brand-dropdown-btn"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '8px 12px',
-                borderRadius: '12px',
+                padding: '6px 10px',
+                borderRadius: '10px',
                 background: currentBrand?.bgDark || '#000000',
                 color: '#ffffff',
                 cursor: 'pointer',
-                boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.2), 0 2px 4px rgba(0,0,0,0.3)',
-                border: '1px solid #334155',
-                minHeight: '44px'
+                border: '1.5px solid #334155',
+                height: '40px',
+                boxSizing: 'border-box'
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {currentBrand?.logo ? (
-                  <img
-                    src={currentBrand.logo}
-                    alt={currentBrand.displayName}
-                    style={{ height: '20px', maxWidth: '30px', objectFit: 'contain' }}
-                  />
-                ) : (
-                  <span
-                    style={{
-                      width: '20px',
-                      height: '20px',
-                      borderRadius: '4px',
-                      background: currentBrand?.color || '#e50914',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontWeight: 900,
-                      fontSize: '12px',
-                      color: '#ffffff'
-                    }}
-                  >
-                    {(currentBrand?.name || 'N')[0]}
-                  </span>
-                )}
-                <span style={{ fontSize: '14px', fontWeight: 800, letterSpacing: '0.5px' }}>
-                  {currentBrand?.displayName || currentBrand?.name || 'Select Brand'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <OttLogo brandId={currentBrand?.id} name={currentBrand?.displayName} size={26} />
+                <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {currentBrand?.displayName || currentBrand?.name || 'Select OTT'}
                 </span>
               </div>
-              <ChevronDown size={16} color="#ffffff" />
+              <ChevronDown size={16} color="#ffffff" style={{ flexShrink: 0 }} />
             </div>
           </div>
 
-          {/* Validity Dropdown Button */}
+          {/* Validity Box -> Professional Floating Popover (image copy 17.png) */}
           <div style={{ position: 'relative' }}>
-            <label className="form-label">Validity</label>
+            <div className="sale-label-compact">
+              <span>Validity</span>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#16a34a' }}>
+                Exp: {expiryDate || '...'}
+              </span>
+            </div>
             <div
-              className="form-input-pill"
+              onClick={() => setShowValidityMenu(!showValidityMenu)}
+              id="sale-validity-dropdown-btn"
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
+                padding: '6px 10px',
+                borderRadius: '10px',
+                background: '#ffffff',
+                color: '#0f172a',
                 cursor: 'pointer',
-                minHeight: '44px',
-                fontWeight: 700,
-                color: '#0f172a'
+                border: '1.5px solid #cbd5e1',
+                height: '40px',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                boxSizing: 'border-box'
               }}
-              onClick={() => setShowValidityMenu(!showValidityMenu)}
-              id="sale-validity-dropdown"
             >
-              <span style={{ fontSize: '14px', fontWeight: 800 }}>
-                {validity}
-              </span>
+              <span>{validity}</span>
               <ChevronDown size={16} color="#64748b" />
             </div>
 
-            {/* Validity Dropdown Options */}
+            {/* Professional Validity Popover matching image copy 17.png */}
             {showValidityMenu && (
-              <div className="dropdown-menu-list">
-                {validityOptions.map(option => (
-                  <button
-                    key={option}
-                    type="button"
-                    className="dropdown-pill-item"
-                    onClick={() => {
-                      setValidity(option);
-                      setShowValidityMenu(false);
-                    }}
-                  >
-                    {option}
-                  </button>
-                ))}
+              <div className="validity-popover-card">
+                {validityOptions.map(opt => {
+                  const isSelected = opt === validity;
+                  return (
+                    <button
+                      key={opt}
+                      type="button"
+                      className={`validity-option-btn ${isSelected ? 'selected' : ''}`}
+                      onClick={() => {
+                        setValidity(opt);
+                        setShowValidityMenu(false);
+                      }}
+                    >
+                      {isSelected && <Check size={14} strokeWidth={3} />}
+                      <span>{opt}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
 
-        {/* Row 2: Activation Date & Expiry Date */}
-        <div className="form-row-2">
-          <div>
-            <label className="form-label">Activation (DD-MM-YYYY)</label>
-            <button
-              type="button"
-              className="form-input-pill green-theme"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                cursor: 'pointer',
-                minHeight: '44px',
-                width: '100%'
-              }}
-              onClick={() => setShowDatePicker(true)}
-              id="sale-activation-date-btn"
-            >
-              <span style={{ fontWeight: 800 }}>{activationDate}</span>
-              <Calendar size={18} color="#15803d" />
-            </button>
+        {/* Row 2: ID Row -> Name Left, Box Right (image copy 14.png) */}
+        <div className="sale-horizontal-row">
+          <div className="sale-field-badge blue">
+            <User size={15} />
+            <span>ID</span>
           </div>
-
-          <div>
-            <label className="form-label">Expiry</label>
-            <div
-              className="form-input-pill"
-              style={{
-                background: '#f8fafc',
-                minHeight: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                fontWeight: 800,
-                color: '#334155',
-                fontSize: '14px'
+          <div className="sale-horizontal-input-wrapper">
+            <input
+              type="text"
+              className="sale-horizontal-input blue-theme"
+              value={accountEmail}
+              onChange={e => {
+                setAccountEmail(e.target.value);
+                setSelectedInventoryId(null);
               }}
-            >
-              {expiryDate || 'Calculating...'}
-            </div>
+              placeholder="Type ID or pick from dropdown"
+              id="sale-account-email"
+              style={{ paddingRight: brandAccounts.length > 0 ? '36px' : '10px' }}
+              required
+            />
+            {brandAccounts.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowAccountMenu(!showAccountMenu)}
+                style={{
+                  position: 'absolute',
+                  right: '6px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  color: '#2563eb',
+                  padding: '4px'
+                }}
+                title="Select from existing accounts"
+                id="sale-account-dropdown-toggle"
+              >
+                <ChevronDown size={18} />
+              </button>
+            )}
+
+            {/* Account Selector Menu */}
+            {showAccountMenu && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 'calc(100% + 4px)',
+                  left: 0,
+                  right: 0,
+                  background: '#ffffff',
+                  border: '1.5px solid #93c5fd',
+                  borderRadius: '12px',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.15)',
+                  zIndex: 220,
+                  maxHeight: '190px',
+                  overflowY: 'auto',
+                  padding: '4px'
+                }}
+              >
+                {brandAccounts.map((acc, idx) => {
+                  const freeSlots = (acc.screens || []).filter(s => s.status === 'empty').length;
+                  return (
+                    <div
+                      key={acc.id || idx}
+                      onClick={() => handleSelectAccount(acc)}
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: 700,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        borderBottom: idx < brandAccounts.length - 1 ? '1px solid #f1f5f9' : 'none',
+                        background: '#ffffff'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#ffffff'}
+                    >
+                      <span style={{ color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {acc.email}
+                      </span>
+                      <span style={{
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        color: freeSlots > 0 ? '#16a34a' : '#dc2626',
+                        background: freeSlots > 0 ? '#dcfce7' : '#fee2e2',
+                        padding: '2px 6px',
+                        borderRadius: '6px',
+                        whiteSpace: 'nowrap'
+                      }}>
+                        {freeSlots} free
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Row 3: ID (with small Copy button) */}
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <label className="form-label" style={{ margin: 0 }}>ID</label>
-            {accountEmail && <CopyButton text={accountEmail} label="Copy ID" />}
+        {/* Row 3: Password Row -> Name Left, Box Right (image copy 14.png) */}
+        <div className="sale-horizontal-row">
+          <div className="sale-field-badge purple">
+            <Lock size={15} />
+            <span>Password</span>
           </div>
-          <input
-            type="text"
-            className="form-input-pill blue-theme"
-            value={accountEmail}
-            onChange={e => setAccountEmail(e.target.value)}
-            placeholder="Type account ID or click Brand above to pick empty screen"
-            id="sale-account-email"
-            style={{ fontWeight: 700 }}
-          />
-        </div>
-
-        {/* Row 4: Password (with Eye reveal & Copy button) */}
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-            <label className="form-label" style={{ margin: 0 }}>Password</label>
-            {accountPassword && <CopyButton text={accountPassword} label="Copy Password" />}
-          </div>
-          <div style={{ position: 'relative' }}>
+          <div className="sale-horizontal-input-wrapper">
             <input
               type={showPassword ? 'text' : 'password'}
-              className="form-input-pill purple-theme"
-              style={{ paddingRight: '42px', fontWeight: 700 }}
+              className="sale-horizontal-input purple-theme"
               value={accountPassword}
               onChange={e => setAccountPassword(e.target.value)}
               placeholder="Type password"
               id="sale-account-password"
+              style={{ paddingRight: '40px' }}
             />
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
               style={{
                 position: 'absolute',
-                right: '12px',
+                right: '8px',
                 top: '50%',
                 transform: 'translateY(-50%)',
                 background: 'transparent',
                 border: 'none',
                 cursor: 'pointer',
-                color: '#7e22ce'
+                color: '#7e22ce',
+                padding: '4px'
               }}
               aria-label="Toggle password visibility"
             >
@@ -383,45 +448,42 @@ export default function SaleScreen({
           </div>
         </div>
 
-        {/* Row 5: Screen No & Screen Pin (with Copy button) */}
-        <div className="form-row-2">
+        {/* Row 4: Screen No & Screen Pin */}
+        <div className="sale-row-2-compact">
           <div>
-            <label className="form-label">Screen No</label>
+            <div className="sale-label-compact">Screen No</div>
             <input
               type="text"
-              className="form-input-pill yellow-theme"
+              className="sale-input-compact"
               value={screenNumber}
               onChange={e => setScreenNumber(e.target.value)}
               placeholder="e.g. Screen-2"
               id="sale-screen-number"
-              style={{ fontWeight: 800 }}
+              style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
             />
           </div>
 
           <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-              <label className="form-label" style={{ margin: 0 }}>Screen Pin</label>
-              {screenPin && <CopyButton text={screenPin} label="Copy PIN" />}
-            </div>
+            <div className="sale-label-compact">Screen Pin</div>
             <input
               type="text"
-              className="form-input-pill cyan-theme"
+              className="sale-input-compact"
               value={screenPin}
               onChange={e => setScreenPin(e.target.value)}
               placeholder="e.g. 2222"
               id="sale-screen-pin"
-              style={{ fontWeight: 800 }}
+              style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
             />
           </div>
         </div>
 
-        {/* Row 6: Amount & Device Name */}
-        <div className="form-row-2">
+        {/* Row 5: Amount & Device Name */}
+        <div className="sale-row-2-compact">
           <div>
-            <label className="form-label">Amount</label>
+            <div className="sale-label-compact">Amount</div>
             <input
               type="number"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={amount}
               onChange={e => setAmount(e.target.value)}
               placeholder="Type Amount"
@@ -431,10 +493,10 @@ export default function SaleScreen({
           </div>
 
           <div>
-            <label className="form-label">Device Name</label>
+            <div className="sale-label-compact">Device Name</div>
             <input
               type="text"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={deviceName}
               onChange={e => setDeviceName(e.target.value)}
               placeholder="Type Device Name"
@@ -443,45 +505,47 @@ export default function SaleScreen({
           </div>
         </div>
 
-        {/* Customer Details Section */}
-        <div className="section-divider-title" style={{ marginTop: '16px', marginBottom: '8px' }}>
+        {/* Customer Details Divider */}
+        <div className="customer-divider-compact">
           Customer Details
         </div>
 
-        <div className="form-row-2">
+        {/* Row 6: Customer Name & Number */}
+        <div className="sale-row-2-compact">
           <div>
-            <label className="form-label">Name</label>
+            <div className="sale-label-compact">Name</div>
             <input
               type="text"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={customerName}
               onChange={e => setCustomerName(e.target.value)}
               placeholder="Type Name"
-              required
               id="sale-customer-name"
+              required
             />
           </div>
 
           <div>
-            <label className="form-label">Number</label>
+            <div className="sale-label-compact">Number</div>
             <input
               type="tel"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={customerNumber}
               onChange={e => setCustomerNumber(e.target.value)}
               placeholder="Type Number"
-              required
               id="sale-customer-number"
+              required
             />
           </div>
         </div>
 
-        <div className="form-row-2">
+        {/* Row 7: Reference Name & Number */}
+        <div className="sale-row-2-compact">
           <div>
-            <label className="form-label">Reference Name</label>
+            <div className="sale-label-compact">Reference Name</div>
             <input
               type="text"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={referenceName}
               onChange={e => setReferenceName(e.target.value)}
               placeholder="Type Reference Name"
@@ -490,10 +554,10 @@ export default function SaleScreen({
           </div>
 
           <div>
-            <label className="form-label">Reference Number</label>
+            <div className="sale-label-compact">Reference Number</div>
             <input
               type="tel"
-              className="form-input-pill"
+              className="sale-input-compact"
               value={referenceNumber}
               onChange={e => setReferenceNumber(e.target.value)}
               placeholder="Type Reference Number"
@@ -502,17 +566,17 @@ export default function SaleScreen({
           </div>
         </div>
 
-        {/* Big Orange Send Button (exact like old design) */}
+        {/* Big Orange Send Button (image copy 18.png) */}
         <button
           type="submit"
           className="glossy-btn glossy-btn-orange"
           style={{
             width: '100%',
-            padding: '16px',
-            fontSize: '18px',
+            height: '46px',
+            fontSize: '17px',
             fontWeight: 900,
-            marginTop: '20px',
-            borderRadius: '16px',
+            marginTop: '8px',
+            borderRadius: '12px',
             letterSpacing: '0.5px'
           }}
           disabled={isSubmitting}
@@ -521,363 +585,6 @@ export default function SaleScreen({
           {isSubmitting ? 'Saving...' : 'Send'}
         </button>
       </form>
-
-      {/* Date Picker Modal */}
-      <DatePickerModal
-        isOpen={showDatePicker}
-        initialDate={activationDate}
-        onSelect={(newDate) => setActivationDate(newDate)}
-        onClose={() => setShowDatePicker(false)}
-      />
-
-      {/* ======================================================== */}
-      {/* STEP 1: BRANDS LIST (03 Columns × Rows as specified)     */}
-      {/* ======================================================== */}
-      {pickerStep === 'brands_grid' && (
-        <div className="modal-backdrop" onClick={() => setPickerStep(null)}>
-          <div
-            className="modal-card"
-            onClick={e => e.stopPropagation()}
-            style={{ maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
-          >
-            <div className="modal-header">
-              <div>
-                <h3 className="modal-title">Select OTT Brand</h3>
-                <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
-                  Tap a brand to view available empty screens
-                </p>
-              </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setPickerStep(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div style={{
-              overflowY: 'auto',
-              padding: '16px',
-              display: 'grid',
-              gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: '12px'
-            }}>
-              {brands.map(brand => (
-                <button
-                  key={brand.id}
-                  type="button"
-                  onClick={() => handleSelectBrandInGrid(brand)}
-                  style={{
-                    background: '#ffffff',
-                    border: '1.5px solid #e2e8f0',
-                    borderRadius: '14px',
-                    padding: '12px 6px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                    transition: 'all 0.15s ease'
-                  }}
-                >
-                  <div style={{
-                    width: '44px',
-                    height: '44px',
-                    borderRadius: '10px',
-                    background: brand.bgDark || '#0f172a',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    padding: '4px'
-                  }}>
-                    {brand.logo ? (
-                      <img
-                        src={brand.logo}
-                        alt={brand.displayName}
-                        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                      />
-                    ) : (
-                      <span style={{ color: '#ffffff', fontWeight: 900, fontSize: '16px' }}>
-                        {(brand.displayName || brand.name)[0]}
-                      </span>
-                    )}
-                  </div>
-                  <span style={{
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    color: '#0f172a',
-                    textAlign: 'center',
-                    lineHeight: '1.2'
-                  }}>
-                    {brand.displayName || brand.name}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ======================================================== */}
-      {/* STEP 2: ACCOUNTS DATABASE FOR SELECTED BRAND              */}
-      {/* (Old classic design from image.png / image copy 10.png)  */}
-      {/* ======================================================== */}
-      {pickerStep === 'accounts_database' && pickerBrand && (
-        <div className="modal-backdrop" onClick={() => setPickerStep(null)}>
-          <div
-            className="modal-card"
-            onClick={e => e.stopPropagation()}
-            style={{
-              maxHeight: '90vh',
-              width: '95%',
-              maxWidth: '600px',
-              display: 'flex',
-              flexDirection: 'column',
-              background: '#f8fafc'
-            }}
-          >
-            {/* Modal Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '14px 16px',
-              background: '#ffffff',
-              borderBottom: '1px solid #e2e8f0',
-              borderTopLeftRadius: '20px',
-              borderTopRightRadius: '20px'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <button
-                  type="button"
-                  onClick={() => setPickerStep('brands_grid')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    cursor: 'pointer',
-                    color: '#334155',
-                    padding: '4px'
-                  }}
-                  title="Back to Brands"
-                >
-                  <ArrowLeft size={20} />
-                </button>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: '17px', fontWeight: 900, color: '#0f172a' }}>
-                    {pickerBrand.displayName} Accounts
-                  </h3>
-                  <span style={{ fontSize: '12px', color: '#16a34a', fontWeight: 700 }}>
-                    Tap any Empty Screen (+) to Sell
-                  </span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setPickerStep(null)}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Filter Toggle */}
-            <div style={{ padding: '10px 16px', background: '#ffffff', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '8px' }}>
-              <button
-                type="button"
-                className={`filter-pill-btn ${pickerEmptyOnly ? 'glossy-btn-blue' : 'glossy-btn-gray'}`}
-                onClick={() => setPickerEmptyOnly(!pickerEmptyOnly)}
-                style={{ padding: '6px 12px', fontSize: '12px' }}
-              >
-                <Check size={14} /> Only Empty Screens
-              </button>
-            </div>
-
-            {/* Accounts List */}
-            <div style={{ overflowY: 'auto', padding: '14px 16px', flex: 1 }}>
-              {pickerLoading ? (
-                <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
-                  Loading {pickerBrand.displayName} accounts...
-                </div>
-              ) : pickerAccounts.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '30px 16px', background: '#ffffff', borderRadius: '16px' }}>
-                  <p style={{ fontWeight: 700, color: '#64748b', margin: '0 0 10px' }}>
-                    No accounts found for {pickerBrand.displayName}.
-                  </p>
-                  <p style={{ fontSize: '13px', color: '#94a3b8' }}>
-                    Add accounts from Data section first or type credentials manually.
-                  </p>
-                </div>
-              ) : (
-                pickerAccounts
-                  .filter(acc => !pickerEmptyOnly || (acc.screens && acc.screens.some(s => s.status === 'empty')))
-                  .map(acc => {
-                    const freeCount = (acc.screens || []).filter(s => s.status === 'empty').length;
-                    const totalScreens = acc.screens?.length || 5;
-
-                    return (
-                      <div
-                        key={acc.id}
-                        className="inventory-card"
-                        style={{ marginBottom: '16px', border: '1.5px solid #cbd5e1' }}
-                      >
-                        {/* Top Card Row */}
-                        <div className="card-top-row">
-                          <div className="ribbon-badge">
-                            {acc.recordNumber || '01'}
-                          </div>
-
-                          <div style={{ fontSize: '13px', fontWeight: 800, color: freeCount > 0 ? '#16a34a' : '#dc2626' }}>
-                            {freeCount}/{totalScreens} Screens Available
-                          </div>
-
-                          <div className="badge-navy-pill">
-                            {acc.validity || '12 Months'}
-                          </div>
-                        </div>
-
-                        {/* ID Row */}
-                        <div className="credential-row">
-                          <div className="credential-label-badge blue">
-                            ID
-                          </div>
-                          <div style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            background: '#f8fafc',
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            fontSize: '14px',
-                            color: '#0f172a',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}>
-                            <span>{acc.email}</span>
-                            <CopyButton text={acc.email} />
-                          </div>
-                        </div>
-
-                        {/* Password Row */}
-                        <div className="credential-row">
-                          <div className="credential-label-badge purple">
-                            Password
-                          </div>
-                          <div style={{
-                            flex: 1,
-                            padding: '8px 12px',
-                            background: '#f8fafc',
-                            borderRadius: '8px',
-                            fontWeight: 700,
-                            fontSize: '14px',
-                            color: '#0f172a',
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center'
-                          }}>
-                            <span>••••••••</span>
-                            <CopyButton text={acc.password} />
-                          </div>
-                        </div>
-
-                        {/* Screens Row with PINs and Selection */}
-                        <div style={{ marginTop: '12px' }}>
-                          {/* PINs row */}
-                          <div className="screens-grid-row" style={{ marginBottom: '6px' }}>
-                            {(acc.screens || []).map((screen, sIdx) => (
-                              <div
-                                key={sIdx}
-                                style={{
-                                  fontSize: '11px',
-                                  fontWeight: 800,
-                                  color: '#475569',
-                                  background: '#f1f5f9',
-                                  padding: '2px 4px',
-                                  borderRadius: '4px',
-                                  textAlign: 'center'
-                                }}
-                              >
-                                {screen.pin || '1234'}
-                              </div>
-                            ))}
-                          </div>
-
-                          {/* Screen Buttons */}
-                          <div className="screens-grid-row">
-                            {(acc.screens || []).map((screen, sIdx) => {
-                              const isEmpty = screen.status === 'empty';
-
-                              return (
-                                <button
-                                  key={sIdx}
-                                  type="button"
-                                  onClick={() => {
-                                    if (isEmpty) {
-                                      handleSelectEmptyScreen(acc, screen);
-                                    } else {
-                                      showToast(`Screen ${screen.name || sIdx + 1} is already sold!`, 'error');
-                                    }
-                                  }}
-                                  style={{
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    padding: '8px 4px',
-                                    cursor: isEmpty ? 'pointer' : 'not-allowed',
-                                    background: isEmpty ? '#f97316' : '#94a3b8',
-                                    color: '#ffffff',
-                                    fontWeight: 800,
-                                    fontSize: '12px',
-                                    boxShadow: isEmpty ? '0 2px 4px rgba(249,115,22,0.35)' : 'none',
-                                    opacity: isEmpty ? 1 : 0.6,
-                                    transition: 'transform 0.1s ease'
-                                  }}
-                                  title={isEmpty ? 'Click to select this screen for Sale' : 'Screen is occupied'}
-                                >
-                                  {screen.name || `Screen-${sIdx + 1}`}
-                                </button>
-                              );
-                            })}
-                          </div>
-
-                          {/* Status / Tap to Pick Row */}
-                          <div className="screens-grid-row" style={{ marginTop: '6px' }}>
-                            {(acc.screens || []).map((screen, sIdx) => {
-                              const isEmpty = screen.status === 'empty';
-
-                              return (
-                                <div
-                                  key={sIdx}
-                                  onClick={() => {
-                                    if (isEmpty) handleSelectEmptyScreen(acc, screen);
-                                  }}
-                                  style={{
-                                    padding: '4px 2px',
-                                    borderRadius: '6px',
-                                    textAlign: 'center',
-                                    fontSize: '11px',
-                                    fontWeight: 800,
-                                    cursor: isEmpty ? 'pointer' : 'default',
-                                    background: isEmpty ? '#dcfce7' : '#fee2e2',
-                                    color: isEmpty ? '#16a34a' : '#dc2626',
-                                    border: isEmpty ? '1.5px dashed #22c55e' : '1px solid #fca5a5'
-                                  }}
-                                >
-                                  {isEmpty ? '+ EMPTY' : 'SOLD'}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

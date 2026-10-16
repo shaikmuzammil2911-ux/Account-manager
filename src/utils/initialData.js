@@ -38,7 +38,7 @@ export function getClientInitialData() {
     {
       id: 'prime_video',
       name: 'Prime Video',
-      displayName: 'Amazon Prime Video',
+      displayName: 'Prime Video',
       color: '#00a8e1',
       bgDark: '#0f172a',
       badgeColor: '#0284c7',
@@ -58,9 +58,31 @@ export function getClientInitialData() {
       prices: { '01 Month': 149, '03 Months': 349, '12 Months': 899 }
     },
     {
+      id: 'zee5',
+      name: 'ZEE5',
+      displayName: 'ZEE5',
+      color: '#f97316',
+      bgDark: '#431407',
+      badgeColor: '#ea580c',
+      screensCount: 3,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 249, '12 Months': 599 }
+    },
+    {
+      id: 'voot',
+      name: 'Voot',
+      displayName: 'Voot',
+      color: '#7c3aed',
+      bgDark: '#4c1d95',
+      badgeColor: '#8b5cf6',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 249, '12 Months': 599 }
+    },
+    {
       id: 'sonyliv',
-      name: 'SonyLIV',
-      displayName: 'Sony LIV Premium',
+      name: 'Sony LIV',
+      displayName: 'Sony LIV',
       color: '#a855f7',
       bgDark: '#2e1065',
       badgeColor: '#9333ea',
@@ -69,15 +91,136 @@ export function getClientInitialData() {
       prices: { '01 Month': 129, '06 Months': 499, '12 Months': 799 }
     },
     {
-      id: 'zee5',
-      name: 'ZEE5',
-      displayName: 'ZEE5 Club',
+      id: 'jiocinema',
+      name: 'JioCinema',
+      displayName: 'JioCinema',
+      color: '#e11d48',
+      bgDark: '#4c0519',
+      badgeColor: '#be123c',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 89, '03 Months': 199, '12 Months': 499 }
+    },
+    {
+      id: 'altbalaji',
+      name: 'ALTBalaji',
+      displayName: 'ALTBalaji',
+      color: '#ef4444',
+      bgDark: '#1c1917',
+      badgeColor: '#dc2626',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 79, '03 Months': 199, '12 Months': 499 }
+    },
+    {
+      id: 'airtel_xstream',
+      name: 'Airtel Xstream',
+      displayName: 'Airtel Xstream',
+      color: '#dc2626',
+      bgDark: '#ffffff',
+      badgeColor: '#b91c1c',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 149, '03 Months': 399, '12 Months': 999 }
+    },
+    {
+      id: 'hungama_play',
+      name: 'Hungama Play',
+      displayName: 'Hungama Play',
+      color: '#d97706',
+      bgDark: '#1c1917',
+      badgeColor: '#b45309',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 89, '03 Months': 219, '12 Months': 599 }
+    },
+    {
+      id: 'epic_on',
+      name: 'EPIC ON',
+      displayName: 'EPIC ON',
       color: '#f97316',
-      bgDark: '#431407',
+      bgDark: '#0a192f',
       badgeColor: '#ea580c',
-      screensCount: 3,
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 79, '03 Months': 189, '12 Months': 499 }
+    },
+    {
+      id: 'shemaroome',
+      name: 'ShemarooMe',
+      displayName: 'ShemarooMe',
+      color: '#ec4899',
+      bgDark: '#ffffff',
+      badgeColor: '#db2777',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 89, '03 Months': 229, '12 Months': 599 }
+    },
+    {
+      id: 'sun_nxt',
+      name: 'Sun NXT',
+      displayName: 'Sun NXT',
+      color: '#b91c1c',
+      bgDark: '#3b0764',
+      badgeColor: '#991b1b',
+      screensCount: 4,
       plans: ['01 Month', '03 Months', '12 Months'],
       prices: { '01 Month': 99, '03 Months': 249, '12 Months': 599 }
+    },
+    {
+      id: 'hoichoi',
+      name: 'Hoichoi',
+      displayName: 'Hoichoi',
+      color: '#e11d48',
+      bgDark: '#0a0a0a',
+      badgeColor: '#be123c',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 249, '12 Months': 699 }
+    },
+    {
+      id: 'chaupal',
+      name: 'Chaupal',
+      displayName: 'Chaupal',
+      color: '#facc15',
+      bgDark: '#1e1b4b',
+      badgeColor: '#ca8a04',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 249, '12 Months': 699 }
+    },
+    {
+      id: 'apple_tv',
+      name: 'Apple TV+',
+      displayName: 'Apple TV+',
+      color: '#334155',
+      bgDark: '#000000',
+      badgeColor: '#475569',
+      screensCount: 6,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 99, '03 Months': 269, '12 Months': 999 }
+    },
+    {
+      id: 'discovery_plus',
+      name: 'Discovery+',
+      displayName: 'Discovery+',
+      color: '#0284c7',
+      bgDark: '#020b24',
+      badgeColor: '#0369a1',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 89, '03 Months': 219, '12 Months': 599 }
+    },
+    {
+      id: 'hulu',
+      name: 'Hulu',
+      displayName: 'Hulu',
+      color: '#1ce783',
+      bgDark: '#000000',
+      badgeColor: '#16a34a',
+      screensCount: 4,
+      plans: ['01 Month', '03 Months', '12 Months'],
+      prices: { '01 Month': 149, '03 Months': 399, '12 Months': 1199 }
     },
     {
       id: 'youtube_premium',
@@ -93,7 +236,7 @@ export function getClientInitialData() {
     {
       id: 'spotify',
       name: 'Spotify',
-      displayName: 'Spotify Premium Family',
+      displayName: 'Spotify',
       color: '#22c55e',
       bgDark: '#052e16',
       badgeColor: '#16a34a',
@@ -102,30 +245,8 @@ export function getClientInitialData() {
       prices: { '01 Month': 119, '03 Months': 299, '12 Months': 999 }
     },
     {
-      id: 'apple_tv',
-      name: 'Apple TV+',
-      displayName: 'Apple TV+ 4K',
-      color: '#334155',
-      bgDark: '#09090b',
-      badgeColor: '#475569',
-      screensCount: 6,
-      plans: ['01 Month', '03 Months', '12 Months'],
-      prices: { '01 Month': 99, '03 Months': 269, '12 Months': 999 }
-    },
-    {
-      id: 'jiocinema',
-      name: 'JioCinema',
-      displayName: 'JioCinema Premium',
-      color: '#e11d48',
-      bgDark: '#4c0519',
-      badgeColor: '#be123c',
-      screensCount: 4,
-      plans: ['01 Month', '03 Months', '12 Months'],
-      prices: { '01 Month': 89, '03 Months': 199, '12 Months': 499 }
-    },
-    {
       id: 'aha',
-      name: 'aha',
+      name: 'Aha',
       displayName: 'Aha Telugu & Tamil',
       color: '#ff5400',
       bgDark: '#431407',

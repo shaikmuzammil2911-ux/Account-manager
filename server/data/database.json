@@ -317,9 +317,9 @@
           "screenNumber": 1,
           "name": "Screen-1",
           "pin": "1001",
-          "status": "occupied",
-          "saleId": "sale_1791987356924",
-          "expiryDate": "20-Jan-2027"
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
         },
         {
           "screenNumber": 2,
@@ -327,7 +327,7 @@
           "pin": "2222",
           "status": "occupied",
           "saleId": "sale_bharath",
-          "expiryDate": "14-Oct-2026"
+          "expiryDate": "16-Oct-2026"
         },
         {
           "screenNumber": 3,
@@ -396,7 +396,7 @@
           "pin": "4444",
           "status": "occupied",
           "saleId": "sale_santhosh",
-          "expiryDate": "16-Oct-2026"
+          "expiryDate": "18-Oct-2026"
         },
         {
           "screenNumber": 5,
@@ -425,7 +425,7 @@
           "pin": "5678",
           "status": "occupied",
           "saleId": "sale_riya",
-          "expiryDate": "16-Oct-2026"
+          "expiryDate": "18-Oct-2026"
         },
         {
           "screenNumber": 2,
@@ -463,35 +463,35 @@
     },
     {
       "id": "inv_6",
-      "brandId": "netflix",
-      "recordNumber": "05",
-      "email": "aarav.mehta23@gmail.com",
-      "password": "Nf!x@2025#",
+      "brandId": "disney_hotstar",
+      "recordNumber": "01",
+      "email": "hotstar.vip2026@gmail.com",
+      "password": "Disney@Hot2026",
       "validity": "12 Months",
       "isLocked": true,
       "isSelected": false,
-      "createdAt": "2025-05-10",
+      "createdAt": "2025-06-01",
       "screens": [
         {
           "screenNumber": 1,
           "name": "Screen-1",
-          "pin": "1234",
-          "status": "occupied",
-          "saleId": "sale_aarav",
-          "expiryDate": "13-Oct-2026"
-        },
-        {
-          "screenNumber": 2,
-          "name": "Screen-2",
-          "pin": "1234",
+          "pin": "1010",
           "status": "empty",
           "saleId": null,
           "expiryDate": null
         },
         {
+          "screenNumber": 2,
+          "name": "Screen-2",
+          "pin": "2020",
+          "status": "occupied",
+          "saleId": "sale_hotstar",
+          "expiryDate": "15-Aug-2026"
+        },
+        {
           "screenNumber": 3,
           "name": "Screen-3",
-          "pin": "1234",
+          "pin": "3030",
           "status": "empty",
           "saleId": null,
           "expiryDate": null
@@ -499,15 +499,7 @@
         {
           "screenNumber": 4,
           "name": "Screen-4",
-          "pin": "1234",
-          "status": "empty",
-          "saleId": null,
-          "expiryDate": null
-        },
-        {
-          "screenNumber": 5,
-          "name": "Screen-5",
-          "pin": "1234",
+          "pin": "4040",
           "status": "empty",
           "saleId": null,
           "expiryDate": null
@@ -527,15 +519,15 @@
       "screens": [
         {
           "screenNumber": 1,
-          "name": "Screen-01",
+          "name": "Screen-1",
           "pin": "1122",
-          "status": "occupied",
-          "saleId": "sale_1792083889030",
-          "expiryDate": "15-Oct-2027"
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
         },
         {
           "screenNumber": 2,
-          "name": "Screen-02",
+          "name": "Screen-2",
           "pin": "3344",
           "status": "occupied",
           "saleId": "sale_aha_1",
@@ -543,15 +535,15 @@
         },
         {
           "screenNumber": 3,
-          "name": "Screen-03",
+          "name": "Screen-3",
           "pin": "5566",
-          "status": "occupied",
-          "saleId": "sale_1792083970933",
-          "expiryDate": "15-Oct-2027"
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
         },
         {
           "screenNumber": 4,
-          "name": "Screen-04",
+          "name": "Screen-4",
           "pin": "7788",
           "status": "empty",
           "saleId": null,
@@ -562,56 +554,8 @@
   ],
   "sales": [
     {
-      "id": "sale_1792083970933",
-      "recordNumber": "09",
-      "customerName": "Rao Test",
-      "customerNumber": "9988112233",
-      "referenceName": "",
-      "referenceNumber": "",
-      "brandId": "aha",
-      "brandName": "Aha Telugu & Tamil",
-      "accountEmail": "aha.family.sub@gmail.com",
-      "accountPassword": "Aha@Telugu2026",
-      "validity": "12 Months",
-      "screenNumber": "03",
-      "screenPin": "5566",
-      "activationDate": "15-Oct-2026",
-      "expiryDate": "15-Oct-2027",
-      "amount": 699,
-      "deviceName": "Personal Device",
-      "saleDate": "15-Oct-2026",
-      "status": "Active",
-      "notificationSent": false,
-      "lastNotifiedAt": null,
-      "inventoryId": "inv_aha_1"
-    },
-    {
-      "id": "sale_1792083889030",
-      "recordNumber": "08",
-      "customerName": "Harish Test",
-      "customerNumber": "9988776655",
-      "referenceName": "",
-      "referenceNumber": "",
-      "brandId": "netflix",
-      "brandName": "Netflix",
-      "accountEmail": "aha.family.sub@gmail.com",
-      "accountPassword": "Aha@Telugu2026",
-      "validity": "12 Months",
-      "screenNumber": "01",
-      "screenPin": "1122",
-      "activationDate": "15-Oct-2026",
-      "expiryDate": "15-Oct-2027",
-      "amount": 1599,
-      "deviceName": "Personal Device",
-      "saleDate": "15-Oct-2026",
-      "status": "Active",
-      "notificationSent": false,
-      "lastNotifiedAt": null,
-      "inventoryId": "inv_aha_1"
-    },
-    {
       "id": "sale_aha_1",
-      "recordNumber": "07",
+      "recordNumber": "06",
       "customerName": "Venkat Rao",
       "customerNumber": "9440123456",
       "referenceName": "Srinivas",
@@ -634,30 +578,6 @@
       "inventoryId": "inv_aha_1"
     },
     {
-      "id": "sale_1791987356924",
-      "recordNumber": "06",
-      "customerName": "Ramesh Kumar",
-      "customerNumber": "9876543210",
-      "referenceName": "Suresh",
-      "referenceNumber": "9123456780",
-      "brandId": "netflix",
-      "brandName": "Netflix",
-      "accountEmail": "Fixyourmobiles@gmail.com",
-      "accountPassword": "Netflix @@123",
-      "validity": "03 Months",
-      "screenNumber": "Screen-2",
-      "screenPin": "2222",
-      "activationDate": "20-Oct-2026",
-      "expiryDate": "20-Jan-2027",
-      "amount": 499,
-      "deviceName": "Living Room TV",
-      "saleDate": "20-Oct-2026",
-      "status": "Active",
-      "notificationSent": false,
-      "lastNotifiedAt": null,
-      "inventoryId": "inv_3"
-    },
-    {
       "id": "sale_bharath",
       "recordNumber": "01",
       "customerName": "Bharath",
@@ -671,11 +591,11 @@
       "validity": "01 Month",
       "screenNumber": "02",
       "screenPin": "2222",
-      "activationDate": "14-Sep-2026",
-      "expiryDate": "14-Oct-2026",
+      "activationDate": "16-Sep-2026",
+      "expiryDate": "16-Oct-2026",
       "amount": 199,
       "deviceName": "OnePlus TV",
-      "saleDate": "14-Sep-2026",
+      "saleDate": "16-Sep-2026",
       "notificationSent": false,
       "lastNotifiedAt": null
     },
@@ -694,7 +614,7 @@
       "screenNumber": "04",
       "screenPin": "4444",
       "activationDate": "17-Jun-2026",
-      "expiryDate": "16-Oct-2026",
+      "expiryDate": "18-Oct-2026",
       "amount": 799,
       "deviceName": "Samsung TV",
       "saleDate": "17-Jun-2026",
@@ -715,13 +635,13 @@
       "validity": "12 Months",
       "screenNumber": "1 Screen",
       "screenPin": "1234",
-      "activationDate": "14-Oct-2025",
-      "expiryDate": "13-Oct-2026",
+      "activationDate": "16-Oct-2025",
+      "expiryDate": "15-Oct-2026",
       "amount": 1499,
       "deviceName": "LG OLED",
-      "saleDate": "14-Oct-2025",
+      "saleDate": "16-Oct-2025",
       "notificationSent": true,
-      "lastNotifiedAt": "13-Oct-2026"
+      "lastNotifiedAt": "15-Oct-2026"
     },
     {
       "id": "sale_riya",
@@ -738,7 +658,7 @@
       "screenNumber": "2 Screens",
       "screenPin": "5678",
       "activationDate": "28-Apr-2024",
-      "expiryDate": "28-Apr-2025",
+      "expiryDate": "18-Oct-2026",
       "amount": 999,
       "deviceName": "Firestick 4K",
       "saleDate": "28-Apr-2024",
@@ -799,12 +719,12 @@
     {
       "id": "admin_1",
       "email": "Fixyourmobiles10@gmail.com",
-      "password": "Password@321",
+      "password": "Password@123",
       "name": "Admin",
       "role": "admin",
-      "createdAt": "2026-10-16",
-      "updatedAt": "2026-10-16"
+      "createdAt": "2026-10-16"
     }
   ],
-  "otps": []
+  "customForms": [],
+  "cellMappings": {}
 }
