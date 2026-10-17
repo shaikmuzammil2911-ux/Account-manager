@@ -38,10 +38,25 @@ export default function App() {
   const [selectedBrand, setSelectedBrand] = useState(null);
   const [stats, setStats] = useState(null);
 
-  // Modals state
   const [showBrandSelector, setShowBrandSelector] = useState(false);
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
   const [notifySaleItem, setNotifySaleItem] = useState(null);
+
+  // Direct Password Reset link handler (from email ?reset=true&email=...&otp=...)
+  const [directResetParams] = useState(() => {
+    try {
+      if (typeof window !== 'undefined' && window.location.search) {
+        const p = new URLSearchParams(window.location.search);
+        if (p.get('reset') === 'true' && p.get('email')) {
+          return {
+            email: p.get('email'),
+            otp: p.get('otp') || ''
+          };
+        }
+      }
+    } catch (e) {}
+    return null;
+  });
 
   // Toast state
   const [toast, setToast] = useState({ message: '', type: 'info' });
@@ -142,6 +157,7 @@ export default function App() {
       <div className="mobile-app-root">
         <Toast message={toast.message} type={toast.type} />
         <LoginScreen
+          directResetParams={directResetParams}
           onLoginSuccess={(user) => {
             setCurrentUser(user);
             loadInitial();
@@ -189,16 +205,18 @@ export default function App() {
 
       {/* Main Responsive Mobile Viewport */}
       <div className="mobile-app-viewport">
-        {/* Top Header */}
-        <TopHeader
-          isHome={currentScreen === 'home'}
-          showBack={currentScreen !== 'home'}
-          onBack={handleBack}
-          title={getHeaderTitle()}
-          selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' && currentScreen !== 'forms-mgmt' ? selectedBrand : null}
-          onBrandClick={() => setShowBrandSelector(true)}
-          onOpenMenu={() => setShowMenuDrawer(true)}
-        />
+        {/* Top Header (Forms Management Screen renders its own dedicated header per requirement) */}
+        {currentScreen !== 'forms-mgmt' && (
+          <TopHeader
+            isHome={currentScreen === 'home'}
+            showBack={currentScreen !== 'home'}
+            onBack={handleBack}
+            title={getHeaderTitle()}
+            selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' ? selectedBrand : null}
+            onBrandClick={() => setShowBrandSelector(true)}
+            onOpenMenu={() => setShowMenuDrawer(true)}
+          />
+        )}
 
         {/* Screen Routing */}
         {currentScreen === 'home' && (

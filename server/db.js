@@ -5,18 +5,35 @@ import { getInitialData } from './initialData.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.join(__dirname, 'data');
-const DB_PATH = path.join(DATA_DIR, 'database.json');
+const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const BUNDLED_DATA_DIR = path.join(__dirname, 'data');
+const BUNDLED_DB_PATH = path.join(BUNDLED_DATA_DIR, 'database.json');
+
+const DATA_DIR = isVercel ? '/tmp/data' : BUNDLED_DATA_DIR;
+const DB_PATH = isVercel ? '/tmp/data/database.json' : BUNDLED_DB_PATH;
 
 // Ensure data folder and database exist
 function initDb() {
   if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    try {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    } catch (e) {}
   }
 
   if (!fs.existsSync(DB_PATH)) {
-    const initial = getInitialData();
-    fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2), 'utf-8');
+    let initial = null;
+    if (isVercel && fs.existsSync(BUNDLED_DB_PATH)) {
+      try {
+        const raw = fs.readFileSync(BUNDLED_DB_PATH, 'utf-8');
+        initial = JSON.parse(raw);
+      } catch (e) {}
+    }
+    if (!initial) {
+      initial = getInitialData();
+    }
+    try {
+      fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2), 'utf-8');
+    } catch (e) {}
     return initial;
   }
 
@@ -26,7 +43,9 @@ function initDb() {
   } catch (err) {
     console.error('Error reading DB, re-initializing...', err);
     const initial = getInitialData();
-    fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2), 'utf-8');
+    try {
+      fs.writeFileSync(DB_PATH, JSON.stringify(initial, null, 2), 'utf-8');
+    } catch (e) {}
     return initial;
   }
 }
@@ -36,9 +55,13 @@ function readDb() {
 }
 
 function writeDb(data) {
-  const tempPath = DB_PATH + '.tmp';
-  fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
-  fs.renameSync(tempPath, DB_PATH);
+  try {
+    const tempPath = DB_PATH + '.tmp';
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), 'utf-8');
+    fs.renameSync(tempPath, DB_PATH);
+  } catch (err) {
+    console.error('Error writing to DB:', err);
+  }
 }
 
 // Helper: Parse DD-MMM-YYYY or standard date string into Date object

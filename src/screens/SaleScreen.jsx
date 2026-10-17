@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   User, Lock, Eye, EyeOff, ChevronDown, Check,
-  Tv, Sparkles
+  Tv, Sparkles, Calendar
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { formatDate, calculateExpiryDate } from '../utils/dateUtils';
 import { buildWhatsAppLink, formatSaleConfirmationMessage } from '../utils/whatsapp';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import OttLogo from '../components/OttLogos';
+import DatePickerModal from '../components/DatePickerModal';
 import { api } from '../api/client';
 
 export default function SaleScreen({
@@ -23,8 +24,10 @@ export default function SaleScreen({
   // Form Fields
   const [brandId, setBrandId] = useState(prefillData?.brandId || selectedBrand?.id || brands[0]?.id || 'netflix');
   const [validity, setValidity] = useState(prefillData?.validity || '01 Month');
-  const [activationDate] = useState(prefillData?.activationDate || initialDateStr);
+  const [activationDate, setActivationDate] = useState(prefillData?.activationDate || initialDateStr);
   const [expiryDate, setExpiryDate] = useState('');
+  const [showFromDatePicker, setShowFromDatePicker] = useState(false);
+  const [showToDatePicker, setShowToDatePicker] = useState(false);
 
   const [accountEmail, setAccountEmail] = useState(prefillData?.email || '');
   const [accountPassword, setAccountPassword] = useState(prefillData?.password || '');
@@ -256,9 +259,6 @@ export default function SaleScreen({
           <div style={{ position: 'relative' }}>
             <div className="sale-label-compact">
               <span>Validity</span>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#16a34a' }}>
-                Exp: {expiryDate || '...'}
-              </span>
             </div>
             <div
               onClick={() => setShowValidityMenu(!showValidityMenu)}
@@ -305,6 +305,67 @@ export default function SaleScreen({
                 })}
               </div>
             )}
+          </div>
+        </div>
+
+        {/* Row 2: Date (From & To) below Brand & Validity (Requirement 1) */}
+        <div className="sale-row-2-compact">
+          {/* Date From */}
+          <div>
+            <div className="sale-label-compact">
+              <span>Date (From)</span>
+            </div>
+            <div
+              onClick={() => setShowFromDatePicker(true)}
+              id="sale-from-date-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                borderRadius: '10px',
+                background: '#ffffff',
+                color: '#0f172a',
+                cursor: 'pointer',
+                border: '1.5px solid #cbd5e1',
+                height: '40px',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <span>{activationDate}</span>
+              <Calendar size={16} color="#64748b" />
+            </div>
+          </div>
+
+          {/* Date To */}
+          <div>
+            <div className="sale-label-compact">
+              <span>Date (To)</span>
+            </div>
+            <div
+              onClick={() => setShowToDatePicker(true)}
+              id="sale-to-date-btn"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '6px 10px',
+                borderRadius: '10px',
+                background: '#ffffff',
+                color: '#0f172a',
+                cursor: 'pointer',
+                border: '1.5px solid #cbd5e1',
+                height: '40px',
+                fontWeight: 800,
+                fontSize: '13.5px',
+                boxSizing: 'border-box'
+              }}
+            >
+              <span>{expiryDate}</span>
+              <Calendar size={16} color="#64748b" />
+            </div>
           </div>
         </div>
 
@@ -585,6 +646,28 @@ export default function SaleScreen({
           {isSubmitting ? 'Saving...' : 'Send'}
         </button>
       </form>
+
+      {/* DatePicker Modals */}
+      <DatePickerModal
+        isOpen={showFromDatePicker}
+        initialDate={activationDate}
+        onSelect={(date) => {
+          setActivationDate(date);
+          if (validity) {
+            setExpiryDate(calculateExpiryDate(date, validity));
+          }
+        }}
+        onClose={() => setShowFromDatePicker(false)}
+      />
+
+      <DatePickerModal
+        isOpen={showToDatePicker}
+        initialDate={expiryDate}
+        onSelect={(date) => {
+          setExpiryDate(date);
+        }}
+        onClose={() => setShowToDatePicker(false)}
+      />
     </div>
   );
 }

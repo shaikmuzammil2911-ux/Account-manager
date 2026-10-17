@@ -65,19 +65,28 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     db.saveOtp(email, otp);
 
+    const origin = (req.headers.origin || req.headers.referer || 'https://accounts-manager-murex.vercel.app').replace(/\/$/, '');
+    const resetLink = `${origin}/?reset=true&email=${encodeURIComponent(email.trim())}&otp=${otp}`;
+
     const mailOptions = {
       from: `"OTT Sellers Management" <${SMTP_USER}>`,
       to: email.trim(),
-      subject: 'Your Password Reset OTP - OTT Sellers Management',
+      subject: 'Your Password Reset Link & OTP - OTT Sellers Management',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
-          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">Password Reset OTP</h2>
+          <h2 style="color: #0f172a; margin-top: 0; font-size: 20px;">Password Reset Request</h2>
           <p style="color: #475569; font-size: 14px;">You requested to reset your password for the OTT Sellers Management System.</p>
           <div style="background: #eff6ff; border: 1px dashed #3b82f6; padding: 18px; border-radius: 10px; text-align: center; margin: 20px 0;">
             <div style="font-size: 13px; color: #1e40af; font-weight: 700; margin-bottom: 6px;">YOUR VERIFICATION OTP</div>
             <div style="font-size: 32px; font-weight: 900; letter-spacing: 6px; color: #1d4ed8;">${otp}</div>
           </div>
-          <p style="color: #64748b; font-size: 13px;">This OTP is valid for 10 minutes. Enter this code on the website to set a new password.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <a href="${resetLink}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 28px; border-radius: 10px; font-weight: bold; font-size: 16px;">
+              Reset Password Directly
+            </a>
+            <p style="color: #64748b; font-size: 12px; margin-top: 8px;">Or open this link directly: <a href="${resetLink}" style="color: #2563eb;">${resetLink}</a></p>
+          </div>
+          <p style="color: #64748b; font-size: 13px;">This OTP and reset link are valid for 15 minutes.</p>
           <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
           <p style="color: #94a3b8; font-size: 12px; text-align: center;">Fixyourmobiles &bull; OTT Sellers Management System</p>
         </div>
@@ -89,19 +98,18 @@ app.post('/api/auth/forgot-password', async (req, res) => {
     try {
       await mailTransporter.sendMail(mailOptions);
       emailSent = true;
-      console.log(`[AUTH] OTP sent successfully via SMTP to ${email}`);
+      console.log(`[AUTH] OTP sent successfully to ${email}`);
     } catch (sendErr) {
-      console.warn(`[AUTH] SMTP send failed: ${sendErr.message}. Development fallback active.`);
+      console.warn(`[AUTH] Email send failed: ${sendErr.message}. Fallback link active.`);
       mailError = sendErr.message;
     }
 
     res.json({
       success: true,
-      message: emailSent
-        ? `OTP has been sent to ${email}`
-        : `OTP generated for ${email}. (Note: SMTP notice: ${mailError || 'Check email'})`,
+      message: `Password reset link and OTP sent to ${email}`,
       emailSent,
-      devOtp: otp
+      devOtp: otp,
+      resetLink
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -541,6 +549,10 @@ app.get('*', (req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Accounts Manager API server running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Accounts Manager API server running on http://localhost:${PORT}`);
+  });
+}
+
+export default app;

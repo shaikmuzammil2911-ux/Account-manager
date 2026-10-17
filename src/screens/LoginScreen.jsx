@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { Mail, Lock, KeyRound, Eye, EyeOff, ArrowRight, ShieldCheck, CheckCircle2, ArrowLeft } from 'lucide-react';
 import { api } from '../api/client';
 
-export default function LoginScreen({ onLoginSuccess, showToast }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'forgot_email' | 'forgot_otp' | 'success'
+export default function LoginScreen({ directResetParams, onLoginSuccess, showToast }) {
+  const [mode, setMode] = useState(() => (directResetParams ? 'forgot_otp' : 'login')); // 'login' | 'forgot_email' | 'forgot_otp' | 'success'
 
   // Login form state
   const [email, setEmail] = useState('Fixyourmobiles10@gmail.com');
@@ -12,12 +12,12 @@ export default function LoginScreen({ onLoginSuccess, showToast }) {
   const [isLoading, setIsLoading] = useState(false);
 
   // Forgot password form state
-  const [resetEmail, setResetEmail] = useState('Fixyourmobiles10@gmail.com');
-  const [otp, setOtp] = useState('');
+  const [resetEmail, setResetEmail] = useState(() => directResetParams?.email || 'Fixyourmobiles10@gmail.com');
+  const [otp, setOtp] = useState(() => directResetParams?.otp || '');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
-  const [devOtpHint, setDevOtpHint] = useState('');
+  const [devOtpHint, setDevOtpHint] = useState(() => directResetParams?.otp || '');
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -51,10 +51,10 @@ export default function LoginScreen({ onLoginSuccess, showToast }) {
       if (res.devOtp) {
         setDevOtpHint(res.devOtp);
       }
-      showToast(res.message || 'OTP sent to your email!', 'success');
+      showToast(res.message || 'Password reset link and OTP sent to your email!', 'success');
       setMode('forgot_otp');
     } catch (err) {
-      showToast(err.message || 'Failed to send OTP email', 'error');
+      showToast(err.message || 'Failed to send reset link', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -299,7 +299,7 @@ export default function LoginScreen({ onLoginSuccess, showToast }) {
                 Reset Password
               </h2>
               <p style={{ fontSize: '14px', color: '#64748b', margin: 0 }}>
-                Enter your email. An OTP code will be sent via SMTP using Fixyourmobiles10@gmail.com.
+                Enter your email address. A password reset link and verification code will be sent to your inbox.
               </p>
             </div>
 
@@ -344,7 +344,7 @@ export default function LoginScreen({ onLoginSuccess, showToast }) {
                 borderRadius: '14px'
               }}
             >
-              {isLoading ? 'Sending OTP...' : 'Send OTP via Email'}
+              {isLoading ? 'Sending Link...' : 'Send Reset Link & OTP'}
             </button>
           </form>
         )}
