@@ -409,6 +409,59 @@
       ]
     },
     {
+      "id": "inv_netflix_5",
+      "brandId": "netflix",
+      "recordNumber": "05",
+      "email": "netflix.allfree05@gmail.com",
+      "password": "Free@Netflix2026",
+      "validity": "12 Months",
+      "isLocked": false,
+      "isSelected": false,
+      "createdAt": "2026-04-01",
+      "screens": [
+        {
+          "screenNumber": 1,
+          "name": "Screen-1",
+          "pin": "1111",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 2,
+          "name": "Screen-2",
+          "pin": "2222",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 3,
+          "name": "Screen-3",
+          "pin": "3333",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 4,
+          "name": "Screen-4",
+          "pin": "4444",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 5,
+          "name": "Screen-5",
+          "pin": "5555",
+          "status": "empty",
+          "saleId": null,
+          "expiryDate": null
+        }
+      ]
+    },
+    {
       "id": "inv_5",
       "brandId": "prime_video",
       "recordNumber": "01",

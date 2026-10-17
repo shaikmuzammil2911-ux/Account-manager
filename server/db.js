@@ -172,6 +172,35 @@ export const db = {
     if (emptyOnly) {
       // Show accounts that have at least one empty slot
       items = items.filter(item => item.screens && item.screens.some(s => s.status === 'empty'));
+
+      // Sort by empty screens: All empty screens accounts first, then 4 empty, then 3 empty, etc.
+      items.sort((a, b) => {
+        const screensA = a.screens || [];
+        const screensB = b.screens || [];
+        const totalA = screensA.length || 5;
+        const totalB = screensB.length || 5;
+        const emptyA = screensA.filter(s => s.status === 'empty').length;
+        const emptyB = screensB.filter(s => s.status === 'empty').length;
+
+        const isAllEmptyA = emptyA === totalA && totalA > 0;
+        const isAllEmptyB = emptyB === totalB && totalB > 0;
+
+        // 1. Complete all empty screens account on top!
+        if (isAllEmptyA && !isAllEmptyB) return -1;
+        if (!isAllEmptyA && isAllEmptyB) return 1;
+
+        // 2. Then sort descending by empty screens count (4 empty, then 3 empty, etc.)
+        if (emptyB !== emptyA) {
+          return emptyB - emptyA;
+        }
+
+        // 3. Ties broken by recordNumber according to sortOrder
+        const recA = parseInt(a.recordNumber || '0', 10);
+        const recB = parseInt(b.recordNumber || '0', 10);
+        return sortOrder === 'bottom' ? recB - recA : recA - recB;
+      });
+
+      return items;
     }
 
     if (validity && validity !== 'all') {

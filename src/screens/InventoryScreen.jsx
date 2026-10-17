@@ -283,36 +283,63 @@ export default function InventoryScreen({
   }
 
   // ========================================================
-  // STEP 2: ACCOUNTS DATABASE (Exact classic image copy 10.png)
+  // STEP 2: ACCOUNTS DATABASE (Exact classic image copy 10.png & 44.png)
   // ========================================================
-  const filteredItems = items.filter(i => {
+  const sortedItems = [...items].sort((a, b) => {
+    if (filterEmptyOnly) {
+      const screensA = a.screens || [];
+      const screensB = b.screens || [];
+      const totalA = screensA.length || 5;
+      const totalB = screensB.length || 5;
+      const emptyA = screensA.filter(s => s.status === 'empty').length;
+      const emptyB = screensB.filter(s => s.status === 'empty').length;
+
+      const isAllEmptyA = emptyA === totalA && totalA > 0;
+      const isAllEmptyB = emptyB === totalB && totalB > 0;
+
+      // 1. Complete all empty screens account on top!
+      if (isAllEmptyA && !isAllEmptyB) return -1;
+      if (!isAllEmptyA && isAllEmptyB) return 1;
+
+      // 2. Then sort descending by empty screens count (4 empty, then 3 empty, etc.)
+      if (emptyB !== emptyA) {
+        return emptyB - emptyA;
+      }
+    }
+
+    const recA = parseInt(a.recordNumber || '0', 10);
+    const recB = parseInt(b.recordNumber || '0', 10);
+    return sortOrder === 'bottom' ? recB - recA : recA - recB;
+  });
+
+  const filteredItems = sortedItems.filter(i => {
     if (!searchQuery) return true;
     return i.email?.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   return (
     <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '12px' }}>
-      {/* Top 4 Filter Controls Bar (Exact from image copy 10.png) */}
+      {/* Top 4 Filter Controls Bar (Exact from image copy 10.png & 44.png) */}
       <div className="filter-bar-4">
-        {/* 1. Selected Filter */}
+        {/* 1. Selected Filter - Stylish Colorful Button (image copy 44.png) */}
         <button
           type="button"
-          className={`filter-pill-btn ${filterSelectedOnly ? 'glossy-btn-blue' : 'glossy-btn-gray'}`}
+          className={`filter-pill-btn ${filterSelectedOnly ? 'pill-selected-active' : 'pill-selected-inactive'}`}
           onClick={() => setFilterSelectedOnly(!filterSelectedOnly)}
           id="inventory-filter-selected"
         >
-          <Check size={14} />
+          <Check size={14} strokeWidth={filterSelectedOnly ? 3 : 2.5} />
           <span>Selected</span>
         </button>
 
-        {/* 2. Empty Filter */}
+        {/* 2. Empty Filter - Stylish Colorful Button (image copy 44.png) */}
         <button
           type="button"
-          className={`filter-pill-btn ${filterEmptyOnly ? 'glossy-btn-blue' : 'glossy-btn-gray'}`}
+          className={`filter-pill-btn ${filterEmptyOnly ? 'pill-empty-active' : 'pill-empty-inactive'}`}
           onClick={() => setFilterEmptyOnly(!filterEmptyOnly)}
           id="inventory-filter-empty"
         >
-          <Check size={14} />
+          <Check size={14} strokeWidth={filterEmptyOnly ? 3 : 2.5} />
           <span>Empty</span>
         </button>
 

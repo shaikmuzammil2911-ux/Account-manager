@@ -254,9 +254,11 @@ Device: ${sale.deviceName || 'Personal TV'}`;
 
     try {
       setSavingSale(true);
+      const targetBrandId = (activeBrand && activeBrand.id !== 'all') ? activeBrand.id : (brands[0]?.id || 'netflix');
+      const targetBrand = brands.find(b => b.id === targetBrandId) || activeBrand;
       const payload = {
-        brandId: activeBrand.id,
-        brandName: activeBrand.displayName,
+        brandId: targetBrandId,
+        brandName: targetBrand?.displayName || targetBrand?.name || 'Netflix',
         customerName: addSaleForm.customerName.trim(),
         customerNumber: addSaleForm.customerNumber.trim(),
         accountEmail: addSaleForm.accountEmail.trim(),
@@ -341,6 +343,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           if (onSelectBrand) onSelectBrand(brand);
         }}
         showHeader={false}
+        showAllBrands={true}
       />
     );
   }
@@ -354,7 +357,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
         style={{ padding: '14px 16px', position: 'relative' }}
         id={`recent-sale-${sale.recordNumber || sIdx}`}
       >
-        {/* Top Row: Ribbon Badge */}
+        {/* Top Row: Ribbon Badge & Brand Badge (if All Brands) */}
         <div className="card-top-row" style={{ marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="ribbon-badge">
@@ -362,6 +365,19 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                 ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
                 : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
             </div>
+            {activeBrand?.id === 'all' && (
+              <span style={{
+                background: '#eff6ff',
+                color: '#1d4ed8',
+                border: '1px solid #bfdbfe',
+                padding: '2px 8px',
+                borderRadius: '6px',
+                fontSize: '11px',
+                fontWeight: 800
+              }}>
+                {sale.brandName || sale.brandId}
+              </span>
+            )}
           </div>
         </div>
 

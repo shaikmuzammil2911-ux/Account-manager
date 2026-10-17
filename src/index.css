@@ -1085,11 +1085,73 @@ p, .body-text {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border: 1px solid transparent;
+  border: 1.5px solid transparent;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: all 0.15s ease;
 }
+
+/* Filter Pill - Selected Button (image copy 44.png) */
+.filter-pill-btn.pill-selected-inactive {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.12);
+}
+.filter-pill-btn.pill-selected-inactive:hover {
+  background: #dbeafe;
+  border-color: #60a5fa;
+}
+.filter-pill-btn.pill-selected-active {
+  background: linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%);
+  color: #ffffff;
+  border-color: #1e40af;
+  box-shadow: 0 4px 14px rgba(29, 78, 216, 0.4);
+}
+
+/* Filter Pill - Empty Button (image copy 44.png) */
+.filter-pill-btn.pill-empty-inactive {
+  background: #fff7ed;
+  color: #c2410c;
+  border-color: #fdba74;
+  box-shadow: 0 2px 6px rgba(234, 88, 12, 0.12);
+}
+.filter-pill-btn.pill-empty-inactive:hover {
+  background: #ffedd5;
+  border-color: #fb923c;
+}
+.filter-pill-btn.pill-empty-active {
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+  color: #ffffff;
+  border-color: #c2410c;
+  box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4);
+}
+
+/* All Brands Banner Button in OTT Selection Grid (image copy 46.png) */
+.all-brands-banner-btn {
+  width: 100%;
+  background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #3b82f6 100%);
+  border: none;
+  border-radius: 16px;
+  padding: 14px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(37, 99, 235, 0.35);
+  transition: all 0.15s ease;
+  color: #ffffff;
+  box-sizing: border-box;
+}
+.all-brands-banner-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+}
+.all-brands-banner-btn:active {
+  transform: scale(0.98);
+}
+
 
 /* Inventory Cards (Data Section) */
 .inventory-card {
