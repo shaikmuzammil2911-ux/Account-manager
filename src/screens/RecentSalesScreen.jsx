@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Tv,
+  Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Unlock, Save, Tv,
   Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertCircle, Plus, X, FileText
 } from 'lucide-react';
 import { api } from '../api/client';
@@ -79,6 +79,97 @@ export default function RecentSalesScreen({
     deviceName: 'Personal TV',
     note: ''
   });
+
+  // Card editing state: sale ID -> editable fields (image copy 64 & 65)
+  const [editingSales, setEditingSales] = useState({});
+
+  const getBrandColor = (sale) => {
+    const brand = brands.find(b => b.id === (sale.brandId || activeBrand?.id));
+    return brand?.color || activeBrand?.color || '#e50914';
+  };
+
+  const getBrandDisplayName = (sale) => {
+    const brand = brands.find(b => b.id === (sale.brandId || activeBrand?.id));
+    return brand?.displayName || sale.brandName || activeBrand?.displayName || 'Netflix';
+  };
+
+  const handleToggleSaleLock = (sale) => {
+    const isEditing = !!editingSales[sale.id];
+    if (isEditing) {
+      setEditingSales(prev => {
+        const copy = { ...prev };
+        delete copy[sale.id];
+        return copy;
+      });
+      showToast('Sale card locked', 'info');
+    } else {
+      setEditingSales(prev => ({
+        ...prev,
+        [sale.id]: {
+          customerName: sale.customerName || '',
+          customerNumber: sale.customerNumber || '',
+          accountEmail: sale.accountEmail || '',
+          accountPassword: sale.accountPassword || '',
+          validity: sale.validity || '01 Month',
+          screenNumber: sale.screenNumber || '01',
+          screenPin: sale.screenPin || '1234',
+          activationDate: sale.activationDate || '',
+          expiryDate: sale.expiryDate || '',
+          amount: sale.amount !== undefined ? String(sale.amount) : '',
+          deviceName: sale.deviceName || 'Personal TV',
+          note: sale.note || ''
+        }
+      }));
+      showToast('Sale card unlocked for editing', 'info');
+    }
+  };
+
+  const handleEditingFieldChange = (saleId, field, value) => {
+    setEditingSales(prev => {
+      const cur = prev[saleId] || {};
+      const updated = { ...cur, [field]: value };
+      if (field === 'validity' || field === 'activationDate') {
+        const act = field === 'activationDate' ? value : (cur.activationDate || '');
+        const val = field === 'validity' ? value : (cur.validity || '01 Month');
+        if (act && val) {
+          updated.expiryDate = calculateExpiryDate(act, val);
+        }
+      }
+      return { ...prev, [saleId]: updated };
+    });
+  };
+
+  const handleSaveSaleCard = async (sale) => {
+    const editData = editingSales[sale.id];
+    if (!editData) return;
+    try {
+      const payload = {
+        customerName: editData.customerName.trim(),
+        customerNumber: editData.customerNumber.trim(),
+        accountEmail: editData.accountEmail.trim(),
+        accountPassword: editData.accountPassword.trim(),
+        validity: editData.validity,
+        screenNumber: editData.screenNumber,
+        screenPin: editData.screenPin.trim(),
+        activationDate: editData.activationDate,
+        expiryDate: editData.expiryDate,
+        amount: Number(editData.amount) || sale.amount,
+        deviceName: editData.deviceName.trim(),
+        note: editData.note.trim()
+      };
+      await api.updateSale(sale.id, payload);
+      setSales(prev => prev.map(s => s.id === sale.id ? { ...s, ...payload } : s));
+      setEditingSales(prev => {
+        const copy = { ...prev };
+        delete copy[sale.id];
+        return copy;
+      });
+      showToast('Sale updated successfully!', 'success');
+      fetchAllSales();
+    } catch (err) {
+      showToast('Failed to update sale', 'error');
+    }
+  };
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -348,140 +439,306 @@ Device: ${sale.deviceName || 'Personal TV'}`;
     );
   }
 
-  // Helper renderer for a single Sold Card (image copy 42.png updates)
+  // Helper renderer for a single Sold Card
   const renderSaleCard = (sale, sIdx, isAccountView = false) => {
+    const isEditing = !!editingSales[sale.id];
+    const editState = editingSales[sale.id] || {};
+    const bColor = getBrandColor(sale);
+    const bName = getBrandDisplayName(sale);
+
     return (
       <div
         key={sale.id || sIdx}
         className="inventory-card"
-        style={{ padding: '14px 16px', position: 'relative' }}
+        style={{ padding: '12px 10px', position: 'relative' }}
         id={`recent-sale-${sale.recordNumber || sIdx}`}
       >
-        {/* Top Row: Ribbon Badge & Brand Badge (if All Brands) */}
-        <div className="card-top-row" style={{ marginBottom: '8px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div className="ribbon-badge">
-              {isAccountView
-                ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
-                : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
-            </div>
-            {activeBrand?.id === 'all' && (
-              <span style={{
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                border: '1px solid #bfdbfe',
-                padding: '2px 8px',
-                borderRadius: '6px',
-                fontSize: '11px',
-                fontWeight: 800
-              }}>
-                {sale.brandName || sale.brandId}
-              </span>
-            )}
+        {/* Top Row: Ribbon Badge, Brand Badge in Middle, Lock/Unlock Button on Right (image copy 64 & 65) */}
+        <div className="card-top-row" style={{ marginBottom: '10px', alignItems: 'center' }}>
+          <div className="ribbon-badge">
+            {isAccountView
+              ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
+              : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
           </div>
+
+          {/* Show Brand in middle in related color box per requirement (image copy 65) */}
+          <div style={{
+            background: bColor,
+            color: '#ffffff',
+            padding: '3px 14px',
+            borderRadius: '8px',
+            fontWeight: 900,
+            fontSize: '13px',
+            letterSpacing: '0.4px',
+            boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center'
+          }}>
+            <span>{bName}</span>
+          </div>
+
+          {/* Put Lock / Unlock button here per requirement (image copy 64 & 65) */}
+          <button
+            type="button"
+            onClick={() => handleToggleSaleLock(sale)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '4px 10px',
+              borderRadius: '8px',
+              fontSize: '12px',
+              fontWeight: 800,
+              cursor: 'pointer',
+              border: '1.5px solid',
+              background: isEditing ? '#fff7ed' : '#f1f5f9',
+              color: isEditing ? '#ea580c' : '#475569',
+              borderColor: isEditing ? '#ea580c' : '#cbd5e1',
+              boxShadow: isEditing ? '0 2px 6px rgba(234, 88, 12, 0.25)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+            title={isEditing ? 'Currently Unlocked. Click to lock' : 'Currently Locked. Click to edit'}
+          >
+            {isEditing ? <Unlock size={14} strokeWidth={2.5} /> : <Lock size={14} strokeWidth={2.5} />}
+            <span>{isEditing ? 'UnLock' : 'Lock'}</span>
+          </button>
         </div>
 
-        {/* Row 1: Customer Name & Number with Headings ABOVE and Small Copy Buttons */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
+        {/* Row 1: Customer Name & Number with Headings ABOVE and thicker borders */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Customer Name</div>
-            <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {sale.customerName}
-              </span>
-              <CopyButton text={sale.customerName} tooltip="Copy name" size={13} showLabelOnCopy={false} />
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editState.customerName}
+                  onChange={e => handleEditingFieldChange(sale.id, 'customerName', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13.5px', fontWeight: 900, color: '#0f172a', outline: 'none' }}
+                />
+              ) : (
+                <>
+                  <span style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {sale.customerName}
+                  </span>
+                  <CopyButton text={sale.customerName} tooltip="Copy name" size={13} showLabelOnCopy={false} />
+                </>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Phone Number</div>
-            <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
-                {sale.customerNumber}
-              </span>
-              <CopyButton text={sale.customerNumber} tooltip="Copy number" size={13} showLabelOnCopy={false} />
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="tel"
+                  value={editState.customerNumber}
+                  onChange={e => handleEditingFieldChange(sale.id, 'customerNumber', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13.5px', fontWeight: 900, color: '#0f172a', outline: 'none' }}
+                />
+              ) : (
+                <>
+                  <span style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
+                    {sale.customerNumber}
+                  </span>
+                  <CopyButton text={sale.customerNumber} tooltip="Copy number" size={13} showLabelOnCopy={false} />
+                </>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Row 2: Account ID / Email with CopyButton */}
+        {/* Row 2: Account ID / Email with CopyButton - single-line horizontal drag (image copy 61) */}
         <div className="credential-row" style={{ marginBottom: '8px' }}>
           <div className="credential-label-badge blue">
             <span>👤 ID</span>
           </div>
-          <div className="credential-input-box" style={{ justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '14px', fontWeight: 700, wordBreak: 'break-all' }}>{sale.accountEmail}</span>
-            <CopyButton text={sale.accountEmail} tooltip="Copy email" size={13} />
+          <div className="credential-input-box" style={{
+            border: '1.5px solid #cbd5e1',
+            justifyContent: 'space-between',
+            overflow: 'hidden',
+            minWidth: 0
+          }}>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editState.accountEmail}
+                onChange={e => handleEditingFieldChange(sale.id, 'accountEmail', e.target.value)}
+                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 700, outline: 'none' }}
+              />
+            ) : (
+              <>
+                <span
+                  style={{
+                    fontSize: '13.5px',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    overflowX: 'auto',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    flex: 1,
+                    minWidth: 0,
+                    paddingRight: '6px'
+                  }}
+                  title={sale.accountEmail}
+                >
+                  {sale.accountEmail}
+                </span>
+                <CopyButton text={sale.accountEmail} tooltip="Copy email" size={13} />
+              </>
+            )}
           </div>
         </div>
 
         {/* Row 3: Account Password with CopyButton */}
-        <div className="credential-row" style={{ marginBottom: '10px' }}>
+        <div className="credential-row" style={{ marginBottom: '8px' }}>
           <div className="credential-label-badge purple">
             <span>🔒 Password</span>
           </div>
-          <div className="credential-input-box" style={{ justifyContent: 'space-between' }}>
-            <span style={{ fontSize: '14px', fontWeight: 700 }}>{sale.accountPassword}</span>
-            <CopyButton text={sale.accountPassword} tooltip="Copy password" size={13} />
+          <div className="credential-input-box" style={{
+            border: '1.5px solid #cbd5e1',
+            justifyContent: 'space-between',
+            minWidth: 0
+          }}>
+            {isEditing ? (
+              <input
+                type="text"
+                value={editState.accountPassword}
+                onChange={e => handleEditingFieldChange(sale.id, 'accountPassword', e.target.value)}
+                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 700, outline: 'none' }}
+              />
+            ) : (
+              <>
+                <span style={{ fontSize: '13.5px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {sale.accountPassword}
+                </span>
+                <CopyButton text={sale.accountPassword} tooltip="Copy password" size={13} />
+              </>
+            )}
           </div>
         </div>
 
-        {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE (Copy removed from PIN) */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+        {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
-            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.validity}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <select
+                  value={editState.validity}
+                  onChange={e => handleEditingFieldChange(sale.id, 'validity', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                >
+                  <option value="01 Month">01 Month</option>
+                  <option value="03 Months">03 Months</option>
+                  <option value="06 Months">06 Months</option>
+                  <option value="12 Months">12 Months</option>
+                </select>
+              ) : (
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.validity}</span>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
-            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenNumber}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editState.screenNumber}
+                  onChange={e => handleEditingFieldChange(sale.id, 'screenNumber', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                />
+              ) : (
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenNumber}</span>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
-            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenPin}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={editState.screenPin}
+                  onChange={e => handleEditingFieldChange(sale.id, 'screenPin', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                />
+              ) : (
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenPin}</span>
+              )}
             </div>
           </div>
         </div>
 
         {/* Row 5: Activation Date, Expiry Date & Amount side-by-side with Headings ABOVE */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Activation Date</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.activationDate}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editState.activationDate}
+                  onChange={e => handleEditingFieldChange(sale.id, 'activationDate', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                />
+              ) : (
+                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.activationDate}</span>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Expiry Date</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.expiryDate}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editState.expiryDate}
+                  onChange={e => handleEditingFieldChange(sale.id, 'expiryDate', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                />
+              ) : (
+                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.expiryDate}</span>
+              )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Amount</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹{sale.amount || 199}</span>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              {isEditing ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
+                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹</span>
+                  <input
+                    type="number"
+                    value={editState.amount}
+                    onChange={e => handleEditingFieldChange(sale.id, 'amount', e.target.value)}
+                    style={{ width: '60px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#16a34a', outline: 'none', textAlign: 'center' }}
+                  />
+                </div>
+              ) : (
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹{sale.amount || 199}</span>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Small Note Box if present */}
-        {sale.note && (
+        {/* Small Note Box */}
+        {(sale.note || isEditing) && (
           <div style={{
             background: '#fefce8',
-            border: '1px solid #fef08a',
+            border: '1.5px solid #fde047',
             borderRadius: '8px',
             padding: '7px 10px',
-            marginBottom: '10px',
+            marginBottom: '8px',
             fontSize: '12.5px',
             color: '#854d0e',
             display: 'flex',
@@ -489,42 +746,60 @@ Device: ${sale.deviceName || 'Personal TV'}`;
             gap: '6px'
           }}>
             <span style={{ fontWeight: 800, whiteSpace: 'nowrap' }}>📝 Note:</span>
-            <span style={{ fontWeight: 600, wordBreak: 'break-word' }}>{sale.note}</span>
+            {isEditing ? (
+              <textarea
+                rows="2"
+                value={editState.note}
+                onChange={e => handleEditingFieldChange(sale.id, 'note', e.target.value)}
+                style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 600, color: '#854d0e', outline: 'none', resize: 'none' }}
+              />
+            ) : (
+              <span style={{ fontWeight: 600, wordBreak: 'break-word' }}>{sale.note}</span>
+            )}
           </div>
         )}
 
-        {/* Row 6 (Bottom Row): Large Device Name Box + Direct WhatsApp Chat Button + Notify Button */}
+        {/* Row 6 (Bottom Row): Device Name Box + Direct WhatsApp Chat Button + Notify Button */}
         <div>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Device Name</div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Large Device Name Box in place of Copy All Details */}
+            {/* Device Name Box */}
             <div style={{
               flex: 1,
-              height: '42px',
+              height: '44px',
               background: '#f8fafc',
-              border: '1px solid #e2e8f0',
+              border: '1.5px solid #cbd5e1',
               borderRadius: '10px',
-              padding: '0 12px',
+              padding: '0 10px',
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               minWidth: 0,
               boxSizing: 'border-box'
             }}>
-              <Tv size={16} color="#64748b" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {sale.deviceName || 'Personal TV'}
-              </span>
+              <Tv size={17} color="#64748b" style={{ flexShrink: 0 }} />
+              {isEditing ? (
+                <input
+                  type="text"
+                  value={editState.deviceName}
+                  onChange={e => handleEditingFieldChange(sale.id, 'deviceName', e.target.value)}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 800, color: '#0f172a', outline: 'none' }}
+                />
+              ) : (
+                <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {sale.deviceName || 'Personal TV'}
+                </span>
+              )}
             </div>
 
-            {/* Direct WhatsApp Chat Icon Button (opens customer chat & pastes credentials) */}
+            {/* Direct WhatsApp Chat Icon Button with larger icon (image copy 59) */}
             <button
               type="button"
               onClick={() => handleDirectWhatsApp(sale)}
               title="Open customer WhatsApp chat & send credentials"
               style={{
-                width: '42px',
-                height: '42px',
+                width: '46px',
+                height: '44px',
                 borderRadius: '10px',
                 background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
                 border: 'none',
@@ -538,7 +813,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               }}
               id={`recent-sale-wa-btn-${sale.id}`}
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.588-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.275.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.043.072.043.419-.101.824z" />
               </svg>
             </button>
@@ -548,8 +823,8 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               type="button"
               className="glossy-btn glossy-btn-red"
               style={{
-                height: '42px',
-                padding: '0 16px',
+                height: '44px',
+                padding: '0 14px',
                 fontSize: '13px',
                 fontWeight: 800,
                 display: 'flex',
@@ -566,6 +841,30 @@ Device: ${sale.deviceName || 'Personal TV'}`;
             </button>
           </div>
         </div>
+
+        {/* When Unlocked: Action Buttons Save Changes and Cancel */}
+        {isEditing && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '8px', marginTop: '12px' }}>
+            <button
+              type="button"
+              className="glossy-btn glossy-btn-gray"
+              style={{ padding: '8px', fontSize: '13px', borderRadius: '8px' }}
+              onClick={() => handleToggleSaleLock(sale)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="glossy-btn glossy-btn-green"
+              style={{ padding: '8px', fontSize: '13px', borderRadius: '8px' }}
+              onClick={() => handleSaveSaleCard(sale)}
+              id={`recent-sale-save-edit-${sale.id}`}
+            >
+              <Save size={15} />
+              <span>Save Changes</span>
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -778,59 +1077,62 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           {accountGroups.map((group, aIdx) => {
             return (
               <div key={group.email + aIdx} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {/* Account Header Banner */}
+                {/* Account Header Banner (image copy 60: number only, no password, 02/05 Sold format) */}
                 <div style={{
                   background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
                   color: '#ffffff',
-                  padding: '12px 14px',
+                  padding: '10px 12px',
                   borderRadius: '12px',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.25)'
+                  boxShadow: '0 4px 12px rgba(15, 23, 42, 0.25)',
+                  gap: '8px'
                 }}>
-                  <div style={{ minWidth: 0, flex: 1, paddingRight: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{
-                        fontSize: '11.5px',
-                        background: '#3b82f6',
-                        color: '#ffffff',
-                        fontWeight: 900,
-                        padding: '2px 8px',
-                        borderRadius: '6px',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.4px'
-                      }}>
-                        Account {String(aIdx + 1).padStart(2, '0')}
-                      </span>
-                      <span style={{
-                        fontSize: '14.5px',
-                        fontWeight: 800,
-                        color: '#ffffff',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }}>
-                        {group.email}
-                      </span>
-                    </div>
-
-                    {group.password && (
-                      <div style={{ fontSize: '12px', color: '#94a3b8' }}>
-                        🔒 Password: <strong style={{ color: '#e2e8f0' }}>{group.password}</strong>
-                      </div>
-                    )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flex: 1 }}>
+                    {/* Number ONLY - removed "ACCOUNT" text per image copy 60 */}
+                    <span style={{
+                      fontSize: '12px',
+                      background: '#2563eb',
+                      color: '#ffffff',
+                      fontWeight: 900,
+                      padding: '2px 8px',
+                      borderRadius: '6px',
+                      letterSpacing: '0.4px',
+                      flexShrink: 0
+                    }}>
+                      {String(aIdx + 1).padStart(2, '0')}
+                    </span>
+                    {/* Mail ID next to number */}
+                    <span style={{
+                      fontSize: '13.5px',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}>
+                      {group.email}
+                    </span>
                   </div>
 
+                  {/* Right side: 02/05 Sold format per image copy 60 */}
                   <span style={{
                     fontSize: '12px',
                     background: 'rgba(255, 255, 255, 0.15)',
-                    padding: '4px 10px',
+                    padding: '3px 10px',
                     borderRadius: '20px',
                     fontWeight: 800,
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    color: '#ffffff',
+                    flexShrink: 0
                   }}>
-                    {group.sales.length} {group.sales.length === 1 ? 'Screen Sold' : 'Screens Sold'}
+                    {(() => {
+                      const invAcc = inventoryAccounts.find(i => (i.email || '').toLowerCase().trim() === (group.email || '').toLowerCase().trim());
+                      const totalScreens = invAcc?.screens?.length || activeBrand?.screensCount || 5;
+                      const soldCount = group.sales.length;
+                      return `${String(soldCount).padStart(2, '0')}/${String(totalScreens).padStart(2, '0')} Sold`;
+                    })()}
                   </span>
                 </div>
 
@@ -887,9 +1189,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
       />
 
       {/* =================================================================== */}
-      {/* ADD SALE SMALL FORM MODAL (with Small Note Box)                     */}
-      {/* Opens when Top Right "Add Sale" button is clicked                   */}
-      {/* Same details and style of sold data card                           */}
+      {/* ADD SALE MODAL - CENTERING & MATCHING SALE CARD STYLE (image 62 & 63)*/}
       {/* =================================================================== */}
       {showAddSaleModal && (
         <div
@@ -902,9 +1202,9 @@ Device: ${sale.deviceName || 'Personal TV'}`;
             backdropFilter: 'blur(4px)',
             zIndex: 1000,
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
             justifyContent: 'center',
-            padding: '20px 14px',
+            padding: '12px',
             overflowY: 'auto'
           }}
           onClick={(e) => {
@@ -916,100 +1216,97 @@ Device: ${sale.deviceName || 'Personal TV'}`;
             style={{
               width: '100%',
               maxWidth: '430px',
-              padding: '16px 18px',
+              padding: '14px',
               borderRadius: '16px',
               boxShadow: '0 20px 45px rgba(0,0,0,0.3)',
               backgroundColor: '#ffffff',
               margin: 'auto 0'
             }}
           >
-            {/* Modal Top Header */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: '14px',
-              paddingBottom: '10px',
-              borderBottom: '1px solid #e2e8f0'
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span
-                  style={{
-                    width: '10px',
-                    height: '10px',
-                    borderRadius: '50%',
-                    backgroundColor: activeBrand.color || '#3b82f6'
-                  }}
-                />
-                <span style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
-                  Add Sale • {activeBrand.displayName}
-                </span>
+            {/* Modal Top Header (image copy 62 & 63: Ribbon on left, Brand in middle in related color box, Close [X] on right) */}
+            <div className="card-top-row" style={{ marginBottom: '10px', alignItems: 'center' }}>
+              <div className="ribbon-badge">
+                New Sale
+              </div>
+
+              {/* Netflix / Brand in middle in related color box per image copy 62 & 63 */}
+              <div style={{
+                background: activeBrand?.color || '#e50914',
+                color: '#ffffff',
+                padding: '4px 18px',
+                borderRadius: '8px',
+                fontWeight: 900,
+                fontSize: '14px',
+                letterSpacing: '0.4px',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.18)'
+              }}>
+                {activeBrand?.displayName || 'Netflix'}
               </div>
 
               <button
                 type="button"
                 className="header-btn"
-                style={{ width: '32px', height: '32px', border: 'none', background: '#f1f5f9' }}
+                style={{ width: '30px', height: '30px', border: '1px solid #cbd5e1', background: '#f8fafc', borderRadius: '8px' }}
                 onClick={() => setAddSaleModalState(false)}
               >
-                <X size={16} color="#475569" />
+                <X size={15} color="#475569" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveSale} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <form onSubmit={handleSaveSale} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {/* Row 1: Customer Name & Phone Number */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Customer Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder=""
-                    value={addSaleForm.customerName}
-                    onChange={e => handleAddSaleChange('customerName', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      outline: 'none'
-                    }}
-                  />
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Customer Name</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1' }}>
+                    <input
+                      type="text"
+                      required
+                      placeholder=""
+                      value={addSaleForm.customerName}
+                      onChange={e => handleAddSaleChange('customerName', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '13.5px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Phone Number *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    placeholder=""
-                    value={addSaleForm.customerNumber}
-                    onChange={e => handleAddSaleChange('customerNumber', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '14px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      outline: 'none'
-                    }}
-                  />
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Phone Number</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1' }}>
+                    <input
+                      type="tel"
+                      required
+                      placeholder=""
+                      value={addSaleForm.customerNumber}
+                      onChange={e => handleAddSaleChange('customerNumber', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '13.5px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
               {/* Row 2: Account Email (ID) with quick select from inventory */}
-              <div className="credential-row">
+              <div className="credential-row" style={{ marginBottom: '0' }}>
                 <div className="credential-label-badge blue">
                   <span>👤 ID</span>
                 </div>
-                <div className="credential-input-box" style={{ padding: '4px 8px' }}>
+                <div className="credential-input-box" style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', minWidth: 0 }}>
                   <input
                     type="text"
                     required
@@ -1020,7 +1317,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                       width: '100%',
                       border: 'none',
                       background: 'transparent',
-                      fontSize: '13.5px',
+                      fontSize: '13px',
                       fontWeight: 700,
                       outline: 'none'
                     }}
@@ -1058,11 +1355,11 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               )}
 
               {/* Row 3: Account Password */}
-              <div className="credential-row">
+              <div className="credential-row" style={{ marginBottom: '0' }}>
                 <div className="credential-label-badge purple">
                   <span>🔒 Password</span>
                 </div>
-                <div className="credential-input-box" style={{ padding: '4px 8px' }}>
+                <div className="credential-input-box" style={{ padding: '6px 10px', border: '1.5px solid #cbd5e1', minWidth: 0 }}>
                   <input
                     type="text"
                     placeholder=""
@@ -1072,7 +1369,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                       width: '100%',
                       border: 'none',
                       background: 'transparent',
-                      fontSize: '13.5px',
+                      fontSize: '13px',
                       fontWeight: 700,
                       outline: 'none'
                     }}
@@ -1082,108 +1379,129 @@ Device: ${sale.deviceName || 'Personal TV'}`;
 
               {/* Row 4: Validity, Screen No, Screen PIN */}
               <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px' }}>
-                <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Validity
-                  </label>
-                  <select
-                    value={addSaleForm.validity}
-                    onChange={e => handleAddSaleChange('validity', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      outline: 'none',
-                      textAlign: 'center'
-                    }}
-                  >
-                    <option value="01 Month">01 Month</option>
-                    <option value="03 Months">03 Months</option>
-                    <option value="06 Months">06 Months</option>
-                    <option value="12 Months">12 Months</option>
-                  </select>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    <select
+                      value={addSaleForm.validity}
+                      onChange={e => handleAddSaleChange('validity', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
+                    >
+                      <option value="01 Month">01 Month</option>
+                      <option value="03 Months">03 Months</option>
+                      <option value="06 Months">06 Months</option>
+                      <option value="12 Months">12 Months</option>
+                    </select>
+                  </div>
                 </div>
 
-                <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Screen No
-                  </label>
-                  <select
-                    value={addSaleForm.screenNumber}
-                    onChange={e => handleAddSaleChange('screenNumber', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      outline: 'none',
-                      textAlign: 'center'
-                    }}
-                  >
-                    {Array.from({ length: activeBrand.screensCount || 5 }, (_, i) => {
-                      const num = String(i + 1).padStart(2, '0');
-                      return <option key={num} value={num}>Screen {num}</option>;
-                    })}
-                  </select>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    <select
+                      value={addSaleForm.screenNumber}
+                      onChange={e => handleAddSaleChange('screenNumber', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
+                    >
+                      {Array.from({ length: activeBrand.screensCount || 5 }, (_, i) => {
+                        const num = String(i + 1).padStart(2, '0');
+                        return <option key={num} value={num}>Screen {num}</option>;
+                      })}
+                    </select>
+                  </div>
                 </div>
 
-                <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    PIN
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    placeholder=""
-                    value={addSaleForm.screenPin}
-                    onChange={e => handleAddSaleChange('screenPin', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '13px',
-                      fontWeight: 900,
-                      color: '#0f172a',
-                      outline: 'none',
-                      textAlign: 'center'
-                    }}
-                  />
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    <input
+                      type="text"
+                      maxLength={6}
+                      placeholder=""
+                      value={addSaleForm.screenPin}
+                      onChange={e => handleAddSaleChange('screenPin', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '13px',
+                        fontWeight: 900,
+                        color: '#0f172a',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
-              {/* Row 5: Activation Date & Device / Price */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-                <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Activation Date
-                  </label>
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={addSaleForm.activationDate}
-                    onChange={e => handleAddSaleChange('activationDate', e.target.value)}
-                    style={{
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      fontSize: '12.5px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      outline: 'none'
-                    }}
-                  />
+              {/* Row 5: Activation Date, Expiry Date & Amount (3 columns matching Image 63) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Activation Date</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    <input
+                      type="text"
+                      placeholder=""
+                      value={addSaleForm.activationDate}
+                      onChange={e => handleAddSaleChange('activationDate', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
+                    />
+                  </div>
                 </div>
 
-                <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-                  <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'block', marginBottom: '2px' }}>
-                    Device / Price (₹)
-                  </label>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Expiry Date</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    <input
+                      type="text"
+                      placeholder=""
+                      value={addSaleForm.expiryDate}
+                      onChange={e => handleAddSaleChange('expiryDate', e.target.value)}
+                      style={{
+                        width: '100%',
+                        border: 'none',
+                        background: 'transparent',
+                        fontSize: '11.5px',
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        outline: 'none',
+                        textAlign: 'center'
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Amount</div>
+                  <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
                     <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹</span>
                     <input
                       type="number"
@@ -1197,32 +1515,50 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                         fontSize: '13px',
                         fontWeight: 900,
                         color: '#16a34a',
-                        outline: 'none'
-                      }}
-                    />
-                    <span style={{ color: '#94a3b8' }}>•</span>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={addSaleForm.deviceName}
-                      onChange={e => handleAddSaleChange('deviceName', e.target.value)}
-                      style={{
-                        flex: 1,
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: '12.5px',
-                        fontWeight: 700,
-                        color: '#0f172a',
-                        outline: 'none'
+                        outline: 'none',
+                        textAlign: 'center'
                       }}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Row 6: Small Note Box (Requested by user) */}
-              <div style={{ background: '#f8fafc', padding: '8px 10px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+              {/* Row 6: Device Name */}
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Device Name</div>
+                <div style={{
+                  height: '42px',
+                  background: '#f8fafc',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '0 10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxSizing: 'border-box'
+                }}>
+                  <Tv size={17} color="#64748b" style={{ flexShrink: 0 }} />
+                  <input
+                    type="text"
+                    placeholder="e.g. LG OLED / OnePlus TV"
+                    value={addSaleForm.deviceName}
+                    onChange={e => handleAddSaleChange('deviceName', e.target.value)}
+                    style={{
+                      flex: 1,
+                      border: 'none',
+                      background: 'transparent',
+                      fontSize: '13px',
+                      fontWeight: 800,
+                      color: '#0f172a',
+                      outline: 'none'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Row 7: Small Note Box */}
+              <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1' }}>
+                <label style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
                   <FileText size={12} color="#64748b" />
                   <span>Small Note Box / Remarks</span>
                 </label>
@@ -1235,36 +1571,22 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                     width: '100%',
                     border: 'none',
                     background: 'transparent',
-                    fontSize: '12.5px',
+                    fontSize: '12px',
                     fontWeight: 600,
                     color: '#0f172a',
                     outline: 'none',
                     resize: 'none',
-                    lineHeight: 1.4
+                    lineHeight: 1.3
                   }}
                 />
               </div>
 
-              {/* Expiry Date Auto-calculated Preview */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '6px 10px',
-                background: '#eff6ff',
-                borderRadius: '8px',
-                fontSize: '12px'
-              }}>
-                <span style={{ color: '#1e40af', fontWeight: 700 }}>Auto-calculated Expiry:</span>
-                <span style={{ color: '#1e40af', fontWeight: 900 }}>{addSaleForm.expiryDate}</span>
-              </div>
-
               {/* Action Buttons: Cancel & Add Sale */}
-              <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '10px', marginTop: '6px' }}>
                 <button
                   type="button"
                   className="glossy-btn glossy-btn-gray"
-                  style={{ flex: 1, padding: '10px', fontSize: '13.5px' }}
+                  style={{ padding: '10px', fontSize: '13.5px', borderRadius: '10px' }}
                   onClick={() => setAddSaleModalState(false)}
                   disabled={savingSale}
                 >
@@ -1275,10 +1597,10 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   type="submit"
                   className="glossy-btn glossy-btn-orange"
                   style={{
-                    flex: 1.2,
                     padding: '10px',
                     fontSize: '13.5px',
                     fontWeight: 800,
+                    borderRadius: '10px',
                     boxShadow: '0 4px 12px rgba(249, 115, 22, 0.35)'
                   }}
                   disabled={savingSale}

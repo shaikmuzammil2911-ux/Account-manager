@@ -166,7 +166,8 @@ p, .body-text {
   h1, .page-title { font-size: 24px; }
   h2, .section-title { font-size: 20px; }
   h3 { font-size: 17px; }
-  .screen-content { padding: 14px 16px calc(var(--bottom-nav-height) + 20px); }
+  .screen-content { padding: 12px 8px calc(var(--bottom-nav-height) + 20px); }
+  .inventory-card { padding: 12px 10px; border-radius: 14px; }
 }
 
 /* ==========================================================================

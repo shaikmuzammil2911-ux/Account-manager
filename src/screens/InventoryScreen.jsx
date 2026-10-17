@@ -45,6 +45,7 @@ export default function InventoryScreen({
   const [newPlanVariant, setNewPlanVariant] = useState('General');
   const [newScreenCount, setNewScreenCount] = useState(5);
   const [newScreenPins, setNewScreenPins] = useState(['1111', '2222', '3333', '4444', '5555']);
+  const [newPassVisible, setNewPassVisible] = useState(false);
 
   const fetchInventory = async () => {
     if (!currentBrand) return;
@@ -472,32 +473,34 @@ export default function InventoryScreen({
                   {item.recordNumber || '01'}
                 </div>
 
-                {/* Plan Variant Badge (image copy 48.png: replacing middle green instruction text) */}
-                <div
-                  className="badge-plan-variant"
-                  onClick={() => handleCyclePlanVariant(item)}
-                  style={{
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                    padding: '3px 10px',
-                    borderRadius: '8px',
-                    fontSize: '12px',
-                    fontWeight: 800,
-                    background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
-                    color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
-                    border: '1.5px solid',
-                    borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                    transition: 'all 0.15s ease'
-                  }}
-                  title="Click to cycle plan variant (General, With Ads, Ads Free...)"
-                >
-                  <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
-                  <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
-                </div>
+                {/* Plan Variant Badge: Only show if special (not General) or if editing per user requirement */}
+                {(isEditing || (item.planVariant && item.planVariant !== 'General')) && (
+                  <div
+                    className="badge-plan-variant"
+                    onClick={() => handleCyclePlanVariant(item)}
+                    style={{
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      padding: '3px 10px',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
+                      color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
+                      border: '1.5px solid',
+                      borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title="Click to cycle plan variant (General, With Ads, Ads Free...)"
+                  >
+                    <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
+                    <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
+                  </div>
+                )}
 
                 <div className="card-top-right">
                   <div
@@ -670,11 +673,11 @@ export default function InventoryScreen({
                         background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
                       }}>
                         {devType === 'mobile' ? (
-                          <Smartphone size={12} strokeWidth={2.5} />
+                          <Smartphone size={16} strokeWidth={2.5} />
                         ) : devType === 'laptop' ? (
-                          <Laptop size={12} strokeWidth={2.5} />
+                          <Laptop size={16} strokeWidth={2.5} />
                         ) : (
-                          <Tv size={12} strokeWidth={2.5} />
+                          <Tv size={16} strokeWidth={2.5} />
                         )}
                       </div>
                     </div>
@@ -717,22 +720,27 @@ export default function InventoryScreen({
                         }
                       }}
                       style={{
+                        height: '34px',
                         minHeight: '34px',
-                        padding: '6px 2px',
+                        maxHeight: '34px',
+                        width: '100%',
+                        boxSizing: 'border-box',
+                        padding: '0 2px',
                         borderRadius: '8px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: isEmpty ? '16px' : '9.5px',
+                        fontSize: isEmpty ? '18px' : '9px',
                         fontWeight: 900,
                         cursor: 'pointer',
                         background: isEmpty ? '#ffffff' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
                         color: isEmpty ? '#64748b' : '#ffffff',
-                        border: isEmpty ? '2px dashed #94a3b8' : 'none',
-                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.15)',
+                        border: isEmpty ? '2px dashed #94a3b8' : (isExpiringSoon ? '2px solid #b91c1c' : '2px solid #15803d'),
+                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.12)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
+                        whiteSpace: 'nowrap',
+                        lineHeight: 1
                       }}
                       title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'}`)}
                     >
@@ -790,168 +798,286 @@ export default function InventoryScreen({
       )}
 
       {/* ======================================================== */}
-      {/* ADD ACCOUNT MODAL (1–10 Screens with Individual PINs)    */}
+      {/* ADD ACCOUNT POPUP - EXACT SAME STYLE AS AVAILABLE CARD   */}
+      {/* Centered in the middle of mobile screen (image copy 57/58)*/}
       {/* ======================================================== */}
       {showAddAccountModal && (
-        <div className="modal-backdrop" onClick={() => setShowAddAccountModal(false)}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '12px',
+            overflowY: 'auto'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddAccountModal(false);
+          }}
+        >
           <div
-            className="modal-card"
+            className="inventory-card"
             onClick={e => e.stopPropagation()}
-            style={{ maxHeight: '90vh', overflowY: 'auto' }}
+            style={{
+              width: '100%',
+              maxWidth: '430px',
+              padding: '14px',
+              borderRadius: '16px',
+              backgroundColor: '#ffffff',
+              boxShadow: '0 20px 45px rgba(0,0,0,0.3)',
+              margin: 'auto 0'
+            }}
           >
-            <div className="modal-header">
-              <div>
-                <h3 className="modal-title">Add {currentBrand.displayName} Account</h3>
-                <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>Configure credentials and 1 to 10 screens</p>
+            {/* Top Row: Ribbon Badge, Plan Variant, Validity, Close X */}
+            <div className="card-top-row">
+              <div className="ribbon-badge">
+                {String(items.length + 1).padStart(2, '0')}
               </div>
-              <button
-                type="button"
-                className="modal-close-btn"
-                onClick={() => setShowAddAccountModal(false)}
+
+              {/* Plan Variant Badge (Clickable to cycle) */}
+              <div
+                className="badge-plan-variant"
+                onClick={() => {
+                  const plans = ['General', 'With Ads', 'Ads Free'];
+                  const curIdx = plans.indexOf(newPlanVariant);
+                  setNewPlanVariant(plans[(curIdx + 1) % plans.length]);
+                }}
+                style={{
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  padding: '3px 10px',
+                  borderRadius: '8px',
+                  fontSize: '12px',
+                  fontWeight: 800,
+                  background: newPlanVariant === 'General' ? '#f1f5f9' : '#eff6ff',
+                  color: newPlanVariant === 'General' ? '#475569' : '#1d4ed8',
+                  border: '1.5px solid',
+                  borderColor: newPlanVariant === 'General' ? '#cbd5e1' : '#93c5fd',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '5px',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                }}
+                title="Click to cycle plan variant"
               >
-                <X size={18} />
-              </button>
+                <Sparkles size={12} color={newPlanVariant === 'General' ? '#64748b' : '#2563eb'} />
+                <span>{newPlanVariant}</span>
+              </div>
+
+              <div className="card-top-right">
+                <div
+                  className="badge-navy-pill"
+                  onClick={() => {
+                    const valids = ['01 Month', '03 Months', '06 Months', '12 Months'];
+                    const curIdx = valids.indexOf(newValidity);
+                    setNewValidity(valids[(curIdx + 1) % valids.length]);
+                  }}
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  title="Click to cycle validity"
+                >
+                  {newValidity}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowAddAccountModal(false)}
+                  style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    background: '#f8fafc',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: '#64748b'
+                  }}
+                  title="Close"
+                >
+                  <X size={15} />
+                </button>
+              </div>
             </div>
 
-            <form onSubmit={handleCreateAccount} style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <div>
-                <label className="form-label">Email / Mail ID</label>
+            {/* ID Row: blue badge + empty input */}
+            <div className="credential-row">
+              <div className="credential-label-badge blue">
+                ID
+              </div>
+              <div style={{ flex: 1, position: 'relative' }}>
                 <input
                   type="email"
-                  className="form-input-pill"
+                  className="credential-input"
                   value={newEmail}
                   onChange={e => setNewEmail(e.target.value)}
-                  placeholder="e.g. netflix.user@gmail.com"
+                  placeholder="e.g. netflix.user03@gmail.com"
+                  style={{ fontWeight: 700 }}
                   required
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="form-label">Account Password</label>
+            {/* Password Row: purple badge + empty input + show/hide eye */}
+            <div className="credential-row">
+              <div className="credential-label-badge purple">
+                Password
+              </div>
+              <div style={{ flex: 1, position: 'relative' }}>
                 <input
-                  type="text"
-                  className="form-input-pill"
+                  type={newPassVisible ? 'text' : 'password'}
+                  className="credential-input"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   placeholder="e.g. Pass@123456"
+                  style={{ paddingRight: '40px', fontWeight: 700 }}
                   required
                 />
-              </div>
-
-              <div>
-                <label className="form-label">Validity</label>
-                <select
-                  value={newValidity}
-                  onChange={e => setNewValidity(e.target.value)}
-                  className="form-input-pill"
-                  style={{ width: '100%', fontWeight: 700 }}
-                >
-                  <option value="01 Month">01 Month</option>
-                  <option value="03 Months">03 Months</option>
-                  <option value="06 Months">06 Months</option>
-                  <option value="12 Months">12 Months</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="form-label">Plan Variant</label>
-                <select
-                  value={newPlanVariant}
-                  onChange={e => setNewPlanVariant(e.target.value)}
-                  className="form-input-pill"
-                  style={{ width: '100%', fontWeight: 700 }}
-                >
-                  <option value="General">General</option>
-                  <option value="With Ads">With Ads</option>
-                  <option value="Ads Free">Ads Free</option>
-                  {currentBrand?.pricingPlans && Object.values(currentBrand.pricingPlans)
-                    .filter(p => p.enabled && p.label !== 'General' && p.label !== 'With Ads' && p.label !== 'Ads Free')
-                    .map(p => (
-                      <option key={p.label} value={p.label}>{p.label}</option>
-                    ))}
-                </select>
-              </div>
-
-              {/* Screen Count (1 to 10) */}
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label className="form-label" style={{ margin: 0 }}>Number of Screens (1–10)</label>
-                  <span style={{ fontWeight: 800, color: '#2563eb' }}>{newScreenCount} Screens</span>
-                </div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
-                    <button
-                      key={n}
-                      type="button"
-                      onClick={() => handleScreenCountChange(n)}
-                      style={{
-                        padding: '6px 12px',
-                        borderRadius: '8px',
-                        border: '1.5px solid',
-                        borderColor: newScreenCount === n ? '#2563eb' : '#cbd5e1',
-                        background: newScreenCount === n ? '#eff6ff' : '#ffffff',
-                        color: newScreenCount === n ? '#1d4ed8' : '#334155',
-                        fontWeight: 800,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Screen PINs configuration */}
-              <div>
-                <label className="form-label">Screen PINs</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px' }}>
-                  {Array.from({ length: newScreenCount }, (_, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#475569', minWidth: '60px' }}>
-                        Screen {i + 1}:
-                      </span>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={newScreenPins[i] || ''}
-                        onChange={(e) => {
-                          const updated = [...newScreenPins];
-                          updated[i] = e.target.value;
-                          setNewScreenPins(updated);
-                        }}
-                        style={{
-                          width: '100%',
-                          padding: '6px 8px',
-                          borderRadius: '8px',
-                          border: '1px solid #cbd5e1',
-                          fontSize: '13px',
-                          fontWeight: 700,
-                          textAlign: 'center'
-                        }}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
                 <button
                   type="button"
-                  className="glossy-btn glossy-btn-gray"
-                  style={{ flex: 1, padding: '12px', borderRadius: '12px' }}
-                  onClick={() => setShowAddAccountModal(false)}
+                  onClick={() => setNewPassVisible(!newPassVisible)}
+                  style={{
+                    position: 'absolute',
+                    right: '10px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    color: '#64748b'
+                  }}
+                  title="Toggle password visibility"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="glossy-btn glossy-btn-green"
-                  style={{ flex: 1, padding: '12px', borderRadius: '12px' }}
-                >
-                  Save Account
+                  {newPassVisible ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
-            </form>
+            </div>
+
+            {/* Screen PINs row */}
+            <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
+              {newScreenPins.map((pin, sIdx) => (
+                <div
+                  key={sIdx}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    background: '#f1f5f9',
+                    padding: '5px 2px',
+                    borderRadius: '8px',
+                    border: '1px solid #e2e8f0',
+                    minHeight: '26px'
+                  }}
+                >
+                  <input
+                    type="text"
+                    maxLength={6}
+                    value={pin}
+                    onChange={e => {
+                      const updated = [...newScreenPins];
+                      updated[sIdx] = e.target.value;
+                      setNewScreenPins(updated);
+                    }}
+                    style={{
+                      width: '100%',
+                      fontSize: '12px',
+                      textAlign: 'center',
+                      border: 'none',
+                      background: 'transparent',
+                      fontWeight: 800
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+
+            {/* Screen Buttons row (Screen-1 to 5 with TV icon) */}
+            <div className="screens-grid-row">
+              {newScreenPins.map((_, sIdx) => (
+                <div
+                  key={sIdx}
+                  style={{
+                    background: '#ea580c',
+                    color: '#ffffff',
+                    borderRadius: '8px',
+                    padding: '5px 2px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '2px',
+                    lineHeight: 1
+                  }}
+                >
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                    Screen-{sIdx + 1}
+                  </span>
+                  <Tv size={16} strokeWidth={2.5} />
+                </div>
+              ))}
+            </div>
+
+            {/* Status Empty Boxes Row below Screens (5 dashed empty '+' boxes) */}
+            <div className="screens-grid-row" style={{ marginTop: '6px' }}>
+              {newScreenPins.map((_, sIdx) => (
+                <div
+                  key={sIdx}
+                  style={{
+                    height: '34px',
+                    minHeight: '34px',
+                    maxHeight: '34px',
+                    width: '100%',
+                    boxSizing: 'border-box',
+                    borderRadius: '8px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '18px',
+                    fontWeight: 900,
+                    background: '#ffffff',
+                    color: '#64748b',
+                    border: '2px dashed #94a3b8'
+                  }}
+                >
+                  +
+                </div>
+              ))}
+            </div>
+
+            {/* Bottom 2 Action Buttons: Cancel and Save */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1.5fr',
+              gap: '10px',
+              marginTop: '14px'
+            }}>
+              <button
+                type="button"
+                className="glossy-btn glossy-btn-gray"
+                style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
+                onClick={() => setShowAddAccountModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="glossy-btn glossy-btn-green"
+                style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
+                onClick={handleCreateAccount}
+                id="modal-save-new-account-btn"
+              >
+                <Save size={16} />
+                <span>Save</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

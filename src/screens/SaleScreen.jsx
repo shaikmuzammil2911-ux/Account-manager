@@ -488,7 +488,14 @@ export default function SaleScreen({
                         <span>{opt}</span>
                       </div>
                       {priceVal !== undefined && (
-                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#16a34a' }}>
+                        <span style={{
+                          fontSize: '13px',
+                          fontWeight: 900,
+                          color: isSelected ? '#ffffff' : '#16a34a',
+                          background: isSelected ? 'rgba(255, 255, 255, 0.25)' : '#dcfce7',
+                          padding: '2px 7px',
+                          borderRadius: '6px'
+                        }}>
                           ₹{priceVal}
                         </span>
                       )}
@@ -734,15 +741,25 @@ export default function SaleScreen({
         <div className="sale-row-2-compact">
           <div>
             <div className="sale-label-compact">Amount</div>
-            <input
-              type="number"
-              className="sale-input-compact"
-              value={amount}
-              onChange={e => setAmount(e.target.value)}
-              placeholder=""
-              id="sale-amount"
-              style={{ fontWeight: 800 }}
-            />
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <span style={{
+                position: 'absolute',
+                left: '10px',
+                fontSize: '15px',
+                fontWeight: 900,
+                color: '#16a34a',
+                pointerEvents: 'none'
+              }}>₹</span>
+              <input
+                type="number"
+                className="sale-input-compact"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder="0"
+                id="sale-amount"
+                style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
+              />
+            </div>
           </div>
 
           <div>

@@ -506,6 +506,35 @@ export const api = {
     }
   },
 
+  async updateSale(id, updates) {
+    let updated = null;
+    try {
+      const res = await fetch(`/api/sales/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) {
+        updated = await res.json();
+      }
+    } catch (e) {}
+
+    const local = getLocalData();
+    const idx = (local.sales || []).findIndex(s => s.id === id);
+    if (idx !== -1) {
+      if (!updated) {
+        updated = {
+          ...local.sales[idx],
+          ...updates,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      local.sales[idx] = updated;
+      saveLocalData(local);
+    }
+    return updated;
+  },
+
   // EXPIRY & STATS
   async getStats() {
     try {

@@ -429,6 +429,16 @@ app.post('/api/sales', (req, res) => {
   }
 });
 
+app.put('/api/sales/:id', (req, res) => {
+  try {
+    const updated = db.updateSale(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Sale not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Expiry
 app.get('/api/expiry', (req, res) => {
   try {

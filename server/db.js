@@ -495,6 +495,19 @@ export const db = {
     return { sale: newSale, assignedAccount };
   },
 
+  updateSale(id, updates) {
+    const data = readDb();
+    const idx = data.sales.findIndex(s => s.id === id);
+    if (idx === -1) return null;
+    data.sales[idx] = {
+      ...data.sales[idx],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    writeDb(data);
+    return data.sales[idx];
+  },
+
   getExpiryList({ filter = 'ALL', brandId = 'all' } = {}) {
     const data = readDb();
     const now = new Date();
