@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers
+  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare
 } from 'lucide-react';
 
 export default function HomeMenuDrawer({
@@ -10,6 +10,7 @@ export default function HomeMenuDrawer({
   onSelectForms,
   onSelectCreateForm,
   onSelectCellsLinkup,
+  onSelectWhatsAppMessages,
   onSelectSettings,
   onLogout
 }) {
@@ -106,6 +107,25 @@ export default function HomeMenuDrawer({
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
+          {/* Button 4: Custom WhatsApp Message (image copy 66.png) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-green"
+            onClick={() => {
+              onClose();
+              if (onSelectWhatsAppMessages) onSelectWhatsAppMessages();
+            }}
+            id="menu-btn-whatsapp-messages"
+          >
+            <div className="menu-card-icon green">
+              <MessageSquare size={22} color="#16a34a" strokeWidth={2.3} />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Custom WhatsApp Message</span>
+              <span className="menu-card-desc">Sale Message & Expiry Message templates</span>
+            </div>
+            <ChevronRight size={20} className="menu-card-arrow" />
+          </button>
 
           {/* Button 5: General Settings */}
           {onSelectSettings && (

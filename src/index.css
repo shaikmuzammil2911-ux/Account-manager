@@ -1966,4 +1966,109 @@ p, .body-text {
   margin-top: 6px;
 }
 
+/* ==========================================================================
+   Dark Mode & Theme Support (image copy 67.png)
+   ========================================================================== */
+[data-theme='dark'] {
+  --bg-app: #0b0f19;
+  --bg-card: #131b2e;
+  --bg-input: #1e293b;
+  --border-light: #1f293d;
+  --border-medium: #334155;
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+}
+
+[data-theme='dark'],
+[data-theme='dark'] body {
+  background-color: #0b0f19 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .mobile-app-root {
+  background-color: #0b0f19 !important;
+}
+
+[data-theme='dark'] .mobile-app-viewport {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme='dark'] .app-header {
+  background-color: #0f172a !important;
+  border-bottom-color: #1e293b !important;
+}
+
+[data-theme='dark'] .header-btn {
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] h1,
+[data-theme='dark'] h2,
+[data-theme='dark'] h3,
+[data-theme='dark'] h4,
+[data-theme='dark'] .page-title,
+[data-theme='dark'] .section-title {
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .inventory-card {
+  background-color: #172033 !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .credential-input,
+[data-theme='dark'] .form-input-pill,
+[data-theme='dark'] .form-input,
+[data-theme='dark'] textarea,
+[data-theme='dark'] select {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .menu-drawer-panel {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .menu-action-card {
+  background-color: #172033 !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .menu-card-title {
+  color: #f8fafc !important;
+}
+
+[data-theme='dark'] .menu-card-desc {
+  color: #94a3b8 !important;
+}
+
+[data-theme='dark'] .bottom-nav {
+  background-color: rgba(15, 23, 42, 0.95) !important;
+  border-top-color: #334155 !important;
+}
+
+[data-theme='dark'] .bottom-nav-item {
+  color: #94a3b8 !important;
+}
+
+[data-theme='dark'] .bottom-nav-item.active {
+  color: #38bdf8 !important;
+}
+
+[data-theme='dark'] .modal-card {
+  background-color: #131b2e !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+
 

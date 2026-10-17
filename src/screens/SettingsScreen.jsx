@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Edit3, RotateCcw, Save, Shield, Check, AlertCircle, FileSpreadsheet,
-  Link, ArrowRight, Copy, Download, Upload, Plus, Trash2, Eye, EyeOff, CheckCircle2
+  Link, ArrowRight, Copy, Download, Upload, Plus, Trash2, Eye, EyeOff, CheckCircle2,
+  Sun, Moon, Monitor, Type, Sliders, Palette, Sparkles
 } from 'lucide-react';
 import { api } from '../api/client';
 import { GOOGLE_APPS_SCRIPT_TEMPLATE, DEFAULT_CELL_MAPPINGS } from '../utils/googleSheets';
@@ -10,6 +11,23 @@ export default function SettingsScreen({ onResetComplete, showToast }) {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeMenu, setActiveMenu] = useState('menu'); // 'menu', 'sale_form', 'credentials', 'reset'
+
+  // General Settings: Theme & Text Size State (image copy 67.png)
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem('accounts_theme') || 'light';
+    } catch (e) {
+      return 'light';
+    }
+  });
+
+  const [textSize, setTextSize] = useState(() => {
+    try {
+      return parseInt(localStorage.getItem('accounts_text_size') || '100', 10);
+    } catch (e) {
+      return 100;
+    }
+  });
 
   // Sub-tab inside Edit Sale Form
   const [saleFormTab, setSaleFormTab] = useState('fields'); // 'fields' or 'sheets'
@@ -39,6 +57,25 @@ export default function SettingsScreen({ onResetComplete, showToast }) {
         setFormFields(data.saleFormFields || {});
         setCustomFields(data.customSaleFields || []);
 
+        if (data.theme) {
+          setTheme(data.theme);
+          applyTheme(data.theme);
+        } else {
+          const localTheme = localStorage.getItem('accounts_theme') || 'light';
+          applyTheme(localTheme);
+        }
+
+        if (data.textSize) {
+          const num = parseInt(data.textSize, 10);
+          if (!isNaN(num)) {
+            setTextSize(num);
+            applyTextSize(num);
+          }
+        } else {
+          const localSize = parseInt(localStorage.getItem('accounts_text_size') || '100', 10);
+          applyTextSize(localSize);
+        }
+
         const gConfig = data.googleSheetConfig || {};
         setSheetWebhookUrl(gConfig.webhookUrl || '');
         setSheetName(gConfig.sheetName || 'Sales_Data');
@@ -52,6 +89,54 @@ export default function SettingsScreen({ onResetComplete, showToast }) {
     }
     loadSettings();
   }, []);
+
+  const applyTheme = (t) => {
+    setTheme(t);
+    try {
+      localStorage.setItem('accounts_theme', t);
+    } catch (e) {}
+
+    if (t === 'dark') {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else if (t === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+    } else {
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+    }
+  };
+
+  const applyTextSize = (pct) => {
+    const val = parseInt(pct, 10) || 100;
+    setTextSize(val);
+    try {
+      localStorage.setItem('accounts_text_size', String(val));
+    } catch (e) {}
+
+    const scale = val / 100;
+    if (document.body) {
+      document.body.style.zoom = scale;
+    }
+    document.documentElement.style.fontSize = `${16 * scale}px`;
+    document.documentElement.style.setProperty('--app-font-scale', String(scale));
+  };
+
+  const handleThemeToggle = async (newTheme) => {
+    applyTheme(newTheme);
+    try {
+      await api.updateSettings({ theme: newTheme });
+      showToast(`Theme changed to ${newTheme === 'dark' ? 'Dark Mode' : newTheme === 'light' ? 'Light Mode' : 'System Default'}`, 'success');
+    } catch (e) {
+      showToast('Theme saved locally', 'info');
+    }
+  };
+
+  const handleTextSizeChange = async (newSize) => {
+    applyTextSize(newSize);
+    try {
+      await api.updateSettings({ textSize: newSize });
+    } catch (e) {}
+  };
 
   const handleSaveAll = async () => {
     try {
@@ -188,9 +273,264 @@ export default function SettingsScreen({ onResetComplete, showToast }) {
 
   return (
     <div className="screen-content" style={{ paddingBottom: '90px' }}>
-      {/* 3 Main Settings Buttons (Matching Frame 68s Exactly) */}
+      {/* Main Settings Menu (image copy 67.png) */}
       {activeMenu === 'menu' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '10px' }}>
+
+          {/* ================================================================= */}
+          {/* GENERAL PREFERENCES & APPEARANCE (image copy 67.png)              */}
+          {/* ================================================================= */}
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '16px',
+            border: '1.5px solid #cbd5e1',
+            padding: '16px',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.04)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <div style={{
+                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                color: '#ffffff',
+                width: '32px',
+                height: '32px',
+                borderRadius: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                boxShadow: '0 2px 6px rgba(37,99,235,0.3)'
+              }}>
+                <Palette size={18} />
+              </div>
+              <div>
+                <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+                  General Settings & Preferences
+                </h3>
+                <span style={{ fontSize: '11.5px', color: '#64748b' }}>
+                  Theme mode, text size and appearance
+                </span>
+              </div>
+            </div>
+
+            {/* 1. THEME (Light Mode / Dark Mode) */}
+            <div style={{ marginBottom: '16px', paddingBottom: '14px', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Sun size={15} color="#ea580c" />
+                  <span>Theme (Light Mode / Dark Mode):</span>
+                </label>
+                <span style={{
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  color: theme === 'dark' ? '#38bdf8' : '#2563eb',
+                  background: theme === 'dark' ? '#0f172a' : '#eff6ff',
+                  padding: '2px 8px',
+                  borderRadius: '6px'
+                }}>
+                  {theme === 'dark' ? 'Dark Active' : theme === 'light' ? 'Light Active' : 'System Auto'}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                {/* Light Mode */}
+                <button
+                  type="button"
+                  onClick={() => handleThemeToggle('light')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '10px',
+                    border: theme === 'light' ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
+                    background: theme === 'light' ? '#eff6ff' : '#f8fafc',
+                    color: theme === 'light' ? '#1d4ed8' : '#475569',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s'
+                  }}
+                  id="theme-btn-light"
+                >
+                  <Sun size={18} color="#f59e0b" />
+                  <span>Light Mode</span>
+                </button>
+
+                {/* Dark Mode */}
+                <button
+                  type="button"
+                  onClick={() => handleThemeToggle('dark')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '10px',
+                    border: theme === 'dark' ? '2px solid #38bdf8' : '1.5px solid #cbd5e1',
+                    background: theme === 'dark' ? '#0f172a' : '#f8fafc',
+                    color: theme === 'dark' ? '#38bdf8' : '#475569',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s'
+                  }}
+                  id="theme-btn-dark"
+                >
+                  <Moon size={18} color="#38bdf8" />
+                  <span>Dark Mode</span>
+                </button>
+
+                {/* System Auto */}
+                <button
+                  type="button"
+                  onClick={() => handleThemeToggle('system')}
+                  style={{
+                    padding: '10px 8px',
+                    borderRadius: '10px',
+                    border: theme === 'system' ? '2px solid #9333ea' : '1.5px solid #cbd5e1',
+                    background: theme === 'system' ? '#faf5ff' : '#f8fafc',
+                    color: theme === 'system' ? '#7e22ce' : '#475569',
+                    fontWeight: 800,
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    transition: 'all 0.15s'
+                  }}
+                  id="theme-btn-system"
+                >
+                  <Monitor size={18} color="#7e22ce" />
+                  <span>System Auto</span>
+                </button>
+              </div>
+            </div>
+
+            {/* 2. ENTIRE WEBSITE TEXT SIZE */}
+            <div style={{ marginBottom: '14px', paddingBottom: '14px', borderBottom: '1px solid #f1f5f9' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <label style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Type size={16} color="#2563eb" />
+                  <span>Entire Website Text Size:</span>
+                </label>
+                <span style={{
+                  fontSize: '12px',
+                  fontWeight: 900,
+                  color: '#2563eb',
+                  background: '#eff6ff',
+                  padding: '2px 8px',
+                  borderRadius: '6px'
+                }}>
+                  {textSize}%
+                </span>
+              </div>
+
+              {/* Quick Presets */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginBottom: '10px' }}>
+                {[
+                  { label: 'Small', val: 90 },
+                  { label: 'Normal', val: 100 },
+                  { label: 'Medium', val: 110 },
+                  { label: 'Large', val: 120 }
+                ].map(p => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => handleTextSizeChange(p.val)}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: '8px',
+                      border: textSize === p.val ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                      background: textSize === p.val ? '#eff6ff' : '#f8fafc',
+                      color: textSize === p.val ? '#1d4ed8' : '#334155',
+                      fontWeight: 800,
+                      fontSize: '11.5px',
+                      cursor: 'pointer',
+                      textAlign: 'center'
+                    }}
+                  >
+                    {p.label}
+                    <div style={{ fontSize: '9.5px', opacity: 0.8 }}>({p.val}%)</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Interactive Slider */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>A</span>
+                <input
+                  type="range"
+                  min="85"
+                  max="125"
+                  step="5"
+                  value={textSize}
+                  onChange={e => handleTextSizeChange(parseInt(e.target.value, 10))}
+                  style={{ flex: 1, accentColor: '#2563eb', cursor: 'pointer' }}
+                  id="text-size-range-slider"
+                />
+                <span style={{ fontSize: '15px', color: '#0f172a', fontWeight: 900 }}>A</span>
+              </div>
+
+              {/* Live Preview Sample */}
+              <div style={{
+                marginTop: '10px',
+                background: '#f8fafc',
+                border: '1px dashed #cbd5e1',
+                borderRadius: '8px',
+                padding: '8px 12px',
+                textAlign: 'center'
+              }}>
+                <span style={{ fontSize: `${13 * (textSize / 100)}px`, fontWeight: 700, color: '#0f172a' }}>
+                  Live Preview: Netflix, Prime Video, Hotstar • Accounts Manager 🍿
+                </span>
+              </div>
+            </div>
+
+            {/* 3. MORE I WILL UPDATE PLACEHOLDER (as requested in prompt) */}
+            <div style={{
+              background: '#f8fafc',
+              border: '1.5px dashed #cbd5e1',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <div style={{
+                background: '#e0e7ff',
+                color: '#4338ca',
+                width: '30px',
+                height: '30px',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0
+              }}>
+                <Sparkles size={16} />
+              </div>
+              <div>
+                <strong style={{ fontSize: '12.5px', color: '#1e293b' }}>More Options Ready:</strong>
+                <p style={{ fontSize: '11.5px', color: '#64748b', margin: '2px 0 0 0' }}>
+                  Additional preferences and system options will appear here as you update them.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{
+            fontSize: '13px',
+            fontWeight: 800,
+            color: '#64748b',
+            textTransform: 'uppercase',
+            letterSpacing: '0.6px',
+            margin: '6px 4px 0'
+          }}>
+            Forms & Database Configuration:
+          </div>
+
           {/* 1. Purple Button: Edit Sale Form & Google Sheet Linker */}
           <button
             type="button"

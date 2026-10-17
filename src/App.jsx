@@ -19,6 +19,7 @@ import BrandsScreen from './screens/BrandsScreen';
 import BrandsManagementScreen from './screens/BrandsManagementScreen';
 import FormsManagementScreen from './screens/FormsManagementScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import WhatsAppMessagesScreen from './screens/WhatsAppMessagesScreen';
 
 export default function App() {
   // Authentication State
@@ -87,6 +88,29 @@ export default function App() {
       console.error('Initial load error:', err);
     }
   };
+
+  // Initialize theme and text size on startup
+  useEffect(() => {
+    try {
+      const savedTheme = localStorage.getItem('accounts_theme') || 'light';
+      if (savedTheme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else if (savedTheme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      } else {
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+      }
+
+      const savedTextSize = parseInt(localStorage.getItem('accounts_text_size') || '100', 10);
+      const scale = savedTextSize / 100;
+      if (document.body) {
+        document.body.style.zoom = scale;
+      }
+      document.documentElement.style.fontSize = `${16 * scale}px`;
+      document.documentElement.style.setProperty('--app-font-scale', String(scale));
+    } catch (e) {}
+  }, []);
 
   useEffect(() => {
     if (currentUser) {
@@ -219,8 +243,8 @@ export default function App() {
 
       {/* Main Responsive Mobile Viewport */}
       <div className="mobile-app-viewport">
-        {/* Top Header (Forms Management Screen renders its own dedicated header per requirement) */}
-        {currentScreen !== 'forms-mgmt' && (
+        {/* Top Header (Dedicated screens like Forms Management & WhatsApp Messages render their own header) */}
+        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && (
           <TopHeader
             isHome={currentScreen === 'home'}
             showBack={currentScreen !== 'home'}
@@ -381,17 +405,25 @@ export default function App() {
           />
         )}
 
+        {currentScreen === 'whatsapp-messages' && (
+          <WhatsAppMessagesScreen
+            onBack={handleBack}
+            showToast={showToast}
+          />
+        )}
+
         {/* Fixed Bottom Navigation Bar */}
         <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
 
-      {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Create Form, Settings, Logout */}
+      {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Custom WhatsApp, Create Form, Settings, Logout */}
       <HomeMenuDrawer
         isOpen={showMenuDrawer}
         onClose={() => setShowMenuDrawer(false)}
         onSelectBrands={() => navigateTo('brands-mgmt')}
         onSelectForms={() => navigateTo('forms-mgmt')}
         onSelectCellsLinkup={() => navigateTo('cells-linkup')}
+        onSelectWhatsAppMessages={() => navigateTo('whatsapp-messages')}
         onSelectCreateForm={() => navigateTo('sale')}
         onSelectSettings={() => navigateTo('settings')}
         onLogout={handleLogout}
