@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare
+  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare, Share2
 } from 'lucide-react';
 
 export default function HomeMenuDrawer({
@@ -11,6 +11,7 @@ export default function HomeMenuDrawer({
   onSelectCreateForm,
   onSelectCellsLinkup,
   onSelectWhatsAppMessages,
+  onSelectShareBrands,
   onSelectSettings,
   onLogout
 }) {
@@ -127,7 +128,27 @@ export default function HomeMenuDrawer({
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
-          {/* Button 5: General Settings */}
+          {/* Button 5: Share Brands (image copy 68.png) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-neutral"
+            onClick={() => {
+              onClose();
+              if (onSelectShareBrands) onSelectShareBrands();
+            }}
+            id="menu-btn-share-brands"
+          >
+            <div className="menu-card-icon blue">
+              <Share2 size={22} color="#2563eb" strokeWidth={2.3} />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Share Brands</span>
+              <span className="menu-card-desc">Share inventory & screens with other sellers</span>
+            </div>
+            <ChevronRight size={20} className="menu-card-arrow" />
+          </button>
+
+          {/* Button 6: General Settings */}
           {onSelectSettings && (
             <button
               type="button"

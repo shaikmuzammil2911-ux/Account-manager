@@ -98,6 +98,11 @@ function readDb() {
     modified = true;
   }
 
+  if (!data.sharedBrands) {
+    data.sharedBrands = [];
+    modified = true;
+  }
+
   if (modified) {
     try {
       writeDb(data);
@@ -147,14 +152,59 @@ function dateDiffInDays(targetDate, referenceDate = new Date()) {
 }
 
 export const db = {
-  getBrands() {
+  getBrands(userEmail) {
     const data = readDb();
-    return data.brands || [];
+    let baseBrands = [...(data.brands || [])];
+    const shares = data.sharedBrands || [];
+
+    if (userEmail) {
+      const normalizedUser = userEmail.trim().toLowerCase();
+      shares.forEach(share => {
+        if (share.status !== 'revoked') {
+          const isReceiver = share.receiverEmail && share.receiverEmail.trim().toLowerCase() === normalizedUser;
+          if (isReceiver) {
+            (share.brandIds || []).forEach(bId => {
+              const base = baseBrands.find(b => b.id === bId);
+              if (base) {
+                const sharedId = `${base.id}__shared__${share.id}`;
+                if (!baseBrands.some(b => b.id === sharedId)) {
+                  baseBrands.push({
+                    ...base,
+                    id: sharedId,
+                    originalBrandId: base.id,
+                    name: `${base.displayName} (${share.senderName || 'Partner'})`,
+                    displayName: `${base.displayName} (${share.senderName || 'Partner'})`,
+                    isShared: true,
+                    sharedBy: share.senderName || 'Partner',
+                    senderEmail: share.senderEmail,
+                    shareId: share.id
+                  });
+                }
+              }
+            });
+          }
+        }
+      });
+    }
+
+    return baseBrands;
   },
 
   getBrand(id) {
-    const brands = this.getBrands();
-    return brands.find(b => b.id === id);
+    const data = readDb();
+    if (id && id.includes('__shared__')) {
+      const baseId = id.split('__shared__')[0];
+      const base = (data.brands || []).find(b => b.id === baseId);
+      if (base) {
+        return {
+          ...base,
+          id,
+          originalBrandId: base.id,
+          isShared: true
+        };
+      }
+    }
+    return (data.brands || []).find(b => b.id === id);
   },
 
   getInventory({ brandId, selectedOnly, emptyOnly, validity, sortOrder } = {}) {
@@ -162,7 +212,8 @@ export const db = {
     let items = (data.inventory || []).filter(item => !item.isDeleted);
 
     if (brandId && brandId !== 'all') {
-      items = items.filter(item => item.brandId === brandId);
+      const targetBrandId = brandId.includes('__shared__') ? brandId.split('__shared__')[0] : brandId;
+      items = items.filter(item => item.brandId === targetBrandId || item.brandId === brandId);
     }
 
     if (selectedOnly) {
@@ -342,12 +393,24 @@ export const db = {
     return true;
   },
 
-  getSales({ brandId, date, validity, search } = {}) {
+  getSales({ sellerEmail, brandId, date, validity, search } = {}) {
     const data = readDb();
     let sales = [...(data.sales || [])];
 
+    if (sellerEmail) {
+      const norm = sellerEmail.trim().toLowerCase();
+      sales = sales.filter(s => {
+        const sEmail = (s.sellerEmail || '').trim().toLowerCase();
+        if (!sEmail) {
+          return norm === 'fixyourmobiles10@gmail.com' || norm === 'admin';
+        }
+        return sEmail === norm;
+      });
+    }
+
     if (brandId && brandId !== 'all') {
-      sales = sales.filter(s => s.brandId === brandId);
+      const targetBrandId = brandId.includes('__shared__') ? brandId.split('__shared__')[0] : brandId;
+      sales = sales.filter(s => s.brandId === brandId || s.brandId === targetBrandId);
     }
 
     if (validity && validity !== 'all') {
@@ -375,7 +438,10 @@ export const db = {
 
   createSale(saleData) {
     const data = readDb();
-    const brand = data.brands.find(b => b.id === saleData.brandId) || data.brands[0];
+    const targetBrandId = (saleData.brandId || '').includes('__shared__')
+      ? saleData.brandId.split('__shared__')[0]
+      : saleData.brandId;
+    const brand = data.brands.find(b => b.id === saleData.brandId || b.id === targetBrandId) || data.brands[0];
 
     const nextRecordNum = String(data.sales.length + 1).padStart(2, '0');
 
@@ -389,11 +455,11 @@ export const db = {
       assignedAccount = data.inventory.find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase() && !i.isDeleted);
     }
 
-    // If no explicit account, auto-pick first available account with empty screen
+    // If no explicit account, auto-pick first available account with empty screen matching brand or targetBrandId
     if (!assignedAccount) {
       assignedAccount = data.inventory.find(i =>
         !i.isDeleted &&
-        i.brandId === saleData.brandId &&
+        (i.brandId === saleData.brandId || i.brandId === targetBrandId) &&
         i.screens && i.screens.some(s => s.status === 'empty')
       );
     }
@@ -470,8 +536,10 @@ export const db = {
       customerNumber: saleData.customerNumber || '',
       referenceName: saleData.referenceName || '',
       referenceNumber: saleData.referenceNumber || '',
-      brandId: brand.id,
-      brandName: brand.displayName,
+      brandId: saleData.brandId,
+      brandName: saleData.brandName || brand.displayName,
+      sellerEmail: (saleData.sellerEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      isSharedSale: Boolean((saleData.brandId || '').includes('__shared__')),
       accountEmail: saleData.accountEmail || assignedAccount?.email || '',
       accountPassword: saleData.accountPassword || assignedAccount?.password || '',
       validity: saleData.validity || '01 Month',
@@ -1104,5 +1172,43 @@ export const db = {
     const initial = getInitialData();
     writeDb(initial);
     return initial;
+  },
+
+  // --- SHARED BRANDS COLLABORATION ---
+  getShares({ email } = {}) {
+    const data = readDb();
+    let list = data.sharedBrands || [];
+    if (email) {
+      const norm = email.trim().toLowerCase();
+      list = list.filter(s =>
+        (s.senderEmail && s.senderEmail.trim().toLowerCase() === norm) ||
+        (s.receiverEmail && s.receiverEmail.trim().toLowerCase() === norm)
+      );
+    }
+    return list;
+  },
+
+  createShare(shareData) {
+    const data = readDb();
+    if (!data.sharedBrands) data.sharedBrands = [];
+    const newShare = {
+      id: `share_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      senderEmail: (shareData.senderEmail || 'Fixyourmobiles10@gmail.com').trim().toLowerCase(),
+      senderName: (shareData.senderName || 'Bharath').trim(),
+      receiverEmail: (shareData.receiverEmail || '').trim().toLowerCase(),
+      brandIds: Array.isArray(shareData.brandIds) ? shareData.brandIds : [],
+      status: 'active',
+      createdAt: new Date().toISOString()
+    };
+    data.sharedBrands.push(newShare);
+    writeDb(data);
+    return newShare;
+  },
+
+  deleteShare(id) {
+    const data = readDb();
+    data.sharedBrands = (data.sharedBrands || []).filter(s => s.id !== id);
+    writeDb(data);
+    return true;
   }
 };

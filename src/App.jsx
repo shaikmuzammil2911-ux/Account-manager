@@ -20,6 +20,7 @@ import BrandsManagementScreen from './screens/BrandsManagementScreen';
 import FormsManagementScreen from './screens/FormsManagementScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import WhatsAppMessagesScreen from './screens/WhatsAppMessagesScreen';
+import ShareBrandsScreen from './screens/ShareBrandsScreen';
 
 export default function App() {
   // Authentication State
@@ -75,7 +76,7 @@ export default function App() {
   // Initial load
   const loadInitial = async () => {
     try {
-      const brandsList = await api.getBrands();
+      const brandsList = await api.getBrands(currentUser?.email);
       setBrands(brandsList);
       if (brandsList && brandsList.length > 0) {
         if (!selectedBrand) {
@@ -166,7 +167,11 @@ export default function App() {
   };
 
   const handleSaleSuccess = async (salePayload) => {
-    await api.createSale(salePayload);
+    const payload = {
+      ...salePayload,
+      sellerEmail: salePayload.sellerEmail || currentUser?.email || 'Fixyourmobiles10@gmail.com'
+    };
+    await api.createSale(payload);
     const updatedStats = await api.getStats();
     setStats(updatedStats);
     navigateTo('recent-sales');
@@ -243,8 +248,8 @@ export default function App() {
 
       {/* Main Responsive Mobile Viewport */}
       <div className="mobile-app-viewport">
-        {/* Top Header (Dedicated screens like Forms Management & WhatsApp Messages render their own header) */}
-        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && (
+        {/* Top Header (Dedicated screens like Forms Management, WhatsApp Messages & Share Brands render their own header) */}
+        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && currentScreen !== 'share-brands' && (
           <TopHeader
             isHome={currentScreen === 'home'}
             showBack={currentScreen !== 'home'}
@@ -341,6 +346,7 @@ export default function App() {
             isAddSaleOpen={recentSalesAddModalOpen}
             onOpenAddSale={() => setRecentSalesAddModalOpen(true)}
             onCloseAddSale={() => setRecentSalesAddModalOpen(false)}
+            currentUser={currentUser}
             onSaleAdded={async () => {
               const updatedStats = await api.getStats();
               setStats(updatedStats);
@@ -412,11 +418,21 @@ export default function App() {
           />
         )}
 
+        {currentScreen === 'share-brands' && (
+          <ShareBrandsScreen
+            brands={brands}
+            currentUser={currentUser}
+            onBack={handleBack}
+            showToast={showToast}
+            onShareUpdated={loadInitial}
+          />
+        )}
+
         {/* Fixed Bottom Navigation Bar */}
         <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
 
-      {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Custom WhatsApp, Create Form, Settings, Logout */}
+      {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Custom WhatsApp, Share Brands, Create Form, Settings, Logout */}
       <HomeMenuDrawer
         isOpen={showMenuDrawer}
         onClose={() => setShowMenuDrawer(false)}
@@ -424,6 +440,7 @@ export default function App() {
         onSelectForms={() => navigateTo('forms-mgmt')}
         onSelectCellsLinkup={() => navigateTo('cells-linkup')}
         onSelectWhatsAppMessages={() => navigateTo('whatsapp-messages')}
+        onSelectShareBrands={() => navigateTo('share-brands')}
         onSelectCreateForm={() => navigateTo('sale')}
         onSelectSettings={() => navigateTo('settings')}
         onLogout={handleLogout}

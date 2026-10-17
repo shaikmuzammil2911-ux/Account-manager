@@ -37,9 +37,10 @@ function saveLocalData(data) {
 
 export const api = {
   // BRANDS
-  async getBrands() {
+  async getBrands(userEmail) {
     try {
-      const res = await fetch('/api/brands');
+      const emailParam = userEmail ? `?userEmail=${encodeURIComponent(userEmail)}` : '';
+      const res = await fetch(`/api/brands${emailParam}`);
       if (res.ok) {
         const brands = await res.json();
         const local = getLocalData();
@@ -51,7 +52,34 @@ export const api = {
       // offline fallback
     }
     const local = getLocalData();
-    return local.brands || [];
+    let brands = [...(local.brands || [])];
+    if (userEmail && local.sharedBrands) {
+      const norm = userEmail.trim().toLowerCase();
+      local.sharedBrands.forEach(share => {
+        if (share.status !== 'revoked' && share.receiverEmail?.toLowerCase() === norm) {
+          (share.brandIds || []).forEach(bId => {
+            const base = (local.brands || []).find(b => b.id === bId);
+            if (base) {
+              const sharedId = `${base.id}__shared__${share.id}`;
+              if (!brands.some(b => b.id === sharedId)) {
+                brands.push({
+                  ...base,
+                  id: sharedId,
+                  originalBrandId: base.id,
+                  name: `${base.displayName} (${share.senderName || 'Partner'})`,
+                  displayName: `${base.displayName} (${share.senderName || 'Partner'})`,
+                  isShared: true,
+                  sharedBy: share.senderName || 'Partner',
+                  senderEmail: share.senderEmail,
+                  shareId: share.id
+                });
+              }
+            }
+          });
+        }
+      });
+    }
+    return brands;
   },
 
   // INVENTORY (DATA SECTION)
@@ -328,6 +356,7 @@ export const api = {
       if (params.validity) query.set('validity', params.validity);
       if (params.date) query.set('date', params.date);
       if (params.search) query.set('search', params.search);
+      if (params.sellerEmail) query.set('sellerEmail', params.sellerEmail);
 
       const res = await fetch(`/api/sales?${query.toString()}`);
       if (res.ok) {
@@ -342,8 +371,20 @@ export const api = {
     const local = getLocalData();
     let sales = [...(local.sales || [])];
 
+    if (params.sellerEmail) {
+      const norm = params.sellerEmail.trim().toLowerCase();
+      sales = sales.filter(s => {
+        const sEmail = (s.sellerEmail || '').trim().toLowerCase();
+        if (!sEmail) {
+          return norm === 'fixyourmobiles10@gmail.com' || norm === 'admin';
+        }
+        return sEmail === norm;
+      });
+    }
+
     if (params.brandId && params.brandId !== 'all') {
-      sales = sales.filter(s => s.brandId === params.brandId);
+      const targetBrandId = params.brandId.includes('__shared__') ? params.brandId.split('__shared__')[0] : params.brandId;
+      sales = sales.filter(s => s.brandId === params.brandId || s.brandId === targetBrandId);
     }
     if (params.validity && params.validity !== 'all') {
       sales = sales.filter(s => s.validity === params.validity);
@@ -1214,5 +1255,63 @@ export const api = {
     const initial = getClientInitialData();
     saveLocalData(initial);
     return initial;
+  },
+
+  // SHARE BRANDS COLLABORATION
+  async getShares(email) {
+    try {
+      const q = email ? `?email=${encodeURIComponent(email)}` : '';
+      const res = await fetch(`/api/shares${q}`);
+      if (res.ok) {
+        const list = await res.json();
+        const local = getLocalData();
+        local.sharedBrands = list;
+        saveLocalData(local);
+        return list;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return local.sharedBrands || [];
+  },
+
+  async createShare(shareData) {
+    let created = null;
+    try {
+      const res = await fetch('/api/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(shareData)
+      });
+      if (res.ok) {
+        created = await res.json();
+      }
+    } catch (e) {}
+
+    const local = getLocalData();
+    if (!local.sharedBrands) local.sharedBrands = [];
+    if (!created) {
+      created = {
+        id: `share_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        senderEmail: (shareData.senderEmail || 'Fixyourmobiles10@gmail.com').trim().toLowerCase(),
+        senderName: (shareData.senderName || 'Bharath').trim(),
+        receiverEmail: (shareData.receiverEmail || '').trim().toLowerCase(),
+        brandIds: Array.isArray(shareData.brandIds) ? shareData.brandIds : [],
+        status: 'active',
+        createdAt: new Date().toISOString()
+      };
+    }
+    local.sharedBrands.push(created);
+    saveLocalData(local);
+    return created;
+  },
+
+  async deleteShare(id) {
+    try {
+      await fetch(`/api/shares/${id}`, { method: 'DELETE' });
+    } catch (e) {}
+    const local = getLocalData();
+    local.sharedBrands = (local.sharedBrands || []).filter(s => s.id !== id);
+    saveLocalData(local);
+    return true;
   }
 };

@@ -135,7 +135,8 @@ app.post('/api/auth/reset-password', (req, res) => {
 // Brands
 app.get('/api/brands', (req, res) => {
   try {
-    const brands = db.getBrands();
+    const { userEmail } = req.query;
+    const brands = db.getBrands(userEmail);
     res.json(brands);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -370,9 +371,38 @@ app.post('/api/inventory/:id/select', (req, res) => {
 // Sales
 app.get('/api/sales', (req, res) => {
   try {
-    const { brandId, date, validity, search } = req.query;
-    const sales = db.getSales({ brandId, date, validity, search });
+    const { brandId, date, validity, search, sellerEmail } = req.query;
+    const sales = db.getSales({ brandId, date, validity, search, sellerEmail });
     res.json(sales);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Share Brands (Multi-seller collaboration)
+app.get('/api/shares', (req, res) => {
+  try {
+    const { email } = req.query;
+    const shares = db.getShares({ email });
+    res.json(shares);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/shares', (req, res) => {
+  try {
+    const share = db.createShare(req.body);
+    res.status(201).json(share);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/shares/:id', (req, res) => {
+  try {
+    db.deleteShare(req.params.id);
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

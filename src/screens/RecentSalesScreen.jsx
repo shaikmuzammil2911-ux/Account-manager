@@ -18,7 +18,8 @@ export default function RecentSalesScreen({
   isAddSaleOpen,
   onOpenAddSale,
   onCloseAddSale,
-  onSaleAdded
+  onSaleAdded,
+  currentUser
 }) {
   // Navigation: 'brands' (Step 1: Brand selection) or 'sales' (Step 2: Sales for selected brand)
   const [viewMode, setViewMode] = useState(selectedBrand ? 'sales' : 'brands');
@@ -178,7 +179,10 @@ export default function RecentSalesScreen({
   // Load all sales to compute brand-wise sales counts
   const fetchAllSales = async () => {
     try {
-      const data = await api.getSales({ brandId: 'all' });
+      const data = await api.getSales({
+        brandId: 'all',
+        sellerEmail: currentUser?.email
+      });
       setAllSales(data);
     } catch (err) {
       console.warn('Error fetching all sales', err);
@@ -198,7 +202,7 @@ export default function RecentSalesScreen({
 
   useEffect(() => {
     fetchAllSales();
-  }, []);
+  }, [currentUser]);
 
   // Fetch sales for currently active brand
   const fetchBrandSales = async () => {
@@ -209,7 +213,8 @@ export default function RecentSalesScreen({
         brandId: activeBrand ? activeBrand.id : 'all',
         validity: filterValidity,
         date: filterDate,
-        search: searchQuery
+        search: searchQuery,
+        sellerEmail: currentUser?.email
       });
       setSales(data);
       setCurrentPage(1);
@@ -350,6 +355,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
       const payload = {
         brandId: targetBrandId,
         brandName: targetBrand?.displayName || targetBrand?.name || 'Netflix',
+        sellerEmail: currentUser?.email || 'Fixyourmobiles10@gmail.com',
         customerName: addSaleForm.customerName.trim(),
         customerNumber: addSaleForm.customerNumber.trim(),
         accountEmail: addSaleForm.accountEmail.trim(),
