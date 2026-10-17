@@ -197,6 +197,29 @@ Device: ${sale.deviceName || 'Personal TV'}`;
     setTimeout(() => setCopiedId(null), 2000);
   };
 
+  // Direct WhatsApp chat with credentials prefilled (image copy 42.png)
+  const handleDirectWhatsApp = (sale) => {
+    const cleanPhone = (sale.customerNumber || '').replace(/\D/g, '');
+    const phoneParam = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+
+    const credentialsMessage = `*${sale.brandName} Subscription Details*
+👤 ID: ${sale.accountEmail}
+🔒 Password: ${sale.accountPassword}
+📺 Screen: ${sale.screenNumber}
+🔑 PIN: ${sale.screenPin}
+📅 Validity: ${sale.validity}
+⏳ Expiry: ${sale.expiryDate}
+📱 Device: ${sale.deviceName || 'Personal TV'}${sale.note ? `\n📝 Note: ${sale.note}` : ''}`;
+
+    try {
+      navigator.clipboard.writeText(credentialsMessage);
+    } catch (e) {}
+
+    const waUrl = `https://wa.me/${phoneParam}?text=${encodeURIComponent(credentialsMessage)}`;
+    window.open(waUrl, '_blank');
+    showToast(`Opening WhatsApp for ${sale.customerName}...`, 'success');
+  };
+
   // Handle Add Sale Form field changes
   const handleAddSaleChange = (field, value) => {
     setAddSaleForm(prev => {
@@ -322,7 +345,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
     );
   }
 
-  // Helper renderer for a single Sold Card
+  // Helper renderer for a single Sold Card (image copy 42.png updates)
   const renderSaleCard = (sale, sIdx, isAccountView = false) => {
     return (
       <div
@@ -331,32 +354,37 @@ Device: ${sale.deviceName || 'Personal TV'}`;
         style={{ padding: '14px 16px', position: 'relative' }}
         id={`recent-sale-${sale.recordNumber || sIdx}`}
       >
-        {/* Top Row: Ribbon Badge, (Redundant brandName removed per user's red X mark), Expiry Badge */}
-        <div className="card-top-row" style={{ marginBottom: '10px' }}>
+        {/* Top Row: Ribbon Badge */}
+        <div className="card-top-row" style={{ marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <div className="ribbon-badge">
               {isAccountView
                 ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
                 : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
             </div>
-            {/* Removed redundant brandName text next to ribbon badge */}
-          </div>
-
-          <div className="badge-navy-pill">
-            Expires: {sale.expiryDate}
           </div>
         </div>
 
-        {/* Row 1: Customer Name & Number */}
+        {/* Row 1: Customer Name & Number with Headings ABOVE and Small Copy Buttons */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '10px' }}>
-          <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Customer Name</div>
-            <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>{sale.customerName}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Customer Name</div>
+            <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sale.customerName}
+              </span>
+              <CopyButton text={sale.customerName} tooltip="Copy name" size={13} showLabelOnCopy={false} />
+            </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '8px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Phone Number</div>
-            <div style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>{sale.customerNumber}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Phone Number</div>
+            <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '10px', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
+                {sale.customerNumber}
+              </span>
+              <CopyButton text={sale.customerNumber} tooltip="Copy number" size={13} showLabelOnCopy={false} />
+            </div>
           </div>
         </div>
 
@@ -382,38 +410,50 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         </div>
 
-        {/* Row 4: Validity, Screen No & Screen Pin with CopyButton */}
+        {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE (Copy removed from PIN) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-          <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Validity</div>
-            <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.validity}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.validity}</span>
+            </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Screen No</div>
-            <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenNumber}</div>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenNumber}</span>
+            </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>PIN</div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenPin}</span>
-              <CopyButton text={sale.screenPin} tooltip="Copy PIN" size={11} showLabelOnCopy={false} />
             </div>
           </div>
         </div>
 
-        {/* Row 5: Activation Date & Device / Price */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
-          <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Activation Date</div>
-            <div style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{sale.activationDate}</div>
+        {/* Row 5: Activation Date, Expiry Date & Amount side-by-side with Headings ABOVE */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Activation Date</div>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.activationDate}</span>
+            </div>
           </div>
 
-          <div style={{ background: '#f8fafc', padding: '6px 10px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800 }}>Device / Price</div>
-            <div style={{ fontSize: '13px', fontWeight: 800, color: '#16a34a' }}>
-              ₹{sale.amount || 199} • {sale.deviceName || 'TV'}
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Expiry Date</div>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.expiryDate}</span>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Amount</div>
+            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1px solid #e2e8f0', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+              <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹{sale.amount || 199}</span>
             </div>
           </div>
         </div>
@@ -437,26 +477,78 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         )}
 
-        {/* Actions: Copy Customer Details & WhatsApp Notify */}
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className="glossy-btn glossy-btn-gray"
-            style={{ flex: 1, padding: '9px', fontSize: '13px' }}
-            onClick={() => copyFullSaleDetails(sale)}
-          >
-            {copiedId === sale.id ? <Check size={15} color="#16a34a" /> : <Share2 size={15} />}
-            <span>{copiedId === sale.id ? 'Copied Details' : 'Copy All Details'}</span>
-          </button>
+        {/* Row 6 (Bottom Row): Large Device Name Box + Direct WhatsApp Chat Button + Notify Button */}
+        <div>
+          <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Device Name</div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {/* Large Device Name Box in place of Copy All Details */}
+            <div style={{
+              flex: 1,
+              height: '42px',
+              background: '#f8fafc',
+              border: '1px solid #e2e8f0',
+              borderRadius: '10px',
+              padding: '0 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              minWidth: 0,
+              boxSizing: 'border-box'
+            }}>
+              <Tv size={16} color="#64748b" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {sale.deviceName || 'Personal TV'}
+              </span>
+            </div>
 
-          <button
-            type="button"
-            className="glossy-btn glossy-btn-red"
-            style={{ flex: 1, padding: '9px', fontSize: '13px' }}
-            onClick={() => onOpenNotifyModal(sale)}
-          >
-            <span>Notify via WhatsApp</span>
-          </button>
+            {/* Direct WhatsApp Chat Icon Button (opens customer chat & pastes credentials) */}
+            <button
+              type="button"
+              onClick={() => handleDirectWhatsApp(sale)}
+              title="Open customer WhatsApp chat & send credentials"
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                background: 'linear-gradient(135deg, #25D366 0%, #128C7E 100%)',
+                border: 'none',
+                color: '#ffffff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(37, 211, 102, 0.35)',
+                flexShrink: 0
+              }}
+              id={`recent-sale-wa-btn-${sale.id}`}
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.588-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.275.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.043.072.043.419-.101.824z" />
+              </svg>
+            </button>
+
+            {/* Notify Button */}
+            <button
+              type="button"
+              className="glossy-btn glossy-btn-red"
+              style={{
+                height: '42px',
+                padding: '0 16px',
+                fontSize: '13px',
+                fontWeight: 800,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '10px',
+                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.35)',
+                flexShrink: 0
+              }}
+              onClick={() => onOpenNotifyModal(sale)}
+              id={`recent-sale-notify-btn-${sale.id}`}
+            >
+              <span>Notify</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -858,7 +950,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Vikram Reddy"
+                    placeholder=""
                     value={addSaleForm.customerName}
                     onChange={e => handleAddSaleChange('customerName', e.target.value)}
                     style={{
@@ -880,7 +972,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   <input
                     type="tel"
                     required
-                    placeholder="e.g. 9123456789"
+                    placeholder=""
                     value={addSaleForm.customerNumber}
                     onChange={e => handleAddSaleChange('customerNumber', e.target.value)}
                     style={{
@@ -905,7 +997,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   <input
                     type="text"
                     required
-                    placeholder="account.email@gmail.com"
+                    placeholder=""
                     value={addSaleForm.accountEmail}
                     onChange={e => handleAddSaleChange('accountEmail', e.target.value)}
                     style={{
@@ -957,7 +1049,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                 <div className="credential-input-box" style={{ padding: '4px 8px' }}>
                   <input
                     type="text"
-                    placeholder="Account password"
+                    placeholder=""
                     value={addSaleForm.accountPassword}
                     onChange={e => handleAddSaleChange('accountPassword', e.target.value)}
                     style={{
@@ -1031,7 +1123,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   <input
                     type="text"
                     maxLength={6}
-                    placeholder="1234"
+                    placeholder=""
                     value={addSaleForm.screenPin}
                     onChange={e => handleAddSaleChange('screenPin', e.target.value)}
                     style={{
@@ -1056,7 +1148,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   </label>
                   <input
                     type="text"
-                    placeholder="DD-MMM-YYYY"
+                    placeholder=""
                     value={addSaleForm.activationDate}
                     onChange={e => handleAddSaleChange('activationDate', e.target.value)}
                     style={{
@@ -1079,7 +1171,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                     <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹</span>
                     <input
                       type="number"
-                      placeholder="Price"
+                      placeholder=""
                       value={addSaleForm.amount}
                       onChange={e => handleAddSaleChange('amount', e.target.value)}
                       style={{
@@ -1095,7 +1187,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                     <span style={{ color: '#94a3b8' }}>•</span>
                     <input
                       type="text"
-                      placeholder="Device"
+                      placeholder=""
                       value={addSaleForm.deviceName}
                       onChange={e => handleAddSaleChange('deviceName', e.target.value)}
                       style={{
@@ -1120,7 +1212,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                 </label>
                 <textarea
                   rows="2"
-                  placeholder="Add quick note (e.g. Paid via UPI, discount applied, renewal requested)..."
+                  placeholder=""
                   value={addSaleForm.note}
                   onChange={e => handleAddSaleChange('note', e.target.value)}
                   style={{

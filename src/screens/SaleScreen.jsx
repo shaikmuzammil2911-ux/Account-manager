@@ -22,8 +22,8 @@ export default function SaleScreen({
 }) {
   const initialDateStr = formatDate(new Date());
 
-  // Form Fields - initially EMPTY per Master Prompt requirement 1
-  const [brandId, setBrandId] = useState(prefillData?.brandId || (selectedBrand ? selectedBrand.id : ''));
+  // Form Fields - initially EMPTY per user requirement
+  const [brandId, setBrandId] = useState(prefillData?.brandId || '');
   const [validity, setValidity] = useState(prefillData?.validity || '');
   const [activationDate, setActivationDate] = useState(prefillData?.activationDate || initialDateStr);
   const [expiryDate, setExpiryDate] = useState('');
@@ -428,11 +428,9 @@ export default function SaleScreen({
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                 {currentBrand ? (
                   <OttLogo brandId={currentBrand.id} name={currentBrand.displayName} size={26} />
-                ) : (
-                  <Tv size={20} color="#94a3b8" />
-                )}
-                <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: currentBrand ? '#ffffff' : '#64748b' }}>
-                  {currentBrand?.displayName || currentBrand?.name || 'Select OTT'}
+                ) : null}
+                <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: currentBrand ? '#ffffff' : '#94a3b8' }}>
+                  {currentBrand?.displayName || currentBrand?.name || ''}
                 </span>
               </div>
               <ChevronDown size={16} color={currentBrand ? '#ffffff' : '#64748b'} style={{ flexShrink: 0 }} />
@@ -463,7 +461,7 @@ export default function SaleScreen({
                 boxSizing: 'border-box'
               }}
             >
-              <span>{validity || 'Select Validity'}</span>
+              <span>{validity || ''}</span>
               <ChevronDown size={16} color="#64748b" />
             </div>
 
@@ -578,7 +576,7 @@ export default function SaleScreen({
                 setAccountEmail(e.target.value);
                 setSelectedInventoryId(null);
               }}
-              placeholder="Type ID or pick from dropdown"
+              placeholder=""
               id="sale-account-email"
               style={{ paddingRight: brandAccounts.length > 0 ? '36px' : '10px' }}
               required
@@ -678,7 +676,7 @@ export default function SaleScreen({
               className="sale-horizontal-input purple-theme"
               value={accountPassword}
               onChange={e => setAccountPassword(e.target.value)}
-              placeholder="Type password"
+              placeholder=""
               id="sale-account-password"
               style={{ paddingRight: '40px' }}
             />
@@ -712,7 +710,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={screenNumber}
               onChange={e => setScreenNumber(e.target.value)}
-              placeholder="e.g. Screen-2"
+              placeholder=""
               id="sale-screen-number"
               style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
             />
@@ -725,7 +723,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={screenPin}
               onChange={e => setScreenPin(e.target.value)}
-              placeholder="e.g. 2222"
+              placeholder=""
               id="sale-screen-pin"
               style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
             />
@@ -741,7 +739,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={amount}
               onChange={e => setAmount(e.target.value)}
-              placeholder="Type Amount"
+              placeholder=""
               id="sale-amount"
               style={{ fontWeight: 800 }}
             />
@@ -754,7 +752,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={deviceName}
               onChange={e => setDeviceName(e.target.value)}
-              placeholder="Type Device Name"
+              placeholder=""
               id="sale-device-name"
             />
           </div>
@@ -774,7 +772,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={customerName}
               onChange={e => setCustomerName(e.target.value)}
-              placeholder="Type Name"
+              placeholder=""
               id="sale-customer-name"
               required
             />
@@ -787,7 +785,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={customerNumber}
               onChange={e => setCustomerNumber(e.target.value)}
-              placeholder="Type Number"
+              placeholder=""
               id="sale-customer-number"
               required
             />
@@ -803,7 +801,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={referenceName}
               onChange={e => setReferenceName(e.target.value)}
-              placeholder="Type Reference Name"
+              placeholder=""
               id="sale-reference-name"
             />
           </div>
@@ -815,7 +813,7 @@ export default function SaleScreen({
               className="sale-input-compact"
               value={referenceNumber}
               onChange={e => setReferenceNumber(e.target.value)}
-              placeholder="Type Reference Number"
+              placeholder=""
               id="sale-reference-number"
             />
           </div>
