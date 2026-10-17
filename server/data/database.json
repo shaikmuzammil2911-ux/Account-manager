@@ -819,11 +819,21 @@
       "brands": [
         "netflix",
         "prime_video",
+        "disney_hotstar",
+        "sonyliv",
+        "zee5",
+        "youtube_premium",
+        "spotify",
+        "apple_tv",
+        "jiocinema",
         "aha"
       ],
       "isDefault": true,
       "fields": [],
-      "createdAt": "2026-01-01"
+      "createdAt": "2026-01-01",
+      "isAllBrands": true,
+      "updatedAt": "2026-10-17T09:45:07.871Z",
+      "isLocked": true
     }
   ],
   "cellMappings": {},
