@@ -29,6 +29,7 @@ export default function BrandsManagementScreen({
   const [logoPreview, setLogoPreview] = useState('');
   const [brandColor, setBrandColor] = useState('#3b82f6');
   const [screensCount, setScreensCount] = useState(5);
+  const [maxScreenOptions, setMaxScreenOptions] = useState(10);
 
   // Active pricing plan tab in modal (e.g. 'general', 'with_ads', etc.)
   const [activePlanTab, setActivePlanTab] = useState('general');
@@ -498,7 +499,7 @@ export default function BrandsManagementScreen({
       {/* ======================================================== */}
       {showAddModal && (
         <div
-          onClick={() => setShowAddModal(false)}
+          onClick={() => setAddModalState(false)}
           style={{
             position: 'fixed',
             top: 0,
@@ -550,7 +551,7 @@ export default function BrandsManagementScreen({
               </h3>
               <button
                 type="button"
-                onClick={() => setShowAddModal(false)}
+                onClick={() => setAddModalState(false)}
                 style={{
                   background: '#f1f5f9',
                   border: 'none',
@@ -621,16 +622,40 @@ export default function BrandsManagementScreen({
                   </label>
                 </div>
 
-                {/* 2. Screen Count */}
+                {/* 2. Screen Count with Add 5+ Button (image copy 72.png) */}
                 <div>
-                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Screens</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>Screens</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextMax = (maxScreenOptions || 10) + 5;
+                        setMaxScreenOptions(nextMax);
+                        setScreensCount(nextMax);
+                        showToast(`Added 5 screens! Total ${nextMax} screens available`, 'success');
+                      }}
+                      style={{
+                        background: '#eff6ff',
+                        border: '1px solid #bfdbfe',
+                        borderRadius: '6px',
+                        padding: '1px 5px',
+                        fontSize: '9.5px',
+                        fontWeight: 900,
+                        color: '#2563eb',
+                        cursor: 'pointer'
+                      }}
+                      title="Click to add +5 more screen options (up to 15, 20...)"
+                    >
+                      +5 Screens
+                    </button>
+                  </div>
                   <select
                     className="form-input-pill"
                     style={{ height: '40px', fontSize: '12px', padding: '0 8px', fontWeight: 800 }}
                     value={screensCount}
-                    onChange={e => setScreensCount(e.target.value)}
+                    onChange={e => setScreensCount(Number(e.target.value))}
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
+                    {Array.from({ length: maxScreenOptions || 10 }, (_, i) => i + 1).map(n => (
                       <option key={n} value={n}>{n} Screens</option>
                     ))}
                   </select>
@@ -937,7 +962,7 @@ export default function BrandsManagementScreen({
                   type="button"
                   className="glossy-btn glossy-btn-gray"
                   style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px' }}
-                  onClick={() => setShowAddModal(false)}
+                  onClick={() => setAddModalState(false)}
                 >
                   Cancel
                 </button>

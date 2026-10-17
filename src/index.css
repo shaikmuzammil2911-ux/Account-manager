@@ -1218,17 +1218,39 @@ p, .body-text {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   border-radius: 10px;
   font-size: 13px;
   font-weight: 800;
   color: #ffffff;
-  min-width: 96px;
+  min-width: 115px;
+  width: 115px;
   justify-content: center;
+  white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .credential-label-badge.blue { background: #2563eb; }
 .credential-label-badge.purple { background: #7c3aed; }
+
+.credential-input {
+  width: 100%;
+  border: 1.5px solid #94a3b8;
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: #f1f5f9;
+  font-size: 13.5px;
+  font-family: inherit;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.credential-input:focus {
+  border-color: #2563eb;
+  background: #ffffff;
+}
 
 .credential-input-box {
   flex: 1;
@@ -1236,8 +1258,8 @@ p, .body-text {
   align-items: center;
   padding: 8px 12px;
   border-radius: 10px;
-  border: 1px solid #cbd5e1;
-  background: #f8fafc;
+  border: 1.5px solid #94a3b8;
+  background: #f1f5f9;
   color: #0f172a;
 }
 
@@ -1248,8 +1270,8 @@ p, .body-text {
 }
 
 .pin-box {
-  background: #f8fafc;
-  border: 1px solid #cbd5e1;
+  background: #e2e8f0;
+  border: 1.5px solid #94a3b8;
   border-radius: 8px;
   padding: 6px 4px;
   text-align: center;

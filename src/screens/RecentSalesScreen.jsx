@@ -456,58 +456,81 @@ Device: ${sale.deviceName || 'Personal TV'}`;
       <div
         key={sale.id || sIdx}
         className="inventory-card"
-        style={{ padding: '12px 10px', position: 'relative' }}
+        style={{
+          padding: '14px 12px',
+          position: 'relative',
+          border: '2.5px solid #94a3b8',
+          borderRadius: '16px',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.06)'
+        }}
         id={`recent-sale-${sale.recordNumber || sIdx}`}
       >
-        {/* Top Row: Ribbon Badge, Brand Badge in Middle, Lock/Unlock Button on Right (image copy 64 & 65) */}
-        <div className="card-top-row" style={{ marginBottom: '10px', alignItems: 'center' }}>
-          <div className="ribbon-badge">
+        {/* Top Row: Ribbon Badge, Brand Badge in Middle, Lock/Unlock Button on Right (All vertical height 34px aligned per image copy 71) */}
+        <div className="card-top-row" style={{ marginBottom: '10px', alignItems: 'center', minHeight: '34px' }}>
+          <div className="ribbon-badge" style={{
+            height: '34px',
+            minHeight: '34px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 12px',
+            fontSize: '13.5px',
+            fontWeight: 900,
+            boxSizing: 'border-box'
+          }}>
             {isAccountView
               ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
               : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
           </div>
 
-          {/* Show Brand in middle in related color box per requirement (image copy 65) */}
+          {/* Show Brand in middle in related color box: height 34px aligned */}
           <div style={{
             background: bColor,
             color: '#ffffff',
-            padding: '3px 14px',
+            height: '34px',
+            minHeight: '34px',
+            padding: '0 18px',
             borderRadius: '8px',
             fontWeight: 900,
-            fontSize: '13px',
+            fontSize: '13.5px',
             letterSpacing: '0.4px',
             boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            textAlign: 'center'
+            textAlign: 'center',
+            boxSizing: 'border-box'
           }}>
             <span>{bName}</span>
           </div>
 
-          {/* Put Lock / Unlock button here per requirement (image copy 64 & 65) */}
+          {/* Lock / Unlock button: height 34px aligned */}
           <button
             type="button"
             onClick={() => handleToggleSaleLock(sale)}
             style={{
-              display: 'flex',
+              display: 'inline-flex',
               alignItems: 'center',
-              gap: '4px',
-              padding: '4px 10px',
+              justifyContent: 'center',
+              gap: '5px',
+              height: '34px',
+              minHeight: '34px',
+              padding: '0 14px',
               borderRadius: '8px',
-              fontSize: '12px',
+              fontSize: '13px',
               fontWeight: 800,
               cursor: 'pointer',
               border: '1.5px solid',
-              background: isEditing ? '#fff7ed' : '#f1f5f9',
-              color: isEditing ? '#ea580c' : '#475569',
-              borderColor: isEditing ? '#ea580c' : '#cbd5e1',
-              boxShadow: isEditing ? '0 2px 6px rgba(234, 88, 12, 0.25)' : 'none',
-              transition: 'all 0.15s ease'
+              background: isEditing ? '#fef2f2' : '#f0fdf4',
+              color: isEditing ? '#dc2626' : '#16a34a',
+              borderColor: isEditing ? '#f87171' : '#4ade80',
+              boxShadow: isEditing ? '0 2px 6px rgba(220, 38, 38, 0.25)' : '0 2px 6px rgba(22, 163, 74, 0.25)',
+              transition: 'all 0.15s ease',
+              boxSizing: 'border-box'
             }}
             title={isEditing ? 'Currently Unlocked. Click to lock' : 'Currently Locked. Click to edit'}
           >
-            {isEditing ? <Unlock size={14} strokeWidth={2.5} /> : <Lock size={14} strokeWidth={2.5} />}
+            {isEditing ? <Unlock size={15} strokeWidth={2.5} /> : <Lock size={15} strokeWidth={2.5} />}
             <span>{isEditing ? 'UnLock' : 'Lock'}</span>
           </button>
         </div>
@@ -516,7 +539,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Customer Name</div>
-            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="text"
@@ -537,7 +560,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Phone Number</div>
-            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
+            <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '10px', border: '1.5px solid #94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '38px', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="tel"
@@ -557,13 +580,13 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         </div>
 
-        {/* Row 2: Account ID / Email with CopyButton - single-line horizontal drag (image copy 61) */}
+        {/* Row 2: Account ID / Email with CopyButton */}
         <div className="credential-row" style={{ marginBottom: '8px' }}>
-          <div className="credential-label-badge blue">
-            <span>👤 ID</span>
+          <div className="credential-label-badge blue" style={{ minWidth: '115px', width: '115px', padding: '6px 8px', whiteSpace: 'nowrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>👤 ID</span>
           </div>
           <div className="credential-input-box" style={{
-            border: '1.5px solid #cbd5e1',
+            border: '1.5px solid #94a3b8',
             justifyContent: 'space-between',
             overflow: 'hidden',
             minWidth: 0
@@ -599,13 +622,13 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         </div>
 
-        {/* Row 3: Account Password with CopyButton */}
+        {/* Row 3: Account Password with CopyButton (Fixed icon separation with 115px badge) */}
         <div className="credential-row" style={{ marginBottom: '8px' }}>
-          <div className="credential-label-badge purple">
-            <span>🔒 Password</span>
+          <div className="credential-label-badge purple" style={{ minWidth: '115px', width: '115px', padding: '6px 8px', whiteSpace: 'nowrap' }}>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>🔒 Password</span>
           </div>
           <div className="credential-input-box" style={{
-            border: '1.5px solid #cbd5e1',
+            border: '1.5px solid #94a3b8',
             justifyContent: 'space-between',
             minWidth: 0
           }}>
@@ -627,16 +650,16 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         </div>
 
-        {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE */}
+        {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE & Colored Boxes */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
-            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#eff6ff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #93c5fd', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <select
                   value={editState.validity}
                   onChange={e => handleEditingFieldChange(sale.id, 'validity', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 900, color: '#1d4ed8', outline: 'none', textAlign: 'center' }}
                 >
                   <option value="01 Month">01 Month</option>
                   <option value="03 Months">03 Months</option>
@@ -644,94 +667,94 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   <option value="12 Months">12 Months</option>
                 </select>
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.validity}</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#1d4ed8' }}>{sale.validity}</span>
               )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
-            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#fefce8', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #facc15', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="text"
                   value={editState.screenNumber}
                   onChange={e => handleEditingFieldChange(sale.id, 'screenNumber', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#854d0e', outline: 'none', textAlign: 'center' }}
                 />
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenNumber}</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#854d0e' }}>{sale.screenNumber}</span>
               )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
-            <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#ecfeff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #67e8f9', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="text"
                   maxLength={6}
                   value={editState.screenPin}
                   onChange={e => handleEditingFieldChange(sale.id, 'screenPin', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0e7490', outline: 'none', textAlign: 'center' }}
                 />
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{sale.screenPin}</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0e7490' }}>{sale.screenPin}</span>
               )}
             </div>
           </div>
         </div>
 
-        {/* Row 5: Activation Date, Expiry Date & Amount side-by-side with Headings ABOVE */}
+        {/* Row 5: Activation Date, Expiry Date & Amount side-by-side with Headings ABOVE & Colored Boxes */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Activation Date</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#f0fdf4', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #86efac', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="text"
                   value={editState.activationDate}
                   onChange={e => handleEditingFieldChange(sale.id, 'activationDate', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#15803d', outline: 'none', textAlign: 'center' }}
                 />
               ) : (
-                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.activationDate}</span>
+                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#15803d', whiteSpace: 'nowrap' }}>{sale.activationDate}</span>
               )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Expiry Date</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#fef2f2', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #fca5a5', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <input
                   type="text"
                   value={editState.expiryDate}
                   onChange={e => handleEditingFieldChange(sale.id, 'expiryDate', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#0f172a', outline: 'none', textAlign: 'center' }}
+                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '11.5px', fontWeight: 800, color: '#dc2626', outline: 'none', textAlign: 'center' }}
                 />
               ) : (
-                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{sale.expiryDate}</span>
+                <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}>{sale.expiryDate}</span>
               )}
             </div>
           </div>
 
           <div>
             <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Amount</div>
-            <div style={{ background: '#f8fafc', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ background: '#faf5ff', padding: '6px 4px', borderRadius: '8px', border: '1.5px solid #d8b4fe', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
               {isEditing ? (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}>
-                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹</span>
+                  <span style={{ fontSize: '13px', fontWeight: 900, color: '#7c3aed' }}>₹</span>
                   <input
                     type="number"
                     value={editState.amount}
                     onChange={e => handleEditingFieldChange(sale.id, 'amount', e.target.value)}
-                    style={{ width: '60px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#16a34a', outline: 'none', textAlign: 'center' }}
+                    style={{ width: '60px', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#7c3aed', outline: 'none', textAlign: 'center' }}
                   />
                 </div>
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>₹{sale.amount || 199}</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#7c3aed' }}>₹{sale.amount || 199}</span>
               )}
             </div>
           </div>
@@ -774,7 +797,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               flex: 1,
               height: '44px',
               background: '#f8fafc',
-              border: '1.5px solid #cbd5e1',
+              border: '1.5px solid #94a3b8',
               borderRadius: '10px',
               padding: '0 10px',
               display: 'flex',
@@ -798,7 +821,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               )}
             </div>
 
-            {/* Direct WhatsApp Chat Icon Button with larger icon (image copy 59) */}
+            {/* Direct WhatsApp Chat Icon Button with Crisp Official WhatsApp Icon (image copy 71) */}
             <button
               type="button"
               onClick={() => handleDirectWhatsApp(sale)}
@@ -819,8 +842,11 @@ Device: ${sale.deviceName || 'Personal TV'}`;
               }}
               id={`recent-sale-wa-btn-${sale.id}`}
             >
-              <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766 0-3.18-2.588-5.771-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.299.045-.677.063-1.092-.069-.252-.08-.575-.187-.988-.365-1.739-.751-2.874-2.502-2.961-2.617-.087-.116-.708-.94-.708-1.793s.448-1.273.607-1.446c.159-.173.346-.217.462-.217l.332.006c.106.005.249-.04.39.298.144.347.491 1.2.534 1.287.043.087.072.188.014.304-.058.116-.087.188-.173.289l-.26.304c-.087.086-.177.18-.076.354.101.174.449.741.964 1.201.662.591 1.221.774 1.394.86s.275.072.376-.043c.101-.116.433-.506.549-.68.116-.173.231-.145.39-.087s1.011.477 1.184.564.289.13.332.202c.043.072.043.419-.101.824z" />
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path
+                  fill="#ffffff"
+                  d="M19.05 4.91A9.816 9.816 0 0 0 12.04 2c-5.46 0-9.91 4.45-9.91 9.91 0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38c1.45.79 3.08 1.21 4.74 1.21 5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01zm-7.01 15.24c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.188 8.188 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c.02 4.54-3.68 8.23-8.22 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.17.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.12-.14.17-.25.25-.41.08-.17.04-.31-.02-.43s-.56-1.34-.76-1.84c-.2-.48-.41-.42-.56-.43h-.48c-.17 0-.44.06-.66.31-.22.25-.86.84-.86 2.05 0 1.21.88 2.38 1 2.55.12.17 1.74 2.66 4.21 3.73.59.25 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.15-1.18-.07-.1-.23-.17-.48-.29z"
+                />
               </svg>
             </button>
 

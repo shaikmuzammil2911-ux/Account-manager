@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Plus, ChevronRight, CheckCircle2,
-  Lock, Unlock, Check, Tv, X, AlertTriangle, Sparkles
+  Lock, Unlock, Check, Tv, X, AlertTriangle, Sparkles,
+  Sliders, PenTool, ClipboardList, Database, ShoppingBag, Eye, EyeOff
 } from 'lucide-react';
+import FormBuilderCanvas from './FormBuilderCanvas';
 import SaleScreen from './SaleScreen';
 import InventoryScreen from './InventoryScreen';
 import { api } from '../api/client';
@@ -18,7 +20,7 @@ export default function FormsManagementScreen({
   // activeSection: null (Hub with 02 big buttons & Create Group) | 'sale' | 'database'
   const [activeSection, setActiveSection] = useState(null);
 
-  // Opened Form state: null | { type: 'sale' | 'database', template: object }
+  // Opened Form state: null | { type: 'sale' | 'database', template: object, mode: 'builder' | 'entry' }
   const [openedForm, setOpenedForm] = useState(null);
 
   // Data states
@@ -205,120 +207,131 @@ export default function FormsManagementScreen({
   };
 
   // =========================================================================
-  // VIEW 1: OPENED FULL INTERACTIVE FORM (SaleScreen or InventoryScreen)
+  // VIEW 1: OPENED FORM (Visual Form Builder & Empty Form Data Entry)
+  // Per requirement: Open button lets user visually edit the form layout,
+  // or enter empty data that updates the overall database for that OTT brand!
   // =========================================================================
   if (openedForm) {
-    if (openedForm.type === 'sale') {
-      return (
-        <div className="opened-form-wrapper" style={{ paddingBottom: '90px' }}>
+    const isBuilderMode = !openedForm.mode || openedForm.mode === 'builder';
+
+    return (
+      <div className="opened-form-wrapper" style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: '90px' }}>
+        {/* Top Header & Mode Toggle Switcher */}
+        <div style={{
+          background: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '10px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 60,
+          gap: '10px'
+        }}>
+          <button
+            type="button"
+            onClick={() => setOpenedForm(null)}
+            className="header-btn"
+            style={{ width: '38px', height: '38px', borderRadius: '10px' }}
+            title="Back to Forms"
+            id="opened-form-back-btn"
+          >
+            <ArrowLeft size={18} />
+          </button>
+
+          {/* Segmented Mode Switcher */}
           <div style={{
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
-            padding: '12px 16px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 50
+            background: '#f1f5f9',
+            padding: '3px',
+            borderRadius: '10px',
+            border: '1px solid #cbd5e1'
           }}>
             <button
               type="button"
-              onClick={() => setOpenedForm(null)}
-              className="header-btn"
-              style={{ width: '40px', height: '40px', borderRadius: '10px' }}
-              title="Back to Sale Forms"
-              id="opened-sale-back-btn"
-            >
-              <ArrowLeft size={20} />
-            </button>
-
-            <div style={{ textAlign: 'center' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-                {openedForm.template.heading || openedForm.template.title || 'Sale Form'}
-              </h2>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#f97316' }}>
-                Active Sale Form
-              </span>
-            </div>
-
-            <div style={{ width: '40px' }} />
-          </div>
-
-          <div style={{ paddingTop: '8px' }}>
-            <SaleScreen
-              brands={brands}
-              selectedBrand={selectedBrand}
-              onSelectBrand={onSelectBrand}
-              onSaleSuccess={async (payload) => {
-                if (onNavigateToSale) {
-                  await onNavigateToSale(payload);
-                }
+              onClick={() => setOpenedForm(prev => ({ ...prev, mode: 'builder' }))}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                background: isBuilderMode ? '#ffffff' : 'transparent',
+                color: isBuilderMode ? '#2563eb' : '#64748b',
+                fontWeight: 900,
+                fontSize: '12px',
+                cursor: 'pointer',
+                boxShadow: isBuilderMode ? '0 2px 5px rgba(0,0,0,0.08)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
               }}
-              showToast={showToast}
-            />
-          </div>
-        </div>
-      );
-    }
-
-    if (openedForm.type === 'database') {
-      const firstBrandId = openedForm.template.brands?.[0];
-      const initialBrand = brands.find(b => b.id === firstBrandId) || brands[0];
-
-      return (
-        <div className="opened-form-wrapper" style={{ paddingBottom: '90px' }}>
-          <div style={{
-            background: '#ffffff',
-            borderBottom: '1px solid #e2e8f0',
-            padding: '12px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            position: 'sticky',
-            top: 0,
-            zIndex: 50
-          }}>
-            <button
-              type="button"
-              onClick={() => setOpenedForm(null)}
-              className="header-btn"
-              style={{ width: '40px', height: '40px', borderRadius: '10px' }}
-              title="Back to Database Forms"
-              id="opened-db-back-btn"
             >
-              <ArrowLeft size={20} />
+              <PenTool size={13} />
+              <span>Visual Form Builder</span>
             </button>
 
-            <div style={{ textAlign: 'center' }}>
-              <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-                {openedForm.template.heading || openedForm.template.title || 'DataBase Form'}
-              </h2>
-              <span style={{ fontSize: '11px', fontWeight: 700, color: '#16a34a' }}>
-                Accounts Database
-              </span>
-            </div>
-
-            <div style={{ width: '40px' }} />
+            <button
+              type="button"
+              onClick={() => setOpenedForm(prev => ({ ...prev, mode: 'entry' }))}
+              style={{
+                padding: '6px 14px',
+                borderRadius: '8px',
+                border: 'none',
+                background: !isBuilderMode ? '#ffffff' : 'transparent',
+                color: !isBuilderMode ? '#16a34a' : '#64748b',
+                fontWeight: 900,
+                fontSize: '12px',
+                cursor: 'pointer',
+                boxShadow: !isBuilderMode ? '0 2px 5px rgba(0,0,0,0.08)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px'
+              }}
+            >
+              <ClipboardList size={13} />
+              <span>Fill Empty Form</span>
+            </button>
           </div>
 
-          <div style={{ paddingTop: '4px' }}>
-            <InventoryScreen
-              brands={brands}
-              selectedBrand={initialBrand}
-              onSelectBrand={onSelectBrand}
-              showToast={showToast}
-            />
-          </div>
+          <div style={{ width: '38px' }} />
         </div>
-      );
-    }
+
+        {/* Content based on Mode */}
+        {isBuilderMode ? (
+          <FormBuilderCanvas
+            formType={openedForm.type}
+            brands={brands}
+            initialData={openedForm.template}
+            onSaveComplete={async (saved) => {
+              await loadData();
+              setOpenedForm(prev => prev ? { ...prev, template: { ...prev.template, ...saved } } : null);
+              showToast('Form updated and saved to Database!', 'success');
+            }}
+            onBack={() => setOpenedForm(null)}
+            showToast={showToast}
+          />
+        ) : (
+          <EmptyFormDataEntry
+            form={openedForm.template}
+            formType={openedForm.type}
+            brands={brands}
+            onBack={() => setOpenedForm(null)}
+            showToast={showToast}
+            onNavigateToSale={onNavigateToSale}
+            onAccountCreated={async () => {
+              await loadData();
+              showToast('Account added to Database successfully!', 'success');
+            }}
+          />
+        )}
+      </div>
+    );
   }
 
   // =========================================================================
-  // VIEW 2: FORMS HUB SCREEN (Matching image copy 51.png)
+  // VIEW 2: FORMS HUB SCREEN (Matching image copy 51.png & image copy 73.png)
   // Shows only Group Names / Form categories: Sale Form & DataBase Form
-  // Bottom: Create Group button
+  // Bottom: Create Group button (Down instead of middle per image copy 73.png)
   // =========================================================================
   if (activeSection === null) {
     return (
@@ -423,7 +436,7 @@ export default function FormsManagementScreen({
             </button>
           </div>
 
-          {/* Bottom Button matching image copy 51.png: Create Group */}
+          {/* Bottom Button matching image copy 73.png: Create Group on Down */}
           <div style={{ paddingBottom: '16px', paddingTop: '40px' }}>
             <button
               type="button"
@@ -460,15 +473,10 @@ export default function FormsManagementScreen({
   }
 
   // =========================================================================
-  // VIEW 3: INDIVIDUAL FORMS LIST SCREEN (Matching image copy 52.png & 53.png)
+  // VIEW 3: INDIVIDUAL FORMS LIST SCREEN (Matching image copy 74-80)
   // - Top Header: Back button, Page Heading (Sale Form or DataBase Form), + Create Form
-  // - Directly below: Create Group Button in Blue (same size)
-  // - Clean Card:
-  //   - Heading: 01. Heading with DEFAULT in colored box at right corner
-  //   - Box:
-  //     - Top row: OTT Brands on left, "Select Brands" button on right (remove from down)
-  //     - Scrollable Form Style Preview with vertical scroll so content underneath is visible
-  //     - Bottom row: Lock/Unlock button on left (replaces Edit), Open button on right
+  // - NOTE: "Remove Create Group on both inside butons of Sale Form and Database Form"
+  //   per image copy 79.png & image copy 80.png
   // =========================================================================
   const sectionForms = customForms.filter(f => f.type === activeSection);
   const headerPageTitle = activeSection === 'sale' ? 'Sale Form' : 'DataBase Form';
@@ -529,37 +537,6 @@ export default function FormsManagementScreen({
       </div>
 
       <div style={{ padding: '16px' }}>
-        {/* 2. CREATE GROUP BUTTON DIRECTLY BELOW HEADER (Blue color, same full width) */}
-        <div style={{ marginBottom: '16px' }}>
-          <button
-            type="button"
-            onClick={handleOpenCreateGroup}
-            id="forms-list-create-group-btn"
-            style={{
-              width: '100%',
-              height: '50px',
-              borderRadius: '14px',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-              border: 'none',
-              color: '#ffffff',
-              fontSize: '16px',
-              fontWeight: 900,
-              cursor: 'pointer',
-              boxShadow: '0 4px 14px rgba(37, 99, 235, 0.3)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              transition: 'transform 0.15s ease'
-            }}
-            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.99)'}
-            onMouseUp={e => e.currentTarget.style.transform = 'scale(1)'}
-          >
-            <Plus size={18} strokeWidth={3} />
-            <span>Create Group</span>
-          </button>
-        </div>
-
         {/* Loading state */}
         {loading && (
           <div style={{ textAlign: 'center', padding: '30px 0', color: '#64748b' }}>
@@ -594,7 +571,7 @@ export default function FormsManagementScreen({
           </div>
         )}
 
-        {/* 3. FORMS LIST (Clean cards matching image copy 52.png & 53.png) */}
+        {/* 2. FORMS LIST (Clean cards matching image copy 74-77) */}
         {!loading && sectionForms.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '22px' }}>
             {sectionForms.map((form, index) => renderCleanFormCard(form, index))}
@@ -611,7 +588,10 @@ export default function FormsManagementScreen({
   );
 
   // =========================================================================
-  // CLEAN FORM CARD RENDERER (Matching image copy 52.png & 53.png requirements)
+  // CLEAN FORM CARD RENDERER (Matching image copy 74.png, 75.png & 77.png)
+  // - Top row: OTT Brands on left, "Select Brands" button in BLUE on right
+  // - Middle: EMPTY Form Style Preview with placeholders (not filled data)
+  // - Bottom row: Lock/Unlock button (Green for Unlocked, Red for Locked) on left, Open button on right
   // =========================================================================
   function renderCleanFormCard(form, index) {
     const numberStr = String(index + 1).padStart(2, '0');
@@ -670,7 +650,7 @@ export default function FormsManagementScreen({
             gap: '12px'
           }}
         >
-          {/* Top row: Assigned OTT Brands on Left, "Select Brands" Button on Right */}
+          {/* Top row: Assigned OTT Brands on Left, "Select Brands" Button in Blue on Right */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -725,32 +705,36 @@ export default function FormsManagementScreen({
               )}
             </div>
 
-            {/* Select Brands Button on Right */}
+            {/* Select Brands Button in Blue (Per image copy 74.png requirement) */}
             <button
               type="button"
-              onClick={() => setBrandAssignForm(form)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setBrandAssignForm(form);
+              }}
               id={`select-brands-btn-${form.id}`}
               style={{
-                padding: '6px 14px',
+                padding: '7px 14px',
                 fontSize: '12px',
                 fontWeight: 800,
                 borderRadius: '10px',
-                border: '1.5px solid #cbd5e1',
-                background: '#f8fafc',
-                color: '#0f172a',
+                border: '1.5px solid #2563eb',
+                background: '#eff6ff',
+                color: '#1d4ed8',
                 cursor: 'pointer',
                 whiteSpace: 'nowrap',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
                 transition: 'all 0.15s ease',
-                boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                boxShadow: '0 2px 6px rgba(37,99,235,0.15)'
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.borderColor = '#2563eb'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.borderColor = '#cbd5e1'; }}
             >
-              Select Brands
+              <span>Select Brands</span>
             </button>
           </div>
 
-          {/* Middle: Scrollable Form Style Preview Container */}
+          {/* Middle: EMPTY Form Style Preview Container (Matching image copy 75.png & image copy 77.png) */}
           <div style={{
             background: '#ffffff',
             border: '1.5px solid #cbd5e1',
@@ -764,7 +748,7 @@ export default function FormsManagementScreen({
             gap: '9px'
           }}>
             {activeSection === 'database' ? (
-              // DATABASE FORM STYLE PREVIEW (Matching image copy 52.png with scrollable details)
+              // DATABASE EMPTY FORM PREVIEW (Matching image copy 77.png)
               <>
                 {/* Row 1: Ribbon 01, Validity pill, Checkbox */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -788,7 +772,7 @@ export default function FormsManagementScreen({
                       padding: '3px 10px',
                       borderRadius: '20px'
                     }}>
-                      06 Months
+                      06 Months ▾
                     </span>
                     <div style={{
                       width: '18px',
@@ -805,31 +789,31 @@ export default function FormsManagementScreen({
                   </div>
                 </div>
 
-                {/* ID row */}
+                {/* ID row: Empty */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ background: '#2563eb', color: '#ffffff', padding: '5px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 800, minWidth: '60px', textAlign: 'center' }}>
                     ID
                   </div>
-                  <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, color: '#0f172a' }}>
-                    netflix.user01@gmail.com
+                  <div style={{ flex: 1, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, color: '#94a3b8' }}>
+                    Enter Email / ID
                   </div>
                 </div>
 
-                {/* Password row */}
+                {/* Password row: Empty */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <div style={{ background: '#7c3aed', color: '#ffffff', padding: '5px 12px', borderRadius: '8px', fontSize: '11px', fontWeight: 800, minWidth: '60px', textAlign: 'center' }}>
                     Password
                   </div>
-                  <div style={{ flex: 1, background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 700, color: '#0f172a', letterSpacing: '2px' }}>
-                    ••••••••••••••••
+                  <div style={{ flex: 1, background: '#f8fafc', border: '1.5px solid #cbd5e1', borderRadius: '8px', padding: '5px 10px', fontSize: '11.5px', fontWeight: 600, color: '#94a3b8' }}>
+                    Enter Password
                   </div>
                 </div>
 
-                {/* PINs row */}
+                {/* PINs row: Empty */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
-                  {['1111', '2222', '3333', '4444', '5555'].map((pin, i) => (
-                    <div key={i} style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', textAlign: 'center', fontSize: '11px', fontWeight: 800, color: '#334155' }}>
-                      {pin}
+                  {['PIN 1', 'PIN 2', 'PIN 3', 'PIN 4', 'PIN 5'].map((pinPlaceholder, i) => (
+                    <div key={i} style={{ background: '#f8fafc', border: '1.5px dashed #cbd5e1', borderRadius: '6px', padding: '4px', textAlign: 'center', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}>
+                      {pinPlaceholder}
                     </div>
                   ))}
                 </div>
@@ -857,51 +841,56 @@ export default function FormsManagementScreen({
                   ))}
                 </div>
 
-                {/* Additional Scrollable Form Info (Revealed on vertical scroll) */}
+                {/* Additional Scrollable Form Info */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px', paddingTop: '4px' }}>
-                  <div style={{ background: '#f1f5f9', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 700, color: '#475569' }}>
-                    Plan: Premium 4K UHD
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}>
+                    Plan: [Plan Name]
                   </div>
-                  <div style={{ background: '#f1f5f9', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 700, color: '#475569' }}>
-                    Renewal: 17-Oct-2027
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 700, color: '#94a3b8' }}>
+                    Renewal: [DD/MM/YYYY]
                   </div>
                 </div>
                 <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 700, color: '#1d4ed8' }}>
-                  Security: 2FA Active • Direct Screen Auto-Allocate Ready
+                  Device / Notes: [Living Room TV / Mobile / Laptop]
                 </div>
               </>
             ) : (
-              // SALE FORM STYLE PREVIEW (Clean scrollable sale preview)
+              // SALE EMPTY FORM PREVIEW (Matching image copy 75.png)
               <>
                 {/* Row 1: Brand & Validity */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
                   <div style={{ background: '#0f172a', color: '#ffffff', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>Brand: {assignedBrands[0]?.displayName || 'Netflix'}</span>
+                    <span>Brand: Select Brand ▾</span>
                     <span>▾</span>
                   </div>
                   <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 10px', fontSize: '11px', fontWeight: 800, color: '#0f172a', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span>Validity: 12 Months</span>
+                    <span>Validity: Select Validity ▾</span>
                     <span>▾</span>
                   </div>
                 </div>
 
                 {/* Row 2: Activation & Expiry & Amount */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 6px', fontSize: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>
-                    Act: 17-Oct-26
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 6px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>
+                    Act: DD/MM/YYYY
                   </div>
-                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 6px', fontSize: '10px', fontWeight: 700, color: '#475569', textAlign: 'center' }}>
-                    Exp: 17-Oct-27
+                  <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 6px', fontSize: '10px', fontWeight: 700, color: '#94a3b8', textAlign: 'center' }}>
+                    Exp: DD/MM/YYYY
                   </div>
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px 6px', fontSize: '10.5px', fontWeight: 900, color: '#1e40af', textAlign: 'center' }}>
-                    ₹1,599
+                    ₹ 0.00
                   </div>
                 </div>
 
-                {/* Row 3: Credentials */}
+                {/* Row 3: Credentials Empty */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px', alignItems: 'center' }}>
                   <span style={{ background: '#2563eb', color: '#ffffff', padding: '4px 8px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 800 }}>ID</span>
-                  <span style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: '#0f172a', fontWeight: 600 }}>account.user@gmail.com</span>
+                  <span style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Enter Account Email / ID</span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px', alignItems: 'center' }}>
+                  <span style={{ background: '#7c3aed', color: '#ffffff', padding: '4px 8px', borderRadius: '6px', fontSize: '10.5px', fontWeight: 800 }}>Password</span>
+                  <span style={{ background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>Enter Password</span>
                 </div>
 
                 {/* Row 4: Screen & PIN */}
@@ -909,35 +898,45 @@ export default function FormsManagementScreen({
                   <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: '6px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 800, color: '#854d0e' }}>
                     Screen-1
                   </div>
-                  <div style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 800, color: '#334155' }}>
-                    PIN: 1111
+                  <div style={{ background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 800, color: '#94a3b8' }}>
+                    PIN: [0000]
                   </div>
                 </div>
 
-                {/* Additional Scrollable Details */}
+                {/* Additional Scrollable Details: Device & Customer */}
                 <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px', fontSize: '11px', color: '#0f172a' }}>
                   <div style={{ fontWeight: 800, color: '#475569', fontSize: '10px' }}>DEVICE NAME:</div>
-                  <div style={{ fontWeight: 700, marginTop: '2px' }}>Living Room Samsung 55" Smart TV</div>
+                  <div style={{ fontWeight: 600, color: '#94a3b8', marginTop: '2px' }}>Enter Device Name...</div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px 8px', fontSize: '10.5px', fontWeight: 800, color: '#166534' }}>
-                  <span>WhatsApp Direct Share & Notification Ready</span>
-                  <span style={{ fontSize: '13px' }}>💬</span>
+
+                {/* Customer Details Box */}
+                <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '6px 8px' }}>
+                  <div style={{ fontWeight: 800, color: '#0f172a', fontSize: '11px', marginBottom: '4px' }}>Customer Details</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px' }}>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', color: '#94a3b8' }}>Name</div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', color: '#94a3b8' }}>Number</div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', color: '#94a3b8' }}>Ref Name</div>
+                    <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px 6px', fontSize: '10px', color: '#94a3b8' }}>Ref Number</div>
+                  </div>
                 </div>
               </>
             )}
           </div>
 
-          {/* Bottom row: Lock/Unlock Button on Left (replaces Edit), Open Button on Right */}
+          {/* Bottom row: Lock/Unlock Button on Left (Green and Red per requirement), Open Button on Right */}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             paddingTop: '2px'
           }}>
-            {/* Left: Lock / Unlock Button */}
+            {/* Left: Lock / Unlock Button (Green for Unlocked, Red for Locked) */}
             <button
               type="button"
-              onClick={() => handleToggleLock(form)}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleLock(form);
+              }}
               id={`lock-toggle-btn-${form.id}`}
               style={{
                 display: 'flex',
@@ -945,9 +944,9 @@ export default function FormsManagementScreen({
                 gap: '6px',
                 padding: '8px 14px',
                 borderRadius: '10px',
-                background: isLocked ? '#fef3c7' : '#f8fafc',
-                border: isLocked ? '1.5px solid #fde047' : '1.5px solid #cbd5e1',
-                color: isLocked ? '#b45309' : '#334155',
+                background: isLocked ? '#fef2f2' : '#f0fdf4',
+                border: isLocked ? '1.5px solid #ef4444' : '1.5px solid #22c55e',
+                color: isLocked ? '#dc2626' : '#16a34a',
                 fontSize: '12.5px',
                 fontWeight: 800,
                 cursor: 'pointer',
@@ -957,12 +956,12 @@ export default function FormsManagementScreen({
             >
               {isLocked ? (
                 <>
-                  <Lock size={15} color="#b45309" strokeWidth={2.5} />
+                  <Lock size={15} color="#dc2626" strokeWidth={2.5} />
                   <span>Locked</span>
                 </>
               ) : (
                 <>
-                  <Unlock size={15} color="#475569" strokeWidth={2.5} />
+                  <Unlock size={15} color="#16a34a" strokeWidth={2.5} />
                   <span>Unlock</span>
                 </>
               )}
@@ -971,7 +970,10 @@ export default function FormsManagementScreen({
             {/* Right: Open Button */}
             <button
               type="button"
-              onClick={() => setOpenedForm({ type: activeSection, template: form })}
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenedForm({ type: activeSection, template: form, mode: 'builder' });
+              }}
               id={`open-form-btn-${form.id}`}
               className={activeSection === 'database' ? 'glossy-btn glossy-btn-green' : 'glossy-btn glossy-btn-orange'}
               style={{
@@ -1231,13 +1233,8 @@ export default function FormsManagementScreen({
   }
 
   // =========================================================================
-  // MODAL 3: BRAND ASSIGNMENT QUICK MODAL (With Big "All Brands" Button at Top)
-  // Matching Requirement:
-  // "Select Brands ani kotagane. Brands list open kavali select cheskodaniki
-  // and Ha List paina Top lo manaki Big All Brands ani button ravali adhi or
-  // kindha Brands adho okati select cheskune la.
-  // if All Brands ane Button select cheskunte e From paina chupinche individual
-  // Brands kakunda All Brands ani chuoinchali"
+  // MODAL 3: BRAND ASSIGNMENT QUICK MODAL (Matching image copy 76.png & 78.png)
+  // With Big "All Brands" Button at Top & Individual side-by-side Brands below
   // =========================================================================
   function renderBrandAssignmentModal() {
     if (!brandAssignForm) return null;
@@ -1311,16 +1308,16 @@ export default function FormsManagementScreen({
 
 // =========================================================================
 // SUB-COMPONENT: BRAND SELECTION MODAL
-// With Big "All Brands" Button at Top & Individual Selection below
+// With Big "All Brands" Button at Top & Individual Selection below side-by-side
+// Matching image copy 76.png & image copy 78.png
 // =========================================================================
-function BrandSelectionModal({ form, brands, onSave, onClose }) {
+function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
   const [isAllBrands, setIsAllBrands] = useState(Boolean(form.isAllBrands));
   const [selectedBrands, setSelectedBrands] = useState(
     Array.isArray(form.brands) ? form.brands : []
   );
 
   const handleToggleBrand = (brandId) => {
-    // If All Brands was selected, toggling a specific brand switches mode to individual
     if (isAllBrands) {
       setIsAllBrands(false);
       setSelectedBrands([brandId]);
@@ -1347,12 +1344,12 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-        <div className="modal-header">
+    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 100 }}>
+      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px', padding: '16px' }}>
+        <div className="modal-header" style={{ marginBottom: '12px' }}>
           <div>
-            <h3 className="modal-title">Select Brands</h3>
-            <p style={{ margin: 0, fontSize: '12px', color: '#64748b' }}>
+            <h3 className="modal-title" style={{ fontSize: '17px' }}>Select Brands</h3>
+            <p style={{ margin: 0, fontSize: '11.5px', color: '#64748b' }}>
               Assign to {form.heading || form.title || form.name}
             </p>
           </div>
@@ -1361,15 +1358,15 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
           </button>
         </div>
 
-        <div style={{ padding: '16px' }}>
-          {/* BIG "ALL BRANDS" BUTTON AT TOP (Per requirement) */}
+        <div>
+          {/* BIG "ALL BRANDS" BUTTON AT TOP (Per requirement image copy 76 & 78) */}
           <button
             type="button"
             onClick={handleSelectAllBrands}
             id="brand-modal-all-brands-btn"
             style={{
               width: '100%',
-              padding: '14px 16px',
+              padding: '13px 16px',
               borderRadius: '14px',
               background: isAllBrands
                 ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)'
@@ -1400,29 +1397,29 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            margin: '16px 0 10px',
+            margin: '14px 0 10px',
             paddingTop: '4px',
             borderTop: '1px solid #e2e8f0'
           }}>
-            <span style={{ fontSize: '12px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
               Or Select Individual Brands ({brands.length})
             </span>
             {!isAllBrands && selectedBrands.length > 0 && (
               <button
                 type="button"
                 onClick={() => setSelectedBrands([])}
-                style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}
+                style={{ border: 'none', background: 'none', color: '#dc2626', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
               >
                 Clear
               </button>
             )}
           </div>
 
-          {/* Individual Brands Grid / Wrap */}
+          {/* Individual Brands Grid - Side by Side in small popup */}
           <div style={{
-            display: 'flex',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
             gap: '8px',
-            flexWrap: 'wrap',
             maxHeight: '220px',
             overflowY: 'auto',
             marginBottom: '16px',
@@ -1438,20 +1435,25 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '6px',
-                    padding: '8px 14px',
-                    borderRadius: '24px',
+                    justifyContent: 'center',
+                    gap: '4px',
+                    padding: '8px 10px',
+                    borderRadius: '20px',
                     border: isSelected ? `2px solid ${brand.color || '#2563eb'}` : '1.5px solid #cbd5e1',
                     background: isSelected ? (brand.color || '#2563eb') : '#ffffff',
                     color: isSelected ? '#ffffff' : '#334155',
                     fontWeight: 800,
-                    fontSize: '12.5px',
+                    fontSize: '11.5px',
                     cursor: 'pointer',
                     boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
-                    transition: 'all 0.15s ease'
+                    transition: 'all 0.15s ease',
+                    textAlign: 'center',
+                    whiteSpace: 'nowrap',
+                    textOverflow: 'ellipsis',
+                    overflow: 'hidden'
                   }}
                 >
-                  {isSelected && <Check size={13} strokeWidth={3} />}
+                  {isSelected && <Check size={12} strokeWidth={3} />}
                   <span>{brand.displayName || brand.name}</span>
                 </button>
               );
@@ -1463,7 +1465,7 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
             <button
               type="button"
               className="glossy-btn glossy-btn-gray"
-              style={{ flex: 1, padding: '11px', borderRadius: '10px' }}
+              style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px' }}
               onClick={onClose}
             >
               Cancel
@@ -1471,13 +1473,375 @@ function BrandSelectionModal({ form, brands, onSave, onClose }) {
             <button
               type="button"
               className="glossy-btn glossy-btn-blue"
-              style={{ flex: 1, padding: '11px', borderRadius: '10px' }}
+              style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '13px' }}
               onClick={handleSave}
             >
               Save Brands
             </button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// =========================================================================
+// SUB-COMPONENT: EMPTY FORM DATA ENTRY
+// For entering actual accounts / sales using this form template for any selected brand
+// Directly saves to database inventory accounts or sales records!
+// =========================================================================
+function EmptyFormDataEntry({
+  form,
+  formType,
+  brands = [],
+  onBack,
+  showToast,
+  onNavigateToSale,
+  onAccountCreated
+}) {
+  const assignedBrandIds = Array.isArray(form?.brands) ? form.brands : [];
+  const availableBrands = form?.isAllBrands || assignedBrandIds.length === 0
+    ? brands
+    : brands.filter(b => assignedBrandIds.includes(b.id));
+
+  const [selectedBrandId, setSelectedBrandId] = useState(availableBrands[0]?.id || brands[0]?.id || '');
+  const [validity, setValidity] = useState('06 Months');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [planName, setPlanName] = useState('Premium 4K UHD');
+  const [deviceName, setDeviceName] = useState('');
+  const [pins, setPins] = useState(['1111', '2222', '3333', '4444', '5555']);
+  const [screensCount, setScreensCount] = useState(5);
+  const [amount, setAmount] = useState('799');
+  const [customerName, setCustomerName] = useState('');
+  const [customerNumber, setCustomerNumber] = useState('');
+  const [refName, setRefName] = useState('');
+  const [refNumber, setRefNumber] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const selectedBrandObj = brands.find(b => b.id === selectedBrandId) || brands[0];
+
+  const handleSaveToDatabase = async (e) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      showToast('Please enter an Account Email / ID', 'error');
+      return;
+    }
+    if (!password.trim()) {
+      showToast('Please enter an Account Password', 'error');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const screens = Array.from({ length: screensCount }, (_, i) => ({
+        screenNumber: i + 1,
+        name: `Screen-${String(i + 1).padStart(2, '0')}`,
+        pin: pins[i] || '1234',
+        deviceType: 'tv',
+        status: 'empty',
+        saleId: null,
+        expiryDate: null
+      }));
+
+      await api.createInventory({
+        brandId: selectedBrandId,
+        email: email.trim(),
+        password: password.trim(),
+        validity,
+        planVariant: planName,
+        deviceName: deviceName.trim(),
+        notes: `Created via ${form.heading || form.title || 'DataBase Form'}`,
+        screensCount,
+        screens
+      });
+
+      showToast(`Account saved to Database for ${selectedBrandObj?.displayName || 'Brand'}!`, 'success');
+      setEmail('');
+      setPassword('');
+      setDeviceName('');
+      if (onAccountCreated) onAccountCreated();
+    } catch (err) {
+      showToast('Failed to save account to database', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCompleteSale = async (e) => {
+    e.preventDefault();
+    if (!customerName.trim() || !customerNumber.trim()) {
+      showToast('Customer Name and Mobile Number are required', 'error');
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const payload = {
+        brandId: selectedBrandId,
+        brandName: selectedBrandObj?.displayName || 'Netflix',
+        accountEmail: email.trim() || 'account.user@gmail.com',
+        accountPassword: password.trim() || 'password123',
+        customerName: customerName.trim(),
+        customerNumber: customerNumber.trim(),
+        referenceName: refName.trim(),
+        referenceNumber: refNumber.trim(),
+        validity,
+        amount: Number(amount) || 0,
+        deviceName: deviceName.trim() || 'Living Room TV',
+        screenNumber: 'Screen-1',
+        screenPin: pins[0] || '1111',
+        saleDate: new Date().toISOString().slice(0, 10),
+        activationDate: new Date().toISOString().slice(0, 10),
+        expiryDate: new Date(Date.now() + 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      };
+
+      if (onNavigateToSale) {
+        await onNavigateToSale(payload);
+      } else {
+        await api.createSale(payload);
+        showToast('Sale record created in database!', 'success');
+      }
+
+      setCustomerName('');
+      setCustomerNumber('');
+      setRefName('');
+      setRefNumber('');
+    } catch (err) {
+      showToast('Failed to save sale', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: '480px', margin: '0 auto', padding: '16px' }}>
+      <div style={{
+        background: '#ffffff',
+        border: '2px solid #cbd5e1',
+        borderRadius: '20px',
+        padding: '20px',
+        boxShadow: '0 4px 18px rgba(0,0,0,0.06)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+          <div>
+            <h3 style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a', margin: '0 0 2px' }}>
+              {formType === 'database' ? 'Add Account to Database' : 'Enter Sale Details'}
+            </h3>
+            <span style={{ fontSize: '11px', color: '#64748b' }}>
+              Template: {form.heading || form.title}
+            </span>
+          </div>
+          <span style={{
+            background: formType === 'database' ? '#dcfce7' : '#ffedd5',
+            color: formType === 'database' ? '#15803d' : '#c2410c',
+            fontWeight: 900,
+            fontSize: '11px',
+            padding: '4px 10px',
+            borderRadius: '10px'
+          }}>
+            {formType === 'database' ? 'Database Form' : 'Sale Form'}
+          </span>
+        </div>
+
+        <form onSubmit={formType === 'database' ? handleSaveToDatabase : handleCompleteSale} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {/* Brand Selector */}
+          <div>
+            <label className="form-label">
+              OTT Brand <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <select
+              value={selectedBrandId}
+              onChange={e => setSelectedBrandId(e.target.value)}
+              className="form-input-pill"
+              style={{ width: '100%', fontWeight: 800 }}
+            >
+              {availableBrands.map(b => (
+                <option key={b.id} value={b.id}>{b.displayName || b.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Validity Selector */}
+          <div>
+            <label className="form-label">Validity</label>
+            <select
+              value={validity}
+              onChange={e => setValidity(e.target.value)}
+              className="form-input-pill"
+              style={{ width: '100%', fontWeight: 700 }}
+            >
+              <option value="01 Month">01 Month</option>
+              <option value="03 Months">03 Months</option>
+              <option value="06 Months">06 Months</option>
+              <option value="12 Months">12 Months</option>
+            </select>
+          </div>
+
+          {/* Credentials: Email & Password */}
+          <div>
+            <label className="form-label">
+              Account Email / ID <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <input
+              type="text"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="e.g. netflix.premium@gmail.com"
+              className="form-input-pill"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="form-label">
+              Account Password <span style={{ color: '#dc2626' }}>*</span>
+            </label>
+            <div style={{ position: 'relative' }}>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="Enter account password"
+                className="form-input-pill"
+                style={{ paddingRight: '40px' }}
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(p => !p)}
+                style={{
+                  position: 'absolute',
+                  right: '12px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'none',
+                  border: 'none',
+                  color: '#64748b',
+                  cursor: 'pointer'
+                }}
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          {/* PINs row for Database Form */}
+          {formType === 'database' && (
+            <div>
+              <label className="form-label">Screen PINs</label>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px' }}>
+                {[0, 1, 2, 3, 4].map(idx => (
+                  <input
+                    key={idx}
+                    type="text"
+                    maxLength={4}
+                    value={pins[idx] || ''}
+                    onChange={e => {
+                      const newP = [...pins];
+                      newP[idx] = e.target.value;
+                      setPins(newP);
+                    }}
+                    placeholder={`P${idx + 1}`}
+                    style={{
+                      padding: '8px 4px',
+                      borderRadius: '8px',
+                      border: '1.5px solid #cbd5e1',
+                      textAlign: 'center',
+                      fontWeight: 800,
+                      fontSize: '12px'
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Customer fields for Sale Form */}
+          {formType === 'sale' && (
+            <>
+              <div>
+                <label className="form-label">Amount (₹)</label>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={e => setAmount(e.target.value)}
+                  placeholder="₹ 799"
+                  className="form-input-pill"
+                />
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '12px', fontWeight: 900, color: '#0f172a', display: 'block', marginBottom: '8px' }}>
+                  Customer Details
+                </span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={e => setCustomerName(e.target.value)}
+                    placeholder="Customer Name *"
+                    className="form-input-pill"
+                    required
+                  />
+                  <input
+                    type="tel"
+                    value={customerNumber}
+                    onChange={e => setCustomerNumber(e.target.value)}
+                    placeholder="Customer Mobile Number *"
+                    className="form-input-pill"
+                    required
+                  />
+                  <input
+                    type="text"
+                    value={refName}
+                    onChange={e => setRefName(e.target.value)}
+                    placeholder="Reference Name (Optional)"
+                    className="form-input-pill"
+                  />
+                  <input
+                    type="tel"
+                    value={refNumber}
+                    onChange={e => setRefNumber(e.target.value)}
+                    placeholder="Reference Number (Optional)"
+                    className="form-input-pill"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
+          <div>
+            <label className="form-label">Device Name (Optional)</label>
+            <input
+              type="text"
+              value={deviceName}
+              onChange={e => setDeviceName(e.target.value)}
+              placeholder="e.g. Living Room TV, Mobile"
+              className="form-input-pill"
+            />
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+            <button
+              type="button"
+              className="glossy-btn glossy-btn-gray"
+              style={{ flex: 1, padding: '12px', borderRadius: '12px', fontSize: '13px' }}
+              onClick={onBack}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={formType === 'database' ? 'glossy-btn glossy-btn-green' : 'glossy-btn glossy-btn-orange'}
+              style={{ flex: 1.5, padding: '12px', borderRadius: '12px', fontSize: '13.5px', fontWeight: 900 }}
+            >
+              {isSubmitting ? 'Saving...' : (formType === 'database' ? 'Save to Database' : 'Complete Sale')}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

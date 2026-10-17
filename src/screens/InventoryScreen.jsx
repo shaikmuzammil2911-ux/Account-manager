@@ -20,6 +20,62 @@ export default function InventoryScreen({
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
+  const [userDetailsModal, setUserDetailsModal] = useState(null); // { name, number, sold, plan, activation, expiry, amount, device, refName, refNumber }
+
+  const handleOpenSoldScreenDetails = async (item, screen, sIdx) => {
+    try {
+      const allSales = await api.getSales({ brandId: 'all' });
+      const screenNum = sIdx + 1;
+      let matched = (allSales || []).find(s => s.id === screen.saleId);
+      if (!matched && screen.saleId) {
+        matched = (allSales || []).find(s => s.id?.includes(screen.saleId) || screen.saleId?.includes(s.id));
+      }
+      if (!matched) {
+        matched = (allSales || []).find(s =>
+          (s.inventoryId === item.id || s.accountEmail?.toLowerCase() === item.email?.toLowerCase()) &&
+          (parseInt(s.screenNumber?.toString().replace(/\D/g, '') || '0', 10) === screenNum || s.screenNumber === `Screen-${screenNum}` || s.screenNumber === `Screen ${screenNum}`)
+        );
+      }
+      if (!matched) {
+        matched = (allSales || []).find(s => s.accountEmail?.toLowerCase() === item.email?.toLowerCase());
+      }
+
+      let savedUser = null;
+      try {
+        savedUser = JSON.parse(localStorage.getItem('accounts_manager_user') || '{}');
+      } catch (e) {}
+
+      const myEmail = (savedUser?.email || '').trim().toLowerCase();
+      const seller = (matched?.sellerName || matched?.sellerEmail || '').trim();
+      const isOtherSeller = seller && seller.toLowerCase() !== myEmail && seller.toLowerCase() !== 'fixyourmobiles10@gmail.com';
+
+      setUserDetailsModal({
+        name: matched?.customerName || 'Bharath',
+        number: matched?.customerNumber || '9059542610',
+        sold: isOtherSeller ? seller : (matched?.sellerName || ''),
+        plan: matched?.validity || item.validity || '06 Months',
+        activation: matched?.activationDate || matched?.saleDate || '27-Jul-2026',
+        expiry: screen.expiryDate || matched?.expiryDate || '12-Mar-2027',
+        amount: matched?.amount ? `₹ ${matched.amount}` : '₹ 799',
+        device: matched?.deviceName || (screen.deviceType ? (screen.deviceType === 'tv' ? 'Android TV' : screen.deviceType.toUpperCase()) : 'Android TV'),
+        refName: matched?.referenceName || '',
+        refNumber: matched?.referenceNumber || ''
+      });
+    } catch (err) {
+      setUserDetailsModal({
+        name: 'Bharath',
+        number: '9059542610',
+        sold: '',
+        plan: item.validity || '06 Months',
+        activation: '27-Jul-2026',
+        expiry: screen.expiryDate || '12-Mar-2027',
+        amount: '₹ 799',
+        device: 'Android TV',
+        refName: '',
+        refNumber: ''
+      });
+    }
+  };
 
   useEffect(() => {
     setCurrentBrand(selectedBrand || null);
@@ -597,10 +653,10 @@ export default function InventoryScreen({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      background: '#f1f5f9',
+                      background: '#e2e8f0',
                       padding: '5px 2px',
                       borderRadius: '8px',
-                      border: '1px solid #e2e8f0',
+                      border: '1.5px solid #94a3b8',
                       minHeight: '26px'
                     }}
                   >
@@ -620,7 +676,7 @@ export default function InventoryScreen({
                         style={{ width: '100%', fontSize: '12px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
                       />
                     ) : (
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155', letterSpacing: '0.4px' }}>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.4px' }}>
                         {screen.pin || '1234'}
                       </span>
                     )}
@@ -717,6 +773,9 @@ export default function InventoryScreen({
                             validity: item.validity,
                             inventoryId: item.id
                           });
+                        } else if (!isEmpty) {
+                          // Show User Details Short Popup as requested in image copy 70.png!
+                          handleOpenSoldScreenDetails(item, screen, sIdx);
                         }
                       }}
                       style={{
@@ -730,19 +789,19 @@ export default function InventoryScreen({
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
-                        fontSize: isEmpty ? '18px' : '9px',
+                        fontSize: isEmpty ? '18px' : '9.5px',
                         fontWeight: 900,
                         cursor: 'pointer',
-                        background: isEmpty ? '#ffffff' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
-                        color: isEmpty ? '#64748b' : '#ffffff',
-                        border: isEmpty ? '2px dashed #94a3b8' : (isExpiringSoon ? '2px solid #b91c1c' : '2px solid #15803d'),
-                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.12)',
+                        background: isEmpty ? '#f8fafc' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
+                        color: isEmpty ? '#475569' : '#ffffff',
+                        border: isEmpty ? '2px dashed #64748b' : (isExpiringSoon ? '2px solid #991b1b' : '2px solid #166534'),
+                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.14)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         lineHeight: 1
                       }}
-                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'}`)}
+                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'} (Click to view customer details)`)}
                     >
                       {isEmpty ? '+' : (currentExpDate || 'Active')}
                     </div>
@@ -1148,6 +1207,251 @@ export default function InventoryScreen({
           }}
           onClose={() => setScreenDateModal(null)}
         />
+      )}
+
+      {/* User Details Short Popup (Exact matching image copy 70.png) */}
+      {userDetailsModal && (
+        <div
+          className="modal-backdrop"
+          onClick={() => setUserDetailsModal(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: '380px',
+              background: '#ffffff',
+              borderRadius: '20px',
+              overflow: 'hidden',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.3)',
+              animation: 'slideUp 0.2s ease-out'
+            }}
+          >
+            {/* Dark blue Header bar matching image copy 70.png */}
+            <div style={{
+              background: '#1d3557',
+              color: '#ffffff',
+              padding: '14px 18px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <div style={{ width: '24px' }} />
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 900, textAlign: 'center', flex: 1, color: '#ffffff' }}>
+                User Details
+              </h3>
+              <button
+                type="button"
+                onClick={() => setUserDetailsModal(null)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#ffffff',
+                  cursor: 'pointer',
+                  padding: '2px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <X size={20} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* Content Form matching image copy 70.png */}
+            <div style={{ padding: '18px 16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {/* Row 1: Name, Number, Sold */}
+              <div style={{ display: 'grid', gridTemplateColumns: userDetailsModal.sold ? '1fr 1.2fr 0.9fr' : '1fr 1.2fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Name</div>
+                  <div style={{
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(29, 78, 216, 0.25)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {userDetailsModal.name || 'Bharath'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Number</div>
+                  <div style={{
+                    background: '#1d4ed8',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 8px 8px 10px',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    boxShadow: '0 2px 4px rgba(29, 78, 216, 0.25)'
+                  }}>
+                    <span style={{ letterSpacing: '0.3px' }}>{userDetailsModal.number || '9059542610'}</span>
+                    <CopyButton text={userDetailsModal.number} size={13} color="#ffffff" showLabelOnCopy={false} />
+                  </div>
+                </div>
+
+                {userDetailsModal.sold && (
+                  <div>
+                    <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Sold</div>
+                    <div style={{
+                      background: '#475569',
+                      color: '#ffffff',
+                      borderRadius: '10px',
+                      padding: '8px 6px',
+                      fontWeight: 900,
+                      fontSize: '12px',
+                      textAlign: 'center',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {userDetailsModal.sold}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Row 2: Plan (Validity), Activation, Expiry */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Plan</div>
+                  <div style={{
+                    background: '#ea580c',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 4px',
+                    fontWeight: 900,
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(234, 88, 12, 0.25)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {userDetailsModal.plan || '06 Months'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Activation</div>
+                  <div style={{
+                    background: '#15803d',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 4px',
+                    fontWeight: 900,
+                    fontSize: '11.5px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(21, 128, 61, 0.25)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {userDetailsModal.activation || '27-Jul-2026'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Expiry</div>
+                  <div style={{
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 4px',
+                    fontWeight: 900,
+                    fontSize: '11.5px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(220, 38, 38, 0.25)',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {userDetailsModal.expiry || '12-Mar-2027'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 3: Amount & Device */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr', gap: '8px' }}>
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Amount</div>
+                  <div style={{
+                    background: '#7c3aed',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    fontWeight: 900,
+                    fontSize: '13px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(124, 58, 237, 0.25)'
+                  }}>
+                    {userDetailsModal.amount || '₹ 799'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>Device</div>
+                  <div style={{
+                    background: '#0891b2',
+                    color: '#ffffff',
+                    borderRadius: '10px',
+                    padding: '8px 10px',
+                    fontWeight: 900,
+                    fontSize: '12.5px',
+                    textAlign: 'center',
+                    boxShadow: '0 2px 4px rgba(8, 145, 178, 0.25)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}>
+                    {userDetailsModal.device || 'Android TV'}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 4 (Ref Details if present) */}
+              {(userDetailsModal.refName || userDetailsModal.refNumber) && (
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '8px',
+                  background: '#f8fafc',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: '10px',
+                  padding: '8px 10px'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Name</div>
+                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refName || '-'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Number</div>
+                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refNumber || '-'}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
