@@ -6,6 +6,7 @@ import {
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
+import DatePickerModal from '../components/DatePickerModal';
 
 export default function InventoryScreen({
   brands = [],
@@ -14,18 +15,15 @@ export default function InventoryScreen({
   onNavigateToSaleWithSlot,
   showToast
 }) {
-  // If no brand selected yet, default to selectedBrand or first brand
-  const [currentBrand, setCurrentBrand] = useState(selectedBrand || brands[0] || null);
+  // If no brand selected yet, start with selectedBrand or null (opens Brands list)
+  const [currentBrand, setCurrentBrand] = useState(selectedBrand || null);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
 
   useEffect(() => {
-    if (selectedBrand) {
-      setCurrentBrand(selectedBrand);
-    } else if (!currentBrand && brands && brands.length > 0) {
-      setCurrentBrand(brands[0]);
-    }
-  }, [selectedBrand, brands]);
+    setCurrentBrand(selectedBrand || null);
+  }, [selectedBrand]);
 
   // Top 4 Filter Controls (from image copy 10.png)
   const [filterSelectedOnly, setFilterSelectedOnly] = useState(false);
@@ -104,11 +102,31 @@ export default function InventoryScreen({
           email: item.email,
           password: item.password,
           validity: item.validity,
-          pins: (item.screens || []).map(s => s.pin || '1234')
+          pins: (item.screens || []).map(s => s.pin || '1234'),
+          dates: (item.screens || []).map(s => s.expiryDate || '')
         }
       }));
-      showToast('Card unlocked for editing', 'info');
+      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Validity)', 'info');
     }
+  };
+
+  const handleCycleValidity = async (item) => {
+    if (!editingCards[item.id]) {
+      showToast('Please click Edit (UnLock) first to change validity', 'info');
+      return;
+    }
+    const plans = (currentBrand?.plans && currentBrand.plans.length > 0)
+      ? currentBrand.plans
+      : ['01 Month', '03 Months', '06 Months', '12 Months'];
+    const currentVal = editingCards[item.id]?.validity || item.validity || plans[0];
+    const curIdx = plans.indexOf(currentVal);
+    const nextPlan = plans[(curIdx + 1) % plans.length];
+
+    setEditingCards(prev => ({
+      ...prev,
+      [item.id]: { ...prev[item.id], validity: nextPlan }
+    }));
+    showToast(`Account validity changed to ${nextPlan} (Click Save to apply)`, 'info');
   };
 
   const handleSaveCard = async (item) => {
@@ -119,10 +137,17 @@ export default function InventoryScreen({
     }
 
     try {
-      const updatedScreens = (item.screens || []).map((screen, idx) => ({
-        ...screen,
-        pin: editState.pins[idx] !== undefined ? editState.pins[idx] : screen.pin
-      }));
+      const updatedScreens = (item.screens || []).map((screen, idx) => {
+        const pin = editState.pins?.[idx] !== undefined ? editState.pins[idx] : screen.pin;
+        const expiryDate = editState.dates?.[idx] !== undefined ? editState.dates[idx] : screen.expiryDate;
+        const status = expiryDate && String(expiryDate).trim() ? 'occupied' : (expiryDate === '' ? 'empty' : screen.status);
+        return {
+          ...screen,
+          pin,
+          expiryDate: status === 'occupied' ? expiryDate : null,
+          status
+        };
+      });
 
       const payload = {
         email: editState.email,
@@ -138,7 +163,7 @@ export default function InventoryScreen({
         delete copy[item.id];
         return copy;
       });
-      showToast('Credentials saved successfully!', 'success');
+      showToast('Credentials & settings saved successfully!', 'success');
     } catch (err) {
       showToast('Failed to save changes', 'error');
     }
@@ -240,46 +265,6 @@ export default function InventoryScreen({
 
   return (
     <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '12px' }}>
-      {/* Brand Header with Back Button to Brands list */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '12px'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={() => setCurrentBrand(null)}
-            style={{
-              background: '#ffffff',
-              border: '1.5px solid #cbd5e1',
-              borderRadius: '10px',
-              padding: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              color: '#0f172a'
-            }}
-            title="Back to Brands"
-          >
-            <ArrowLeft size={18} />
-          </button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{
-              width: '10px',
-              height: '10px',
-              borderRadius: '50%',
-              background: currentBrand.color || '#3b82f6'
-            }} />
-            <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-              {currentBrand.displayName}
-            </h2>
-          </div>
-        </div>
-      </div>
-
       {/* Top 4 Filter Controls Bar (Exact from image copy 10.png) */}
       <div className="filter-bar-4">
         {/* 1. Selected Filter */}
@@ -401,8 +386,13 @@ export default function InventoryScreen({
                 </div>
 
                 <div className="card-top-right">
-                  <div className="badge-navy-pill">
-                    {item.validity}
+                  <div
+                    className="badge-navy-pill"
+                    onClick={() => handleCycleValidity(item)}
+                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    title="Click to cycle validity"
+                  >
+                    {isEditing ? (editState.validity || item.validity) : item.validity}
                   </div>
 
                   <div
@@ -481,7 +471,7 @@ export default function InventoryScreen({
                 </div>
               </div>
 
-              {/* Screen PINs row with Copy buttons */}
+              {/* Screen PINs row (Clean display without copy buttons per requirement) */}
               <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
                 {(item.screens || []).map((screen, sIdx) => (
                   <div
@@ -490,15 +480,17 @@ export default function InventoryScreen({
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '2px',
                       background: '#f1f5f9',
-                      padding: '4px 2px',
-                      borderRadius: '6px'
+                      padding: '5px 2px',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      minHeight: '26px'
                     }}
                   >
                     {isEditing ? (
                       <input
                         type="text"
+                        maxLength={6}
                         value={editState.pins?.[sIdx] ?? screen.pin}
                         onChange={(e) => {
                           const newPins = [...(editState.pins || [])];
@@ -508,21 +500,18 @@ export default function InventoryScreen({
                             [item.id]: { ...prev[item.id], pins: newPins }
                           }));
                         }}
-                        style={{ width: '100%', fontSize: '11px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
+                        style={{ width: '100%', fontSize: '12px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
                       />
                     ) : (
-                      <>
-                        <span style={{ fontSize: '11px', fontWeight: 800, color: '#334155' }}>
-                          {screen.pin || '1234'}
-                        </span>
-                        <CopyButton text={screen.pin || '1234'} />
-                      </>
+                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155', letterSpacing: '0.4px' }}>
+                        {screen.pin || '1234'}
+                      </span>
                     )}
                   </div>
                 ))}
               </div>
 
-              {/* Screen Buttons row (Orange pills matching image copy 20.png) */}
+              {/* Screen Buttons row (Orange pills - Strictly 01 liner per requirement) */}
               <div className="screens-grid-row">
                 {(item.screens || []).map((screen, sIdx) => (
                   <div
@@ -531,34 +520,49 @@ export default function InventoryScreen({
                       background: '#ea580c',
                       color: '#ffffff',
                       borderRadius: '8px',
-                      padding: '6px 2px',
+                      padding: '7px 2px',
                       textAlign: 'center',
                       fontWeight: 800,
                       fontSize: '11px',
-                      boxShadow: '0 2px 4px rgba(234,88,12,0.3)',
+                      boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      gap: '3px'
+                      gap: '2px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      lineHeight: 1
                     }}
                   >
-                    <Tv size={11} strokeWidth={2.5} />
-                    <span>{screen.name || `Screen-${sIdx + 1}`}</span>
+                    <Tv size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
+                    <span style={{ whiteSpace: 'nowrap' }}>Screen-{sIdx + 1}</span>
                   </div>
                 ))}
               </div>
 
-              {/* Status / Expiry Pills Row (image copy 20.png) */}
+              {/* Status / Expiry Boxes Row below Screens (Bigger boxes & clickable per requirement) */}
               <div className="screens-grid-row" style={{ marginTop: '6px' }}>
                 {(item.screens || []).map((screen, sIdx) => {
-                  const isEmpty = screen.status === 'empty';
-                  const isExpiringSoon = screen.expiryDate && (screen.expiryDate.includes('Jun') || screen.expiryDate.includes('May'));
+                  const currentExpDate = isEditing
+                    ? (editState.dates?.[sIdx] !== undefined ? editState.dates[sIdx] : screen.expiryDate)
+                    : screen.expiryDate;
+                  const isEmpty = isEditing
+                    ? (!currentExpDate || !String(currentExpDate).trim())
+                    : (screen.status === 'empty');
+                  const isExpiringSoon = currentExpDate && (currentExpDate.includes('Jun') || currentExpDate.includes('May'));
 
                   return (
                     <div
                       key={sIdx}
                       onClick={() => {
-                        if (isEmpty && onNavigateToSaleWithSlot) {
+                        if (isEditing) {
+                          // Allow editing expiry date for this screen
+                          setScreenDateModal({
+                            itemId: item.id,
+                            screenIndex: sIdx,
+                            currentDate: currentExpDate || ''
+                          });
+                        } else if (isEmpty && onNavigateToSaleWithSlot) {
                           onNavigateToSaleWithSlot({
                             brandId: currentBrand.id,
                             email: item.email,
@@ -571,23 +575,26 @@ export default function InventoryScreen({
                         }
                       }}
                       style={{
-                        padding: '5px 2px',
-                        borderRadius: '6px',
-                        textAlign: 'center',
-                        fontSize: '9.5px',
-                        fontWeight: 800,
-                        cursor: isEmpty ? 'pointer' : 'default',
+                        minHeight: '34px',
+                        padding: '6px 2px',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: isEmpty ? '16px' : '9.5px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
                         background: isEmpty ? '#ffffff' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
                         color: isEmpty ? '#64748b' : '#ffffff',
-                        border: isEmpty ? '1.5px dashed #cbd5e1' : 'none',
+                        border: isEmpty ? '2px dashed #94a3b8' : 'none',
                         boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.15)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap'
                       }}
-                      title={isEmpty ? 'Click to sell this screen' : `Expires: ${screen.expiryDate || 'Active'}`}
+                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'}`)}
                     >
-                      {isEmpty ? '+' : (screen.expiryDate || 'Active')}
+                      {isEmpty ? '+' : (currentExpDate || 'Active')}
                     </div>
                   );
                 })}
@@ -831,6 +838,29 @@ export default function InventoryScreen({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Screen Expiry Date Picker Modal for unlocked editing */}
+      {screenDateModal && (
+        <DatePickerModal
+          isOpen={true}
+          initialDate={screenDateModal.currentDate || ''}
+          onSelect={(selectedDate) => {
+            const { itemId, screenIndex } = screenDateModal;
+            setEditingCards(prev => {
+              const currentEdit = prev[itemId] || {};
+              const currentDates = [...(currentEdit.dates || [])];
+              currentDates[screenIndex] = selectedDate;
+              return {
+                ...prev,
+                [itemId]: { ...currentEdit, dates: currentDates }
+              };
+            });
+            setScreenDateModal(null);
+            showToast(`Screen ${screenIndex + 1} expiry set to ${selectedDate} (Click Save)`, 'info');
+          }}
+          onClose={() => setScreenDateModal(null)}
+        />
       )}
     </div>
   );

@@ -569,8 +569,62 @@ export function getInitialData() {
     }
   ];
 
-  const customForms = [];
+  const groups = [
+    {
+      id: 'group_general',
+      name: 'Standard OTT',
+      heading: 'Multi-Brand Subscriptions',
+      subheading: 'Premium shared & private streaming profiles',
+      color: '#2563eb',
+      createdAt: '2026-01-01'
+    }
+  ];
+
+  const customForms = [
+    {
+      id: 'sale_form_01',
+      title: 'SALE FORM 01',
+      name: 'SALE FORM 01',
+      heading: 'OTT Sale Form',
+      subheading: 'Standard Customer Checkout',
+      type: 'sale',
+      groupId: 'group_general',
+      brands: ['netflix', 'prime_video', 'aha'],
+      isDefault: true,
+      fields: [
+        { id: 'brand', label: 'Brand', type: 'brand', required: true },
+        { id: 'validity', label: 'Validity', type: 'validity', required: true },
+        { id: 'dateFrom', label: 'Date (From)', type: 'date', required: true },
+        { id: 'dateTo', label: 'Date (To)', type: 'date', required: true },
+        { id: 'email', label: 'ID', type: 'email', required: true },
+        { id: 'password', label: 'Password', type: 'password', required: true },
+        { id: 'screenNumber', label: 'Screen No', type: 'text', required: true },
+        { id: 'screenPin', label: 'Screen Pin', type: 'text', required: true },
+        { id: 'amount', label: 'Amount', type: 'number', required: true },
+        { id: 'deviceName', label: 'Device Name', type: 'text', required: false },
+        { id: 'customerName', label: 'Name', type: 'text', required: true },
+        { id: 'customerNumber', label: 'Number', type: 'tel', required: true },
+        { id: 'referenceName', label: 'Reference Name', type: 'text', required: false },
+        { id: 'referenceNumber', label: 'Reference Number', type: 'tel', required: false }
+      ],
+      createdAt: '2026-01-01'
+    },
+    {
+      id: 'db_form_01',
+      title: 'DATABASE FORM 01',
+      name: 'DATABASE FORM 01',
+      heading: 'OTT Inventory Database',
+      subheading: 'Accounts & 1–10 Screens Management',
+      type: 'database',
+      groupId: 'group_general',
+      brands: ['netflix', 'prime_video', 'aha'],
+      isDefault: true,
+      fields: [],
+      createdAt: '2026-01-01'
+    }
+  ];
+
   const cellMappings = {};
 
-  return { brands, inventory, sales, settings, users, customForms, cellMappings };
+  return { brands, inventory, sales, settings, users, groups, customForms, cellMappings };
 }

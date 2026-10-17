@@ -18,7 +18,8 @@ export function formatSaleConfirmationMessage({
   screenPin,
   deviceName,
   validity,
-  expiryDate
+  expiryDate,
+  amount
 }) {
   return `Hello ${customerName || 'Customer'}! 🎬
 
@@ -28,7 +29,7 @@ Thank you for your purchase! Here are your *${brandName || 'OTT'}* subscription 
 🔒 *Password:* ${accountPassword || 'N/A'}
 📱 *Screen No:* ${screenNumber || '01'}
 🔑 *Screen PIN:* ${screenPin || '----'}
-${deviceName ? `📺 *Device:* ${deviceName}\n` : ''}⏳ *Validity:* ${validity || '01 Month'}
+${amount ? `💰 *Amount:* ₹${amount}\n` : ''}${deviceName ? `📺 *Device:* ${deviceName}\n` : ''}⏳ *Validity:* ${validity || '01 Month'}
 📅 *Expiry Date:* ${expiryDate || 'N/A'}
 
 Enjoy uninterrupted streaming! For renewals or queries, kindly message us. 🍿

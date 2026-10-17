@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   User, Lock, Eye, EyeOff, ChevronDown, Check,
-  Tv, Sparkles, Calendar
+  Tv, Sparkles, Calendar, ArrowLeft
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { formatDate, calculateExpiryDate } from '../utils/dateUtils';
@@ -9,6 +9,7 @@ import { buildWhatsAppLink, formatSaleConfirmationMessage } from '../utils/whats
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import OttLogo from '../components/OttLogos';
 import DatePickerModal from '../components/DatePickerModal';
+import InventoryScreen from './InventoryScreen';
 import { api } from '../api/client';
 
 export default function SaleScreen({
@@ -21,9 +22,9 @@ export default function SaleScreen({
 }) {
   const initialDateStr = formatDate(new Date());
 
-  // Form Fields
-  const [brandId, setBrandId] = useState(prefillData?.brandId || selectedBrand?.id || brands[0]?.id || 'netflix');
-  const [validity, setValidity] = useState(prefillData?.validity || '01 Month');
+  // Form Fields - initially EMPTY per Master Prompt requirement 1
+  const [brandId, setBrandId] = useState(prefillData?.brandId || (selectedBrand ? selectedBrand.id : ''));
+  const [validity, setValidity] = useState(prefillData?.validity || '');
   const [activationDate, setActivationDate] = useState(prefillData?.activationDate || initialDateStr);
   const [expiryDate, setExpiryDate] = useState('');
   const [showFromDatePicker, setShowFromDatePicker] = useState(false);
@@ -33,9 +34,9 @@ export default function SaleScreen({
   const [accountPassword, setAccountPassword] = useState(prefillData?.password || '');
   const [showPassword, setShowPassword] = useState(false);
 
-  const [screenNumber, setScreenNumber] = useState(prefillData?.screenName || 'Screen-1');
-  const [screenPin, setScreenPin] = useState(prefillData?.pin || '1111');
-  const [amount, setAmount] = useState('199');
+  const [screenNumber, setScreenNumber] = useState(prefillData?.screenName || '');
+  const [screenPin, setScreenPin] = useState(prefillData?.pin || '');
+  const [amount, setAmount] = useState(prefillData?.amount ? String(prefillData.amount) : '');
   const [deviceName, setDeviceName] = useState(prefillData?.deviceName || '');
 
   const [customerName, setCustomerName] = useState('');
@@ -44,32 +45,37 @@ export default function SaleScreen({
   const [referenceNumber, setReferenceNumber] = useState('');
   const [selectedInventoryId, setSelectedInventoryId] = useState(prefillData?.inventoryId || null);
 
-  // UI state
+  // UI state for automation workflow
   const [isPickingBrand, setIsPickingBrand] = useState(false);
+  const [selectingBrandAccounts, setSelectingBrandAccounts] = useState(null);
   const [showValidityMenu, setShowValidityMenu] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [brandAccounts, setBrandAccounts] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const validityOptions = ['01 Month', '03 Months', '06 Months', '12 Months'];
-  const currentBrand = brands.find(b => b.id === brandId) || selectedBrand || brands[0];
+  const currentBrand = brandId ? brands.find(b => b.id === brandId) : null;
+  const validityOptions = (currentBrand?.plans && currentBrand.plans.length > 0)
+    ? currentBrand.plans
+    : ['01 Month', '03 Months', '06 Months', '12 Months'];
 
   // Auto calculate expiry date whenever validity changes
   useEffect(() => {
     if (activationDate && validity) {
       const calculated = calculateExpiryDate(activationDate, validity);
       setExpiryDate(calculated);
+    } else {
+      setExpiryDate('');
     }
   }, [activationDate, validity]);
 
   // Auto set amount when brand or validity changes
   useEffect(() => {
-    if (currentBrand?.prices && currentBrand.prices[validity]) {
+    if (currentBrand?.prices && validity && currentBrand.prices[validity]) {
       setAmount(String(currentBrand.prices[validity]));
     }
   }, [currentBrand, validity]);
 
-  // Load accounts for current brand to provide easy dropdown selection
+  // Load accounts for current brand to provide easy dropdown selection if needed
   useEffect(() => {
     let active = true;
     if (currentBrand?.id) {
@@ -78,6 +84,8 @@ export default function SaleScreen({
           setBrandAccounts(items || []);
         }
       }).catch(() => {});
+    } else {
+      setBrandAccounts([]);
     }
     return () => { active = false; };
   }, [currentBrand?.id]);
@@ -92,15 +100,40 @@ export default function SaleScreen({
       if (prefillData.pin) setScreenPin(prefillData.pin);
       if (prefillData.validity) setValidity(prefillData.validity);
       if (prefillData.inventoryId) setSelectedInventoryId(prefillData.inventoryId);
+      if (prefillData.amount) setAmount(String(prefillData.amount));
     }
   }, [prefillData]);
 
-  // When user selects a brand from 3-column Select OTT Grid
+  // Step 2 & 3: When user selects a brand in Select OTT Grid -> immediately open that brand's accounts!
   const handleSelectBrandInGrid = (brand) => {
     setBrandId(brand.id);
     if (onSelectBrand) onSelectBrand(brand);
+    // Automatically navigate to that brand's database accounts list!
+    setSelectingBrandAccounts(brand);
+  };
+
+  // Step 4: When an empty screen '+' is clicked in database accounts list
+  const handleSlotSelectedFromDatabase = (slotData) => {
+    const selectedBId = slotData.brandId || selectingBrandAccounts?.id || brandId;
+    setBrandId(selectedBId);
+    setAccountEmail(slotData.email || '');
+    setAccountPassword(slotData.password || '');
+    setScreenNumber(slotData.screenName || '');
+    setScreenPin(slotData.pin || '');
+    setSelectedInventoryId(slotData.inventoryId || null);
+
+    const b = brands.find(x => x.id === selectedBId);
+    const chosenValidity = slotData.validity || validity || (b?.plans?.[0] || '12 Months');
+    setValidity(chosenValidity);
+
+    if (b?.prices && chosenValidity && b.prices[chosenValidity]) {
+      setAmount(String(b.prices[chosenValidity]));
+    }
+
+    // Close both database accounts view and brand picker -> returns DIRECTLY to SaleScreen!
+    setSelectingBrandAccounts(null);
     setIsPickingBrand(false);
-    showToast(`Selected ${brand.displayName}`, 'info');
+    showToast(`Loaded ${slotData.screenName} from ${slotData.email}`, 'success');
   };
 
   // When user picks an account from dropdown
@@ -177,7 +210,8 @@ export default function SaleScreen({
         screenPin: screenPin.trim() || '1111',
         deviceName: deviceName.trim(),
         validity,
-        expiryDate
+        expiryDate,
+        amount
       });
 
       const waLink = buildWhatsAppLink(customerNumber.trim(), waMsg);
@@ -202,20 +236,98 @@ export default function SaleScreen({
   };
 
   // ========================================================
-  // VIEW: 3-COLUMN BRANDS GRID MATCHING image copy 13.png
+  // STEP 3: BRAND DATABASE ACCOUNT SELECTION (Screenshot 3 / image copy 32)
+  // When an empty screen '+' is clicked, auto-fills credentials & returns to Sale Form!
   // ========================================================
-  if (isPickingBrand) {
+  if (selectingBrandAccounts) {
     return (
-      <OttBrandsGrid
-        brands={brands}
-        onSelectBrand={handleSelectBrandInGrid}
-        onBack={() => setIsPickingBrand(false)}
-      />
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 120,
+        background: '#f8fafc',
+        overflowY: 'auto',
+        paddingBottom: '90px'
+      }}>
+        {/* Single Clean Header matching image copy 32 */}
+        <div style={{
+          background: '#ffffff',
+          borderBottom: '1px solid #e2e8f0',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          position: 'sticky',
+          top: 0,
+          zIndex: 50
+        }}>
+          <button
+            type="button"
+            onClick={() => setSelectingBrandAccounts(null)}
+            className="header-btn"
+            style={{ width: '40px', height: '40px', borderRadius: '10px' }}
+            title="Back to Brands"
+          >
+            <ArrowLeft size={20} />
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: selectingBrandAccounts.color || '#e50914'
+            }} />
+            <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
+              {selectingBrandAccounts.displayName || selectingBrandAccounts.name}
+            </h2>
+          </div>
+
+          <div style={{ width: '40px' }} />
+        </div>
+
+        {/* Embedded Database Accounts View */}
+        <InventoryScreen
+          brands={brands}
+          selectedBrand={selectingBrandAccounts}
+          onSelectBrand={setSelectingBrandAccounts}
+          onNavigateToSaleWithSlot={handleSlotSelectedFromDatabase}
+          showToast={showToast}
+        />
+      </div>
     );
   }
 
   // ========================================================
-  // VIEW: COMPACT SALE FORM ADJUSTED IN SCREEN (image copy 16 & 19)
+  // STEP 2: 3-COLUMN SELECT OTT GRID (Screenshot 2 / image copy 31)
+  // ========================================================
+  if (isPickingBrand) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 120,
+        background: '#f8fafc',
+        overflowY: 'auto'
+      }}>
+        <OttBrandsGrid
+          brands={brands}
+          onSelectBrand={handleSelectBrandInGrid}
+          onBack={() => setIsPickingBrand(false)}
+          showHeader={true}
+        />
+      </div>
+    );
+  }
+
+  // ========================================================
+  // STEP 1: COMPACT SALE FORM (Screenshot 1 / image copy 30)
   // ========================================================
   return (
     <div className="sale-form-compact" style={{ paddingBottom: '90px' }}>
@@ -223,7 +335,7 @@ export default function SaleScreen({
         
         {/* Row 1: Brand & Validity (with compact Expiry preview) */}
         <div className="sale-row-2-compact">
-          {/* Brand Box -> Clicking opens Brands List (image copy 13.png) */}
+          {/* Brand Box -> Clicking opens Brands List (image copy 31) */}
           <div style={{ position: 'relative' }}>
             <div className="sale-label-compact">
               <span>Brand</span>
@@ -237,25 +349,29 @@ export default function SaleScreen({
                 justifyContent: 'space-between',
                 padding: '6px 10px',
                 borderRadius: '10px',
-                background: currentBrand?.bgDark || '#000000',
-                color: '#ffffff',
+                background: currentBrand ? (currentBrand.bgDark || '#000000') : '#ffffff',
+                color: currentBrand ? '#ffffff' : '#64748b',
                 cursor: 'pointer',
-                border: '1.5px solid #334155',
+                border: '1.5px solid #cbd5e1',
                 height: '40px',
                 boxSizing: 'border-box'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                <OttLogo brandId={currentBrand?.id} name={currentBrand?.displayName} size={26} />
-                <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {currentBrand ? (
+                  <OttLogo brandId={currentBrand.id} name={currentBrand.displayName} size={26} />
+                ) : (
+                  <Tv size={20} color="#94a3b8" />
+                )}
+                <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: currentBrand ? '#ffffff' : '#64748b' }}>
                   {currentBrand?.displayName || currentBrand?.name || 'Select OTT'}
                 </span>
               </div>
-              <ChevronDown size={16} color="#ffffff" style={{ flexShrink: 0 }} />
+              <ChevronDown size={16} color={currentBrand ? '#ffffff' : '#64748b'} style={{ flexShrink: 0 }} />
             </div>
           </div>
 
-          {/* Validity Box -> Professional Floating Popover (image copy 17.png) */}
+          {/* Validity Box -> Professional Floating Popover (image copy 30) */}
           <div style={{ position: 'relative' }}>
             <div className="sale-label-compact">
               <span>Validity</span>
@@ -270,7 +386,7 @@ export default function SaleScreen({
                 padding: '6px 10px',
                 borderRadius: '10px',
                 background: '#ffffff',
-                color: '#0f172a',
+                color: validity ? '#0f172a' : '#94a3b8',
                 cursor: 'pointer',
                 border: '1.5px solid #cbd5e1',
                 height: '40px',
@@ -279,11 +395,11 @@ export default function SaleScreen({
                 boxSizing: 'border-box'
               }}
             >
-              <span>{validity}</span>
+              <span>{validity || 'Select Validity'}</span>
               <ChevronDown size={16} color="#64748b" />
             </div>
 
-            {/* Professional Validity Popover matching image copy 17.png */}
+            {/* Professional Validity Popover */}
             {showValidityMenu && (
               <div className="validity-popover-card">
                 {validityOptions.map(opt => {

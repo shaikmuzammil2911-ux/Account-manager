@@ -101,6 +101,13 @@ export default function App() {
   };
 
   const navigateTo = (screenName, params = {}) => {
+    if (screenName === 'data' || screenName === 'inventory') {
+      if (!params.brand) {
+        setSelectedBrand(null);
+      } else {
+        setSelectedBrand(params.brand);
+      }
+    }
     setScreenParams(params);
     setCurrentScreen(screenName);
     setHistory(prev => [...prev, screenName]);
@@ -108,6 +115,10 @@ export default function App() {
   };
 
   const handleBack = () => {
+    if ((currentScreen === 'data' || currentScreen === 'inventory') && selectedBrand) {
+      setSelectedBrand(null);
+      return;
+    }
     if (history.length > 1) {
       const newHistory = [...history];
       newHistory.pop();
@@ -180,7 +191,7 @@ export default function App() {
         return 'Sale';
       case 'data':
       case 'inventory':
-        return 'Data';
+        return selectedBrand ? (selectedBrand.displayName || 'Data') : 'Select OTT';
       case 'recent-sales':
         return "Recent Sale's";
       case 'cells-linkup':

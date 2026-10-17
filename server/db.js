@@ -51,7 +51,60 @@ function initDb() {
 }
 
 function readDb() {
-  return initDb();
+  const data = initDb();
+  let modified = false;
+
+  if (!data.groups || data.groups.length === 0) {
+    data.groups = [
+      {
+        id: 'group_general',
+        name: 'Standard OTT',
+        heading: 'Multi-Brand Subscriptions',
+        subheading: 'Premium shared & private streaming profiles',
+        color: '#2563eb',
+        createdAt: '2026-01-01'
+      }
+    ];
+    modified = true;
+  }
+
+  if (!data.customForms || data.customForms.length === 0) {
+    data.customForms = [
+      {
+        id: 'sale_form_01',
+        title: 'SALE FORM 01',
+        name: 'SALE FORM 01',
+        heading: 'OTT Sale Form',
+        subheading: 'Standard Customer Checkout',
+        type: 'sale',
+        groupId: 'group_general',
+        brands: ['netflix', 'prime_video', 'aha'],
+        isDefault: true,
+        createdAt: '2026-01-01'
+      },
+      {
+        id: 'db_form_01',
+        title: 'DATABASE FORM 01',
+        name: 'DATABASE FORM 01',
+        heading: 'OTT Inventory Database',
+        subheading: 'Accounts & 1–10 Screens Management',
+        type: 'database',
+        groupId: 'group_general',
+        brands: ['netflix', 'prime_video', 'aha'],
+        isDefault: true,
+        createdAt: '2026-01-01'
+      }
+    ];
+    modified = true;
+  }
+
+  if (modified) {
+    try {
+      writeDb(data);
+    } catch (e) {}
+  }
+
+  return data;
 }
 
 function writeDb(data) {
@@ -772,6 +825,68 @@ export const db = {
     return true;
   },
 
+  // --- FORM GROUPS ---
+  getGroups() {
+    const data = readDb();
+    return data.groups || [];
+  },
+
+  getGroup(id) {
+    const groups = this.getGroups();
+    return groups.find(g => g.id === id);
+  },
+
+  createGroup(groupData) {
+    const data = readDb();
+    if (!data.groups) data.groups = [];
+
+    const newGroup = {
+      id: `group_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: (groupData.name || 'New Group').trim(),
+      heading: (groupData.heading || groupData.name || 'Group Heading').trim(),
+      subheading: (groupData.subheading || '').trim(),
+      color: groupData.color || '#2563eb',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    data.groups.push(newGroup);
+    writeDb(data);
+    return newGroup;
+  },
+
+  updateGroup(id, groupData) {
+    const data = readDb();
+    const idx = (data.groups || []).findIndex(g => g.id === id);
+    if (idx === -1) return null;
+
+    data.groups[idx] = {
+      ...data.groups[idx],
+      name: groupData.name !== undefined ? groupData.name.trim() : data.groups[idx].name,
+      heading: groupData.heading !== undefined ? groupData.heading.trim() : data.groups[idx].heading,
+      subheading: groupData.subheading !== undefined ? groupData.subheading.trim() : data.groups[idx].subheading,
+      color: groupData.color || data.groups[idx].color,
+      updatedAt: new Date().toISOString()
+    };
+
+    writeDb(data);
+    return data.groups[idx];
+  },
+
+  deleteGroup(id) {
+    const data = readDb();
+    // Do not delete forms; unassign their groupId safely
+    (data.customForms || []).forEach(f => {
+      if (f.groupId === id) {
+        f.groupId = null;
+      }
+    });
+
+    data.groups = (data.groups || []).filter(g => g.id !== id);
+    writeDb(data);
+    return true;
+  },
+
   // --- CUSTOM FORMS ---
   getCustomForms(type) {
     const data = readDb();
@@ -791,16 +906,30 @@ export const db = {
     const data = readDb();
     if (!data.customForms) data.customForms = [];
 
+    const title = formData.title || formData.name || (formData.type === 'database' ? 'DATABASE FORM' : 'SALE FORM');
     const newForm = {
-      id: `form_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      name: formData.name || 'Untitled Form',
+      id: formData.id || `form_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      title,
+      name: title,
+      heading: formData.heading || title,
+      subheading: formData.subheading || '',
       type: formData.type || 'sale',
-      brands: formData.brands || [],
-      elements: formData.elements || [],
-      backgroundColor: formData.backgroundColor || '#f8fafc',
+      groupId: formData.groupId || null,
+      brands: Array.isArray(formData.brands) ? formData.brands : [],
+      isDefault: Boolean(formData.isDefault),
+      fields: Array.isArray(formData.fields) ? formData.fields : [],
+      elements: Array.isArray(formData.elements) ? formData.elements : [],
+      backgroundColor: formData.backgroundColor || '#ffffff',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+
+    // If marked default, unset default on other forms of same type
+    if (newForm.isDefault) {
+      data.customForms.forEach(f => {
+        if (f.type === newForm.type) f.isDefault = false;
+      });
+    }
 
     data.customForms.push(newForm);
     writeDb(data);
@@ -812,9 +941,19 @@ export const db = {
     const idx = (data.customForms || []).findIndex(f => f.id === id);
     if (idx === -1) return null;
 
+    if (formData.isDefault) {
+      const type = formData.type || data.customForms[idx].type;
+      data.customForms.forEach(f => {
+        if (f.type === type && f.id !== id) f.isDefault = false;
+      });
+    }
+
+    const title = formData.title || formData.name || data.customForms[idx].title || data.customForms[idx].name;
     data.customForms[idx] = {
       ...data.customForms[idx],
       ...formData,
+      title,
+      name: title,
       updatedAt: new Date().toISOString()
     };
 

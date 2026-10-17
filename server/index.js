@@ -180,6 +180,58 @@ app.delete('/api/brands/:id', (req, res) => {
   }
 });
 
+// Groups Management
+app.get('/api/groups', (req, res) => {
+  try {
+    const groups = db.getGroups();
+    res.json(groups);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/groups/:id', (req, res) => {
+  try {
+    const group = db.getGroup(req.params.id);
+    if (!group) return res.status(404).json({ error: 'Group not found' });
+    res.json(group);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/groups', (req, res) => {
+  try {
+    const { name, heading } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Group name is required' });
+    }
+    const newGroup = db.createGroup(req.body);
+    res.status(201).json(newGroup);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/groups/:id', (req, res) => {
+  try {
+    const updated = db.updateGroup(req.params.id, req.body);
+    if (!updated) return res.status(404).json({ error: 'Group not found' });
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/groups/:id', (req, res) => {
+  try {
+    const success = db.deleteGroup(req.params.id);
+    res.json({ success });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Custom Forms
 app.get('/api/forms', (req, res) => {
   try {

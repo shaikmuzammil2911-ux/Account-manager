@@ -1211,6 +1211,13 @@ p, .body-text {
   margin-bottom: 6px;
 }
 
+.screens-grid-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  align-items: center;
+}
+
 .screen-btn {
   background: linear-gradient(180deg, #ff8c00 0%, #ea580c 100%);
   color: #ffffff;

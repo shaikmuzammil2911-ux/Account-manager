@@ -7,36 +7,39 @@ export default function OttBrandsGrid({
   brands = [],
   onSelectBrand,
   onBack,
+  showHeader = false,
   activeTab = 'home',
   onSelectTab
 }) {
   return (
     <div className="select-ott-screen">
-      {/* Header matching image copy 13.png */}
-      <div className="select-ott-header">
-        {onBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              padding: '6px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0f172a'
-            }}
-            aria-label="Go back"
-          >
-            <ArrowLeft size={24} strokeWidth={2.5} />
-          </button>
-        )}
-        <h2 className="select-ott-title" style={{ margin: 0 }}>
-          Select OTT
-        </h2>
-      </div>
+      {/* Header matching image copy 13.png - only rendered when showHeader is explicitly true */}
+      {showHeader && (
+        <div className="select-ott-header">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#0f172a'
+              }}
+              aria-label="Go back"
+            >
+              <ArrowLeft size={24} strokeWidth={2.5} />
+            </button>
+          )}
+          <h2 className="select-ott-title" style={{ margin: 0 }}>
+            Select OTT
+          </h2>
+        </div>
+      )}
 
       {/* 3 Columns × Rows Grid matching image copy 13.png */}
       <div className="ott-brands-grid-3col">

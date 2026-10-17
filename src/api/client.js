@@ -882,12 +882,109 @@ export const api = {
     return true;
   },
 
+  // FORM GROUPS
+  async getGroups() {
+    try {
+      const res = await fetch('/api/groups');
+      if (res.ok) {
+        const groups = await res.json();
+        const local = getLocalData();
+        local.groups = groups;
+        saveLocalData(local);
+        return groups;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return local.groups || [];
+  },
+
+  async createGroup(groupData) {
+    try {
+      const res = await fetch('/api/groups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(groupData)
+      });
+      if (res.ok) {
+        const newGroup = await res.json();
+        const local = getLocalData();
+        if (!local.groups) local.groups = [];
+        local.groups.push(newGroup);
+        saveLocalData(local);
+        return newGroup;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.groups) local.groups = [];
+    const newGroup = {
+      id: `group_${Date.now()}`,
+      name: (groupData.name || 'New Group').trim(),
+      heading: (groupData.heading || groupData.name || 'Group Heading').trim(),
+      subheading: (groupData.subheading || '').trim(),
+      color: groupData.color || '#2563eb',
+      createdAt: new Date().toISOString()
+    };
+    local.groups.push(newGroup);
+    saveLocalData(local);
+    return newGroup;
+  },
+
+  async updateGroup(id, groupData) {
+    try {
+      const res = await fetch(`/api/groups/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(groupData)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const local = getLocalData();
+        local.groups = (local.groups || []).map(g => g.id === id ? updated : g);
+        saveLocalData(local);
+        return updated;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    local.groups = (local.groups || []).map(g => g.id === id ? { ...g, ...groupData } : g);
+    saveLocalData(local);
+    return local.groups.find(g => g.id === id);
+  },
+
+  async deleteGroup(id) {
+    try {
+      const res = await fetch(`/api/groups/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        const local = getLocalData();
+        local.groups = (local.groups || []).filter(g => g.id !== id);
+        saveLocalData(local);
+        return true;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    local.groups = (local.groups || []).filter(g => g.id !== id);
+    saveLocalData(local);
+    return true;
+  },
+
   // CUSTOM FORMS
   async getCustomForms(type) {
     try {
       const q = type ? `?type=${type}` : '';
       const res = await fetch(`/api/forms${q}`);
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const forms = await res.json();
+        const local = getLocalData();
+        if (type) {
+          local.customForms = [
+            ...(local.customForms || []).filter(f => f.type !== type),
+            ...forms
+          ];
+        } else {
+          local.customForms = forms;
+        }
+        saveLocalData(local);
+        return forms;
+      }
     } catch (e) {}
     const local = getLocalData();
     let forms = local.customForms || [];
@@ -902,13 +999,29 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)
       });
-      if (res.ok) return await res.json();
+      if (res.ok) {
+        const newForm = await res.json();
+        const local = getLocalData();
+        if (!local.customForms) local.customForms = [];
+        local.customForms.push(newForm);
+        saveLocalData(local);
+        return newForm;
+      }
     } catch (e) {}
     const local = getLocalData();
     if (!local.customForms) local.customForms = [];
+    const title = formData.title || formData.name || 'NEW FORM';
     const newForm = {
       id: `form_${Date.now()}`,
-      ...formData,
+      title,
+      name: title,
+      heading: formData.heading || title,
+      subheading: formData.subheading || '',
+      type: formData.type || 'sale',
+      groupId: formData.groupId || null,
+      brands: formData.brands || [],
+      isDefault: Boolean(formData.isDefault),
+      fields: formData.fields || [],
       createdAt: new Date().toISOString()
     };
     local.customForms.push(newForm);
@@ -916,10 +1029,36 @@ export const api = {
     return newForm;
   },
 
+  async updateCustomForm(id, formData) {
+    try {
+      const res = await fetch(`/api/forms/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const local = getLocalData();
+        local.customForms = (local.customForms || []).map(f => f.id === id ? updated : f);
+        saveLocalData(local);
+        return updated;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    local.customForms = (local.customForms || []).map(f => f.id === id ? { ...f, ...formData } : f);
+    saveLocalData(local);
+    return local.customForms.find(f => f.id === id);
+  },
+
   async deleteCustomForm(id) {
     try {
       const res = await fetch(`/api/forms/${id}`, { method: 'DELETE' });
-      if (res.ok) return true;
+      if (res.ok) {
+        const local = getLocalData();
+        local.customForms = (local.customForms || []).filter(f => f.id !== id);
+        saveLocalData(local);
+        return true;
+      }
     } catch (e) {}
     const local = getLocalData();
     local.customForms = (local.customForms || []).filter(f => f.id !== id);

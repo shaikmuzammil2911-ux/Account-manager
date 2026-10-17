@@ -556,5 +556,45 @@ export function getClientInitialData() {
     }
   };
 
-  return { brands, inventory, sales, settings };
+  const groups = [
+    {
+      id: 'group_general',
+      name: 'Standard OTT',
+      heading: 'Multi-Brand Subscriptions',
+      subheading: 'Premium shared & private streaming profiles',
+      color: '#2563eb',
+      createdAt: '2026-01-01'
+    }
+  ];
+
+  const customForms = [
+    {
+      id: 'sale_form_01',
+      title: 'SALE FORM 01',
+      name: 'SALE FORM 01',
+      heading: 'OTT Sale Form',
+      subheading: 'Standard Customer Checkout',
+      type: 'sale',
+      groupId: 'group_general',
+      brands: ['netflix', 'prime_video', 'aha'],
+      isDefault: true,
+      fields: [],
+      createdAt: '2026-01-01'
+    },
+    {
+      id: 'db_form_01',
+      title: 'DATABASE FORM 01',
+      name: 'DATABASE FORM 01',
+      heading: 'OTT Inventory Database',
+      subheading: 'Accounts & 1–10 Screens Management',
+      type: 'database',
+      groupId: 'group_general',
+      brands: ['netflix', 'prime_video', 'aha'],
+      isDefault: true,
+      fields: [],
+      createdAt: '2026-01-01'
+    }
+  ];
+
+  return { brands, inventory, sales, settings, groups, customForms };
 }
