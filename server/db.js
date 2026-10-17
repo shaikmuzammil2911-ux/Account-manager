@@ -369,7 +369,35 @@ export const db = {
     }
 
     if (!assignedAccount) {
-      throw new Error(`No available ${brand.displayName || 'OTT'} account found in inventory.`);
+      if (saleData.accountEmail) {
+        const screensCount = brand.screensCount || 5;
+        const screens = [];
+        for (let s = 1; s <= screensCount; s++) {
+          screens.push({
+            screenNumber: s,
+            name: `Screen-${s}`,
+            status: 'empty',
+            saleId: null,
+            expiryDate: null,
+            pin: String(1000 + s * 1111).slice(-4),
+            deviceType: 'TV'
+          });
+        }
+        assignedAccount = {
+          id: `inv_auto_${Date.now()}`,
+          brandId: brand.id,
+          brandName: brand.displayName,
+          email: saleData.accountEmail,
+          password: saleData.accountPassword || 'Password@123',
+          screensCount,
+          screens,
+          isDeleted: false,
+          isSelected: true
+        };
+        data.inventory.push(assignedAccount);
+      } else {
+        throw new Error(`No available ${brand.displayName || 'OTT'} account found in inventory.`);
+      }
     }
 
     const saleId = `sale_${Date.now()}`;
@@ -388,18 +416,22 @@ export const db = {
     }
 
     if (!assignedScreen) {
-      throw new Error('No empty screen is available on this account.');
-    }
-
-    // Atomic double-booking prevention check
-    if (assignedScreen.status !== 'empty') {
-      throw new Error(`Double-booking prevented: Screen ${assignedScreen.name || assignedScreen.screenNumber} has already been sold (Expires: ${assignedScreen.expiryDate || 'Active'}). Please choose an available screen.`);
+      const sNum = screenNum || (assignedAccount.screens.length + 1);
+      assignedScreen = {
+        screenNumber: sNum,
+        name: `Screen-${sNum}`,
+        status: 'empty',
+        pin: saleData.screenPin || '1234',
+        deviceType: 'TV'
+      };
+      assignedAccount.screens.push(assignedScreen);
     }
 
     // Commit screen occupancy
     assignedScreen.status = 'occupied';
     assignedScreen.saleId = saleId;
     assignedScreen.expiryDate = saleData.expiryDate;
+    if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
 
     const newSale = {
       id: saleId,
@@ -421,6 +453,7 @@ export const db = {
       amount: Number(saleData.amount) || brand.prices[saleData.validity] || 199,
       deviceName: saleData.deviceName || 'Personal Device',
       saleDate: saleData.activationDate,
+      note: saleData.note || '',
       status: 'Active',
       notificationSent: false,
       lastNotifiedAt: null,

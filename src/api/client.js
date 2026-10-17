@@ -387,7 +387,36 @@ export const api = {
       }
 
       if (!assignedAccount) {
-        throw new Error('No available account found in inventory.');
+        if (saleData.accountEmail) {
+          const screensCount = brand.screensCount || 5;
+          const screens = [];
+          for (let s = 1; s <= screensCount; s++) {
+            screens.push({
+              screenNumber: s,
+              name: `Screen-${s}`,
+              status: 'empty',
+              saleId: null,
+              expiryDate: null,
+              pin: String(1000 + s * 1111).slice(-4),
+              deviceType: 'TV'
+            });
+          }
+          assignedAccount = {
+            id: `inv_auto_${Date.now()}`,
+            brandId: brand.id,
+            brandName: brand.displayName,
+            email: saleData.accountEmail,
+            password: saleData.accountPassword || 'Password@123',
+            screensCount,
+            screens,
+            isDeleted: false,
+            isSelected: true
+          };
+          if (!local.inventory) local.inventory = [];
+          local.inventory.push(assignedAccount);
+        } else {
+          throw new Error('No available account found in inventory.');
+        }
       }
 
       const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '0', 10);
@@ -397,17 +426,22 @@ export const api = {
       }
 
       if (!assignedScreen) {
-        throw new Error('No empty screen is available on this account.');
-      }
-
-      if (assignedScreen.status !== 'empty') {
-        throw new Error(`Double-booking prevented: Screen ${assignedScreen.name || assignedScreen.screenNumber} is already sold.`);
+        const sNum = screenNum || (assignedAccount.screens.length + 1);
+        assignedScreen = {
+          screenNumber: sNum,
+          name: `Screen-${sNum}`,
+          status: 'empty',
+          pin: saleData.screenPin || '1234',
+          deviceType: 'TV'
+        };
+        assignedAccount.screens.push(assignedScreen);
       }
 
       const saleId = `sale_${Date.now()}`;
       assignedScreen.status = 'occupied';
       assignedScreen.saleId = saleId;
       assignedScreen.expiryDate = saleData.expiryDate;
+      if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
 
       const newSale = {
         id: saleId,
@@ -428,6 +462,7 @@ export const api = {
         amount: Number(saleData.amount) || brand.prices[saleData.validity] || 199,
         deviceName: saleData.deviceName || 'Personal Device',
         saleDate: saleData.activationDate,
+        note: saleData.note || '',
         status: 'Active',
         notificationSent: false,
         lastNotifiedAt: null,

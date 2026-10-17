@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Plus } from 'lucide-react';
 import { api } from './api/client';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
@@ -41,6 +42,7 @@ export default function App() {
   const [showBrandSelector, setShowBrandSelector] = useState(false);
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
   const [notifySaleItem, setNotifySaleItem] = useState(null);
+  const [recentSalesAddModalOpen, setRecentSalesAddModalOpen] = useState(false);
 
   // Direct Password Reset link handler (from email ?reset=true&email=...&otp=...)
   const [directResetParams] = useState(() => {
@@ -226,6 +228,30 @@ export default function App() {
             selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' ? selectedBrand : null}
             onBrandClick={() => setShowBrandSelector(true)}
             onOpenMenu={() => setShowMenuDrawer(true)}
+            rightAction={
+              currentScreen === 'recent-sales' && selectedBrand ? (
+                <button
+                  type="button"
+                  className="glossy-btn glossy-btn-orange"
+                  style={{
+                    padding: '5px 10px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    borderRadius: '8px',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 6px rgba(249, 115, 22, 0.35)'
+                  }}
+                  onClick={() => setRecentSalesAddModalOpen(true)}
+                  id="recent-sales-add-sale-header-btn"
+                >
+                  <Plus size={14} strokeWidth={2.5} />
+                  <span>Add Sale</span>
+                </button>
+              ) : null
+            }
           />
         )}
 
@@ -266,6 +292,13 @@ export default function App() {
             onSelectBrand={setSelectedBrand}
             onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
             showToast={showToast}
+            isAddSaleOpen={recentSalesAddModalOpen}
+            onOpenAddSale={() => setRecentSalesAddModalOpen(true)}
+            onCloseAddSale={() => setRecentSalesAddModalOpen(false)}
+            onSaleAdded={async () => {
+              const updatedStats = await api.getStats();
+              setStats(updatedStats);
+            }}
           />
         )}
 

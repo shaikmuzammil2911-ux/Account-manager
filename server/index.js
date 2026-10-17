@@ -419,7 +419,8 @@ app.post('/api/sales', (req, res) => {
       deviceName,
       referenceName,
       referenceNumber,
-      inventoryId
+      inventoryId,
+      note: req.body.note || ''
     });
 
     res.status(201).json(result);

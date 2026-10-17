@@ -8,7 +8,8 @@ export default function TopHeader({
   isHome = false,
   onOpenMenu,
   selectedBrand,
-  onBrandClick
+  onBrandClick,
+  rightAction
 }) {
   return (
     <header className="app-header">
@@ -91,9 +92,11 @@ export default function TopHeader({
         )}
       </div>
 
-      {/* Right Action Button (Hamburger Menu on Home or Context Action) */}
-      <div style={{ width: '42px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
-        {isHome ? (
+      {/* Right Action Button (Hamburger Menu on Home, custom rightAction, or standard Menu) */}
+      <div style={{ minWidth: '42px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+        {rightAction ? (
+          rightAction
+        ) : isHome ? (
           <button
             type="button"
             className="header-btn header-menu-btn"
