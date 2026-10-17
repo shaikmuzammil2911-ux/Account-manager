@@ -43,6 +43,7 @@ export default function App() {
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
   const [notifySaleItem, setNotifySaleItem] = useState(null);
   const [recentSalesAddModalOpen, setRecentSalesAddModalOpen] = useState(false);
+  const [brandsAddModalOpen, setBrandsAddModalOpen] = useState(false);
 
   // Direct Password Reset link handler (from email ?reset=true&email=...&otp=...)
   const [directResetParams] = useState(() => {
@@ -250,6 +251,27 @@ export default function App() {
                   <Plus size={14} strokeWidth={2.5} />
                   <span>Add Sale</span>
                 </button>
+              ) : currentScreen === 'brands-mgmt' ? (
+                <button
+                  type="button"
+                  className="glossy-btn glossy-btn-blue"
+                  style={{
+                    padding: '5px 12px',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    borderRadius: '8px',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    boxShadow: '0 2px 6px rgba(37, 99, 235, 0.35)'
+                  }}
+                  onClick={() => setBrandsAddModalOpen(true)}
+                  id="brands-add-brand-header-btn"
+                >
+                  <Plus size={15} strokeWidth={2.5} />
+                  <span>Add Brand</span>
+                </button>
               ) : null
             }
           />
@@ -317,6 +339,9 @@ export default function App() {
               setSelectedBrand(newBrand);
             }}
             showToast={showToast}
+            isAddModalOpen={brandsAddModalOpen}
+            onOpenAdd={() => setBrandsAddModalOpen(true)}
+            onCloseAdd={() => setBrandsAddModalOpen(false)}
           />
         )}
 

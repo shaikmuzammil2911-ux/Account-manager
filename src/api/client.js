@@ -193,6 +193,7 @@ export const api = {
         email: data.email?.trim() || '',
         password: data.password?.trim() || '',
         validity: data.validity || '01 Month',
+        planVariant: data.planVariant || 'General',
         notes: data.notes || '',
         isLocked: data.isLocked ?? true,
         isSelected: data.isSelected ?? false,

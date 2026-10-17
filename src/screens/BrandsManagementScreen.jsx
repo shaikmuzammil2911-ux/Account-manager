@@ -4,10 +4,24 @@ import {
 } from 'lucide-react';
 import { api } from '../api/client';
 
-export default function BrandsManagementScreen({ onBack, onBrandCreated, showToast }) {
+export default function BrandsManagementScreen({
+  onBack,
+  onBrandCreated,
+  showToast,
+  isAddModalOpen,
+  onOpenAdd,
+  onCloseAdd
+}) {
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showAddModal, setShowAddModal] = useState(false);
+  const [localShowAddModal, setLocalShowAddModal] = useState(false);
+  const showAddModal = isAddModalOpen !== undefined ? isAddModalOpen : localShowAddModal;
+  const setAddModalState = (isOpen) => {
+    setLocalShowAddModal(isOpen);
+    if (isOpen && onOpenAdd) onOpenAdd();
+    if (!isOpen && onCloseAdd) onCloseAdd();
+  };
+
   const [editingBrandId, setEditingBrandId] = useState(null);
 
   // New / Edit Brand Form State
@@ -16,34 +30,16 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
   const [brandColor, setBrandColor] = useState('#3b82f6');
   const [screensCount, setScreensCount] = useState(5);
 
-  // Active pricing plan tab in modal: 'general' | 'withAds' | 'adFree'
+  // Active pricing plan tab in modal (e.g. 'general', 'with_ads', etc.)
   const [activePlanTab, setActivePlanTab] = useState('general');
+  const [showNewPlanInput, setShowNewPlanInput] = useState(false);
+  const [newPlanName, setNewPlanName] = useState('');
 
-  // Multi-plan configurations state
+  // Default plans: ONLY General by default! (image copy 47.png: Do not pre install Ads free or With Ads)
   const defaultPricingPlans = {
     general: {
       enabled: true,
       label: 'General',
-      validities: [
-        { plan: '01 Month', price: 199 },
-        { plan: '03 Months', price: 499 },
-        { plan: '06 Months', price: 899 },
-        { plan: '12 Months', price: 1499 }
-      ]
-    },
-    withAds: {
-      enabled: false,
-      label: 'With Ads',
-      validities: [
-        { plan: '01 Month', price: 99 },
-        { plan: '03 Months', price: 249 },
-        { plan: '06 Months', price: 449 },
-        { plan: '12 Months', price: 799 }
-      ]
-    },
-    adFree: {
-      enabled: false,
-      label: 'Ad-Free',
       validities: [
         { plan: '01 Month', price: 199 },
         { plan: '03 Months', price: 499 },
@@ -79,8 +75,17 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
     setScreensCount(5);
     setActivePlanTab('general');
     setPricingPlans(defaultPricingPlans);
-    setShowAddModal(true);
+    setShowNewPlanInput(false);
+    setNewPlanName('');
+    setAddModalState(true);
   };
+
+  // Open modal if parent requests it via props
+  useEffect(() => {
+    if (isAddModalOpen && !editingBrandId) {
+      handleOpenAdd();
+    }
+  }, [isAddModalOpen]);
 
   const handleOpenEdit = (brand) => {
     setEditingBrandId(brand.id);
@@ -89,32 +94,33 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
     setBrandColor(brand.color || '#3b82f6');
     setScreensCount(brand.screensCount || 5);
     setActivePlanTab('general');
+    setShowNewPlanInput(false);
+    setNewPlanName('');
 
-    // Parse existing plans or fallback to General
+    // Parse existing plans or fallback to General only
     const existingP = brand.pricingPlans;
-    if (existingP && (existingP.general || existingP.withAds || existingP.adFree)) {
-      setPricingPlans({
-        general: {
-          enabled: true,
-          label: 'General',
-          validities: Object.entries(existingP.general?.prices || brand.prices || {}).map(([p, pr]) => ({ plan: p, price: pr }))
-        },
-        withAds: {
-          enabled: Boolean(existingP.withAds?.enabled),
-          label: 'With Ads',
-          validities: Object.entries(existingP.withAds?.prices || {}).map(([p, pr]) => ({ plan: p, price: pr }))
-        },
-        adFree: {
-          enabled: Boolean(existingP.adFree?.enabled),
-          label: 'Ad-Free',
-          validities: Object.entries(existingP.adFree?.prices || {}).map(([p, pr]) => ({ plan: p, price: pr }))
+    if (existingP && typeof existingP === 'object' && Object.keys(existingP).length > 0) {
+      const parsed = {};
+      Object.entries(existingP).forEach(([k, config]) => {
+        if (config && config.enabled !== false) {
+          parsed[k] = {
+            enabled: true,
+            label: config.label || k,
+            validities: Object.entries(config.prices || {}).map(([p, pr]) => ({ plan: p, price: pr }))
+          };
         }
       });
+      if (!parsed.general) {
+        parsed.general = {
+          enabled: true,
+          label: 'General',
+          validities: Object.entries(brand.prices || { '01 Month': 199 }).map(([p, pr]) => ({ plan: p, price: pr }))
+        };
+      }
+      setPricingPlans(parsed);
     } else {
-      // Convert legacy prices to General
       const legacyVals = Object.entries(brand.prices || { '01 Month': 199 }).map(([p, pr]) => ({ plan: p, price: pr }));
       setPricingPlans({
-        ...defaultPricingPlans,
         general: {
           enabled: true,
           label: 'General',
@@ -123,7 +129,56 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
       });
     }
 
-    setShowAddModal(true);
+    setAddModalState(true);
+  };
+
+  // Add a new custom plan variant (image copy 47.png)
+  const handleAddNewPlan = () => {
+    const trimmed = newPlanName.trim();
+    if (!trimmed) {
+      showToast('Please enter a plan name', 'error');
+      return;
+    }
+    const key = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '_') || `plan_${Date.now()}`;
+    if (pricingPlans[key]) {
+      showToast('A plan with this name already exists', 'error');
+      return;
+    }
+
+    const baseValidities = pricingPlans.general?.validities || [
+      { plan: '01 Month', price: 199 },
+      { plan: '03 Months', price: 499 },
+      { plan: '06 Months', price: 899 },
+      { plan: '12 Months', price: 1499 }
+    ];
+
+    setPricingPlans(prev => ({
+      ...prev,
+      [key]: {
+        enabled: true,
+        label: trimmed,
+        validities: baseValidities.map(v => ({ ...v }))
+      }
+    }));
+    setActivePlanTab(key);
+    setNewPlanName('');
+    setShowNewPlanInput(false);
+    showToast(`Plan "${trimmed}" added!`, 'success');
+  };
+
+  // Remove a custom plan variant
+  const handleDeleteCustomPlan = (planKey, e) => {
+    e?.stopPropagation();
+    if (planKey === 'general') return;
+    setPricingPlans(prev => {
+      const copy = { ...prev };
+      delete copy[planKey];
+      return copy;
+    });
+    if (activePlanTab === planKey) {
+      setActivePlanTab('general');
+    }
+    showToast('Plan removed', 'info');
   };
 
   const handleFileUpload = (e) => {
@@ -197,38 +252,27 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
     }
 
     try {
-      // Build persistent pricingPlans structure
-      const formattedPricingPlans = {
-        general: {
-          enabled: true,
-          label: 'General',
-          prices: {}
-        },
-        withAds: {
-          enabled: Boolean(pricingPlans.withAds?.enabled),
-          label: 'With Ads',
-          prices: {}
-        },
-        adFree: {
-          enabled: Boolean(pricingPlans.adFree?.enabled),
-          label: 'Ad-Free',
-          prices: {}
+      // Build persistent pricingPlans structure dynamically
+      const formattedPricingPlans = {};
+      Object.entries(pricingPlans).forEach(([k, config]) => {
+        if (config && config.enabled !== false) {
+          const pricesObj = {};
+          (config.validities || []).forEach(v => {
+            if (v.plan && v.plan.trim()) {
+              pricesObj[v.plan.trim()] = Number(v.price) || 0;
+            }
+          });
+          formattedPricingPlans[k] = {
+            enabled: true,
+            label: config.label || k,
+            prices: pricesObj
+          };
         }
-      };
-
-      pricingPlans.general.validities.forEach(v => {
-        if (v.plan) formattedPricingPlans.general.prices[v.plan] = Number(v.price) || 0;
-      });
-      pricingPlans.withAds.validities.forEach(v => {
-        if (v.plan) formattedPricingPlans.withAds.prices[v.plan] = Number(v.price) || 0;
-      });
-      pricingPlans.adFree.validities.forEach(v => {
-        if (v.plan) formattedPricingPlans.adFree.prices[v.plan] = Number(v.price) || 0;
       });
 
       // Backward compatible mirror: prices & plans reflect General
-      const legacyPrices = formattedPricingPlans.general.prices;
-      const legacyPlans = Object.keys(legacyPrices);
+      const generalPrices = formattedPricingPlans.general?.prices || {};
+      const generalPlans = Object.keys(generalPrices);
 
       const brandPayload = {
         name: name.trim(),
@@ -238,8 +282,8 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
         bgDark: '#0f172a',
         badgeColor: brandColor,
         screensCount: Number(screensCount) || 5,
-        plans: legacyPlans.length > 0 ? legacyPlans : ['01 Month'],
-        prices: Object.keys(legacyPrices).length > 0 ? legacyPrices : { '01 Month': 199 },
+        plans: generalPlans.length > 0 ? generalPlans : ['01 Month'],
+        prices: Object.keys(generalPrices).length > 0 ? generalPrices : { '01 Month': 199 },
         pricingPlans: formattedPricingPlans
       };
 
@@ -252,7 +296,7 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
         if (onBrandCreated) onBrandCreated(created);
       }
 
-      setShowAddModal(false);
+      setAddModalState(false);
       setEditingBrandId(null);
       loadBrands();
     } catch (err) {
@@ -275,63 +319,7 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
 
   return (
     <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '12px' }}>
-      {/* Clean Top Header (as requested in image copy 38.png: Put "Add Brand" on Top Right Side) */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '16px',
-        background: '#ffffff',
-        padding: '10px 14px',
-        borderRadius: '14px',
-        border: '1px solid #e2e8f0',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {onBack && (
-            <button
-              type="button"
-              onClick={onBack}
-              style={{
-                background: '#f8fafc',
-                border: '1.5px solid #cbd5e1',
-                borderRadius: '10px',
-                width: '36px',
-                height: '36px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#0f172a'
-              }}
-              title="Go Back"
-              id="brands-header-back-btn"
-            >
-              <ArrowLeft size={18} />
-            </button>
-          )}
-          <div>
-            <h2 style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-              Brands
-            </h2>
-            <p style={{ fontSize: '11.5px', color: '#64748b', margin: 0, fontWeight: 600 }}>
-              OTT Platforms & Plans
-            </p>
-          </div>
-        </div>
-
-        {/* Top-Right "Add Brand" Button */}
-        <button
-          type="button"
-          className="glossy-btn glossy-btn-blue"
-          onClick={handleOpenAdd}
-          style={{ padding: '8px 14px', fontSize: '13px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}
-          id="btn-add-brand-top-right"
-        >
-          <Plus size={16} strokeWidth={2.5} />
-          <span>Add Brand</span>
-        </button>
-      </div>
+      {/* Brands List (Duplicate subheader removed per image copy 49.png; Add Brand is on TopHeader) */}
 
       {/* Brands List */}
       {loading ? (
@@ -690,61 +678,143 @@ export default function BrandsManagementScreen({ onBack, onBrandCreated, showToa
               </div>
 
               {/* ======================================================== */}
-              {/* PLAN SELECTOR TABS (General / With Ads / Ad-Free)       */}
-              {/* Requirement: Add Variants option per image copy 39 & 41  */}
+              {/* PLAN SELECTOR TABS & ADD PLAN (image copy 47.png)        */}
               {/* ======================================================== */}
               <div style={{ marginTop: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-                  <label className="form-label" style={{ fontSize: '12px', margin: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 800, margin: 0 }}>
                     Plan Variants & Pricing
                   </label>
-                  <span style={{ fontSize: '10.5px', color: '#64748b', fontWeight: 600 }}>
-                    Configure per-plan prices
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPlanInput(true)}
+                    className="glossy-btn glossy-btn-blue"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    id="btn-add-plan-variant"
+                  >
+                    <Plus size={13} strokeWidth={2.5} />
+                    <span>Add Plan</span>
+                  </button>
                 </div>
 
-                {/* Plan Selector Segmented Tabs */}
+                {/* Inline New Plan Input Form (image copy 47.png) */}
+                {showNewPlanInput && (
+                  <div style={{
+                    display: 'flex',
+                    gap: '6px',
+                    marginBottom: '8px',
+                    background: '#eff6ff',
+                    padding: '8px',
+                    borderRadius: '10px',
+                    border: '1px solid #bfdbfe',
+                    alignItems: 'center'
+                  }}>
+                    <input
+                      type="text"
+                      className="form-input-pill"
+                      placeholder="Enter Plan Name (e.g. With Ads, Ads Free...)"
+                      value={newPlanName}
+                      onChange={e => setNewPlanName(e.target.value)}
+                      style={{ height: '34px', fontSize: '12px', flex: 1 }}
+                      autoFocus
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddNewPlan();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddNewPlan}
+                      className="glossy-btn glossy-btn-blue"
+                      style={{ padding: '6px 12px', fontSize: '11.5px', height: '34px', borderRadius: '8px' }}
+                    >
+                      Add
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewPlanInput(false);
+                        setNewPlanName('');
+                      }}
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        color: '#64748b',
+                        cursor: 'pointer',
+                        padding: '4px'
+                      }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Horizontal Scrollable Tabs: General, With Ads, Ads Free (image copy 47.png) */}
                 <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr 1fr',
+                  display: 'flex',
+                  overflowX: 'auto',
                   background: '#f1f5f9',
-                  padding: '3px',
+                  padding: '4px',
                   borderRadius: '10px',
-                  gap: '4px'
+                  gap: '6px',
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none'
                 }}>
-                  {[
-                    { key: 'general', label: 'General' },
-                    { key: 'withAds', label: 'With Ads' },
-                    { key: 'adFree', label: 'Ad-Free' }
-                  ].map(tab => {
-                    const isActive = activePlanTab === tab.key;
-                    const isEnabled = pricingPlans[tab.key]?.enabled;
+                  {Object.entries(pricingPlans).map(([key, config]) => {
+                    const isActive = activePlanTab === key;
 
                     return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setActivePlanTab(tab.key)}
+                      <div
+                        key={key}
+                        onClick={() => setActivePlanTab(key)}
                         style={{
                           background: isActive ? '#ffffff' : 'transparent',
                           color: isActive ? '#0f172a' : '#64748b',
-                          border: 'none',
-                          padding: '6px 4px',
+                          padding: '6px 10px',
                           borderRadius: '8px',
                           fontSize: '12px',
                           fontWeight: isActive ? 900 : 700,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '4px',
+                          gap: '6px',
+                          whiteSpace: 'nowrap',
                           boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          transition: 'all 0.15s ease'
+                          transition: 'all 0.15s ease',
+                          flexShrink: 0
                         }}
                       >
-                        {isEnabled && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }} />}
-                        <span>{tab.label}</span>
-                      </button>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }} />
+                        <span>{config.label}</span>
+                        {key !== 'general' && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCustomPlan(key, e)}
+                            style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#94a3b8',
+                              cursor: 'pointer',
+                              padding: '0 2px',
+                              display: 'flex',
+                              alignItems: 'center'
+                            }}
+                            title="Remove plan"
+                          >
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
                     );
                   })}
                 </div>

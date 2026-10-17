@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
@@ -42,6 +42,7 @@ export default function InventoryScreen({
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newValidity, setNewValidity] = useState('12 Months');
+  const [newPlanVariant, setNewPlanVariant] = useState('General');
   const [newScreenCount, setNewScreenCount] = useState(5);
   const [newScreenPins, setNewScreenPins] = useState(['1111', '2222', '3333', '4444', '5555']);
 
@@ -102,12 +103,46 @@ export default function InventoryScreen({
           email: item.email,
           password: item.password,
           validity: item.validity,
+          planVariant: item.planVariant || 'General',
           pins: (item.screens || []).map(s => s.pin || '1234'),
           dates: (item.screens || []).map(s => s.expiryDate || ''),
           deviceTypes: (item.screens || []).map(s => s.deviceType || 'tv')
         }
       }));
-      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Devices, Validity)', 'info');
+      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Devices, Validity, Plan)', 'info');
+    }
+  };
+
+  // Cycle plan variant on card (image copy 48.png)
+  const handleCyclePlanVariant = async (item) => {
+    let plans = ['General'];
+    if (currentBrand?.pricingPlans && typeof currentBrand.pricingPlans === 'object') {
+      const pList = Object.values(currentBrand.pricingPlans).filter(p => p.enabled).map(p => p.label || p.name);
+      if (pList.length > 0) plans = pList;
+    }
+    if (plans.length === 1 && plans[0] === 'General') {
+      plans = ['General', 'With Ads', 'Ads Free'];
+    }
+
+    const current = (editingCards[item.id]?.planVariant || item.planVariant || 'General');
+    const currIdx = plans.indexOf(current);
+    const nextPlan = plans[(currIdx + 1) % plans.length] || 'General';
+
+    if (editingCards[item.id]) {
+      setEditingCards(prev => ({
+        ...prev,
+        [item.id]: { ...prev[item.id], planVariant: nextPlan }
+      }));
+      showToast(`Plan changed to ${nextPlan} (Click Save to persist)`, 'info');
+      return;
+    }
+
+    try {
+      const result = await api.updateInventory(item.id, { planVariant: nextPlan });
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, planVariant: nextPlan } : i));
+      showToast(`Account plan set to ${nextPlan}`, 'info');
+    } catch (err) {
+      showToast('Error updating plan variant', 'error');
     }
   };
 
@@ -180,6 +215,7 @@ export default function InventoryScreen({
         email: editState.email,
         password: editState.password,
         validity: editState.validity,
+        planVariant: editState.planVariant || item.planVariant || 'General',
         screens: updatedScreens
       };
 
@@ -250,6 +286,7 @@ export default function InventoryScreen({
         email: newEmail.trim(),
         password: newPassword.trim(),
         validity: newValidity,
+        planVariant: newPlanVariant || 'General',
         screens
       });
 
@@ -435,8 +472,31 @@ export default function InventoryScreen({
                   {item.recordNumber || '01'}
                 </div>
 
-                <div style={{ fontSize: '13px', fontWeight: 800, color: freeCount > 0 ? '#16a34a' : '#dc2626' }}>
-                  {freeCount}/{totalScreens} Screens Available
+                {/* Plan Variant Badge (image copy 48.png: replacing middle green instruction text) */}
+                <div
+                  className="badge-plan-variant"
+                  onClick={() => handleCyclePlanVariant(item)}
+                  style={{
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    padding: '3px 10px',
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    fontWeight: 800,
+                    background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
+                    color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
+                    border: '1.5px solid',
+                    borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title="Click to cycle plan variant (General, With Ads, Ads Free...)"
+                >
+                  <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
+                  <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
                 </div>
 
                 <div className="card-top-right">
@@ -790,6 +850,25 @@ export default function InventoryScreen({
                   <option value="03 Months">03 Months</option>
                   <option value="06 Months">06 Months</option>
                   <option value="12 Months">12 Months</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="form-label">Plan Variant</label>
+                <select
+                  value={newPlanVariant}
+                  onChange={e => setNewPlanVariant(e.target.value)}
+                  className="form-input-pill"
+                  style={{ width: '100%', fontWeight: 700 }}
+                >
+                  <option value="General">General</option>
+                  <option value="With Ads">With Ads</option>
+                  <option value="Ads Free">Ads Free</option>
+                  {currentBrand?.pricingPlans && Object.values(currentBrand.pricingPlans)
+                    .filter(p => p.enabled && p.label !== 'General' && p.label !== 'With Ads' && p.label !== 'Ads Free')
+                    .map(p => (
+                      <option key={p.label} value={p.label}>{p.label}</option>
+                    ))}
                 </select>
               </div>
 

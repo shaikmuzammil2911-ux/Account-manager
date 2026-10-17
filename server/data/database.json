@@ -247,7 +247,9 @@
           "saleId": null,
           "expiryDate": null
         }
-      ]
+      ],
+      "planVariant": "With Ads",
+      "updatedAt": "2026-10-17"
     },
     {
       "id": "inv_2",

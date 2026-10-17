@@ -261,6 +261,7 @@ export const db = {
       email: itemData.email ? itemData.email.trim() : '',
       password: itemData.password ? itemData.password.trim() : '',
       validity: itemData.validity || '01 Month',
+      planVariant: itemData.planVariant || 'General',
       notes: itemData.notes || '',
       isLocked: itemData.isLocked ?? true,
       isSelected: itemData.isSelected ?? false,
