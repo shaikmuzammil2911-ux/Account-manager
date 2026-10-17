@@ -139,6 +139,7 @@ export const api = {
           screenNumber: idx + 1,
           name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
           pin: String(s.pin || `${(idx + 1) * 1111}`.slice(0, 4)),
+          deviceType: s.deviceType || 'tv',
           status: s.status || 'empty',
           saleId: s.saleId || null,
           expiryDate: s.expiryDate || null
@@ -148,6 +149,7 @@ export const api = {
           screenNumber: i + 1,
           name: `Screen-${String(i + 1).padStart(2, '0')}`,
           pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
+          deviceType: 'tv',
           status: 'empty',
           saleId: null,
           expiryDate: null
@@ -205,6 +207,7 @@ export const api = {
               screenNumber: sIdx + 1,
               name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
               pin: newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234'),
+              deviceType: newS.deviceType || oldS?.deviceType || 'tv',
               status: newS.status || oldS?.status || 'empty',
               saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
               expiryDate: newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null)

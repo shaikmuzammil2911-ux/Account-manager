@@ -208,6 +208,7 @@ export const db = {
         screenNumber: idx + 1,
         name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
         pin: String(s.pin || itemData.pin || `${(idx + 1) * 1111}`.slice(0, 4)),
+        deviceType: s.deviceType || 'tv',
         status: s.status || 'empty',
         saleId: s.saleId || null,
         expiryDate: s.expiryDate || null
@@ -217,6 +218,7 @@ export const db = {
         screenNumber: i + 1,
         name: `Screen-${String(i + 1).padStart(2, '0')}`,
         pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
+        deviceType: 'tv',
         status: 'empty',
         saleId: null,
         expiryDate: null
@@ -251,7 +253,7 @@ export const db = {
 
     const existing = data.inventory[idx];
 
-    // Carefully merge screens to preserve existing sales and occupancies
+    // Carefully merge screens to preserve existing sales, occupancies, and deviceTypes
     let mergedScreens = existing.screens;
     if (updates.screens && Array.isArray(updates.screens)) {
       mergedScreens = updates.screens.map((newScreen, sIdx) => {
@@ -260,6 +262,7 @@ export const db = {
           screenNumber: sIdx + 1,
           name: newScreen.name || oldScreen?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
           pin: newScreen.pin !== undefined ? String(newScreen.pin) : (oldScreen?.pin || '1234'),
+          deviceType: newScreen.deviceType || oldScreen?.deviceType || 'tv',
           // Preserve existing saleId and occupancy status unless explicitly changed
           status: newScreen.status || oldScreen?.status || 'empty',
           saleId: newScreen.saleId !== undefined ? newScreen.saleId : (oldScreen?.saleId || null),
@@ -410,6 +413,7 @@ export const db = {
       accountEmail: saleData.accountEmail || assignedAccount?.email || '',
       accountPassword: saleData.accountPassword || assignedAccount?.password || '',
       validity: saleData.validity || '01 Month',
+      pricingPlan: saleData.pricingPlan || saleData.planType || 'General',
       screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
       screenPin: saleData.screenPin || assignedScreen?.pin || '1234',
       activationDate: saleData.activationDate,
@@ -789,6 +793,24 @@ export const db = {
       throw new Error(`Brand with ID "${id}" already exists`);
     }
 
+    const pricingPlans = brandData.pricingPlans || {
+      general: {
+        enabled: true,
+        label: 'General',
+        prices: brandData.prices || { '01 Month': 199 }
+      },
+      withAds: {
+        enabled: Boolean(brandData.pricingPlans?.withAds?.enabled),
+        label: 'With Ads',
+        prices: brandData.pricingPlans?.withAds?.prices || {}
+      },
+      adFree: {
+        enabled: Boolean(brandData.pricingPlans?.adFree?.enabled),
+        label: 'Ad-Free',
+        prices: brandData.pricingPlans?.adFree?.prices || {}
+      }
+    };
+
     const newBrand = {
       id,
       name: brandData.name.trim(),
@@ -800,8 +822,9 @@ export const db = {
       screensCount: Number(brandData.screensCount) || 5,
       plans: Array.isArray(brandData.plans) && brandData.plans.length > 0
         ? brandData.plans
-        : Object.keys(brandData.prices || { '01 Month': 199 }),
-      prices: brandData.prices || { '01 Month': 199 }
+        : Object.keys(pricingPlans.general?.prices || brandData.prices || { '01 Month': 199 }),
+      prices: pricingPlans.general?.prices || brandData.prices || { '01 Month': 199 },
+      pricingPlans
     };
 
     data.brands.push(newBrand);

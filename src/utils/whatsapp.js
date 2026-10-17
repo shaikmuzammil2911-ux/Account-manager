@@ -12,6 +12,7 @@ export function buildWhatsAppLink(customerNumber, message, countryCode = '91') {
 export function formatSaleConfirmationMessage({
   customerName,
   brandName,
+  pricingPlan,
   accountEmail,
   accountPassword,
   screenNumber,
@@ -21,9 +22,10 @@ export function formatSaleConfirmationMessage({
   expiryDate,
   amount
 }) {
+  const planInfo = pricingPlan && pricingPlan !== 'General' ? ` (${pricingPlan})` : '';
   return `Hello ${customerName || 'Customer'}! 🎬
 
-Thank you for your purchase! Here are your *${brandName || 'OTT'}* subscription details:
+Thank you for your purchase! Here are your *${brandName || 'OTT'}${planInfo}* subscription details:
 
 📧 *ID / Email:* ${accountEmail || 'N/A'}
 🔒 *Password:* ${accountPassword || 'N/A'}

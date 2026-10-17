@@ -1333,8 +1333,22 @@ export default function FormsManagementScreen({
             {/* Screen buttons row */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' }}>
               {[1, 2, 3, 4, 5].map(n => (
-                <div key={n} style={{ background: '#ea580c', color: '#ffffff', borderRadius: '6px', padding: '4px 2px', textAlign: 'center', fontSize: '9.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                  Screen {n}
+                <div key={n} style={{
+                  background: '#ea580c',
+                  color: '#ffffff',
+                  borderRadius: '6px',
+                  padding: '3px 2px',
+                  textAlign: 'center',
+                  fontSize: '9px',
+                  fontWeight: 800,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '1px'
+                }}>
+                  <span>Screen {n}</span>
+                  <Tv size={10} />
                 </div>
               ))}
             </div>

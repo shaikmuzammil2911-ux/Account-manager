@@ -6,6 +6,7 @@ import {
 import { api } from '../api/client';
 import DatePickerModal from '../components/DatePickerModal';
 import CopyButton from '../components/CopyButton';
+import OttBrandsGrid from '../components/OttBrandsGrid';
 
 export default function RecentSalesScreen({
   brands = [],
@@ -118,113 +119,18 @@ Device: ${sale.deviceName || 'Personal TV'}`;
   const paginatedSales = sales.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   // =========================================================================
-  // STEP 1: SHOW OTT BRANDS FIRST
+  // STEP 1: SHOW OTT BRANDS GRID FIRST (matching image copy 37.png)
   // =========================================================================
-  if (viewMode === 'brands') {
+  if (!activeBrand) {
     return (
-      <div className="screen-content" style={{ paddingBottom: '90px' }}>
-        <div className="sales-header-card">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div className="hero-icon-pill blue">
-              <Clock size={20} color="#ffffff" />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '22px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-                Recent Sale's — Brands
-              </h2>
-              <p style={{ fontSize: '13.5px', color: '#64748b', margin: 0 }}>
-                Select an OTT brand to view its customer sales history
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Brand Search Field */}
-        <div style={{ position: 'relative', marginBottom: '14px' }}>
-          <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-          <input
-            type="text"
-            className="form-input-pill"
-            style={{ paddingLeft: '38px', height: '46px', fontSize: '15px' }}
-            placeholder="Search OTT platform (Netflix, Amazon, Aha...)"
-            value={brandSearch}
-            onChange={e => setBrandSearch(e.target.value)}
-            id="recent-sales-brand-search"
-          />
-        </div>
-
-        {/* "All Brands Consolidated Sales" Option */}
-        <div
-          className="sales-brand-item-card all-brands-card"
-          onClick={() => {
-            setActiveBrand(null);
-            setViewMode('sales');
-          }}
-          id="sales-brand-all"
-          role="button"
-          tabIndex={0}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-            <div className="sales-brand-avatar" style={{ background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)' }}>
-              ALL
-            </div>
-            <div>
-              <div style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a' }}>
-                All OTT Brands Consolidated
-              </div>
-              <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                View complete sales across all configured streaming platforms
-              </div>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span className="sales-count-pill">{getSalesCountForBrand('all')} Sales</span>
-            <ChevronRight size={18} color="#2563eb" />
-          </div>
-        </div>
-
-        {/* Brand-Wise Cards */}
-        <div className="sales-brands-list">
-          {filteredBrands.map(brand => {
-            const count = getSalesCountForBrand(brand.id);
-            return (
-              <div
-                key={brand.id}
-                className="sales-brand-item-card"
-                onClick={() => handleSelectBrand(brand)}
-                id={`sales-brand-${brand.id}`}
-                role="button"
-                tabIndex={0}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                  <div
-                    className="sales-brand-avatar"
-                    style={{ backgroundColor: brand.color || '#0f172a' }}
-                  >
-                    {brand.name ? brand.name.slice(0, 2).toUpperCase() : 'OT'}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '17px', fontWeight: 900, color: '#0f172a' }}>
-                      {brand.displayName || brand.name}
-                    </div>
-                    <div style={{ fontSize: '13px', color: '#64748b', marginTop: '2px' }}>
-                      Standard: {brand.screensCount || 5} Screens
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className={`sales-count-pill ${count > 0 ? 'has-sales' : ''}`}>
-                    {count} {count === 1 ? 'Sale' : 'Sales'}
-                  </span>
-                  <ChevronRight size={18} color="#64748b" />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <OttBrandsGrid
+        brands={brands}
+        onSelectBrand={(brand) => {
+          setActiveBrand(brand);
+          if (onSelectBrand) onSelectBrand(brand);
+        }}
+        showHeader={false}
+      />
     );
   }
 
@@ -232,34 +138,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
   // STEP 2: SHOW SALES FOR SELECTED BRAND
   // =========================================================================
   return (
-    <div className="screen-content" style={{ paddingBottom: '90px' }}>
-      {/* Top Header with Back Button */}
-      <div className="data-accounts-top-bar">
-        <button
-          type="button"
-          className="step-back-btn"
-          onClick={() => setViewMode('brands')}
-          id="sales-back-to-brands-btn"
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Brands</span>
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span
-            style={{
-              width: '12px',
-              height: '12px',
-              borderRadius: '50%',
-              backgroundColor: activeBrand?.color || '#2563eb'
-            }}
-          />
-          <h2 style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-            {activeBrand ? `${activeBrand.displayName || activeBrand.name} Sales` : 'All Brand Sales'}
-          </h2>
-        </div>
-      </div>
-
+    <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '12px' }}>
       {/* Search and Filters Bar */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
         <div style={{ flex: 1, position: 'relative' }}>

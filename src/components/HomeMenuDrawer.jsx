@@ -106,25 +106,6 @@ export default function HomeMenuDrawer({
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
-          {/* Button 4: Create Form (Sale direct shortcut) */}
-          <button
-            type="button"
-            className="menu-action-card menu-card-neutral"
-            onClick={() => {
-              onClose();
-              if (onSelectCreateForm) onSelectCreateForm();
-            }}
-            id="menu-btn-create-form"
-          >
-            <div className="menu-card-icon orange">
-              <FileText size={20} color="#ea580c" />
-            </div>
-            <div className="menu-card-text">
-              <span className="menu-card-title">Create Form (Sale)</span>
-              <span className="menu-card-desc">Open Sale form with auto-fill empty screens</span>
-            </div>
-            <ChevronRight size={18} className="menu-card-arrow" />
-          </button>
 
           {/* Button 5: General Settings */}
           {onSelectSettings && (

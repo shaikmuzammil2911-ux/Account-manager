@@ -52,11 +52,30 @@ export default function SaleScreen({
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [brandAccounts, setBrandAccounts] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedPricingPlan, setSelectedPricingPlan] = useState('general');
 
   const currentBrand = brandId ? brands.find(b => b.id === brandId) : null;
-  const validityOptions = (currentBrand?.plans && currentBrand.plans.length > 0)
-    ? currentBrand.plans
-    : ['01 Month', '03 Months', '06 Months', '12 Months'];
+
+  // Multi-plan variants configuration
+  const enabledPlans = [];
+  if (currentBrand?.pricingPlans) {
+    if (currentBrand.pricingPlans.general?.enabled !== false) {
+      enabledPlans.push({ key: 'general', label: 'General' });
+    }
+    if (currentBrand.pricingPlans.withAds?.enabled) {
+      enabledPlans.push({ key: 'withAds', label: 'With Ads' });
+    }
+    if (currentBrand.pricingPlans.adFree?.enabled) {
+      enabledPlans.push({ key: 'adFree', label: 'Ad-Free' });
+    }
+  } else {
+    enabledPlans.push({ key: 'general', label: 'General' });
+  }
+
+  const activePlanPrices = (currentBrand?.pricingPlans?.[selectedPricingPlan]?.prices) || currentBrand?.prices || {};
+  const validityOptions = Object.keys(activePlanPrices).length > 0
+    ? Object.keys(activePlanPrices)
+    : ((currentBrand?.plans && currentBrand.plans.length > 0) ? currentBrand.plans : ['01 Month', '03 Months', '06 Months', '12 Months']);
 
   // Auto calculate expiry date whenever validity changes
   useEffect(() => {
@@ -68,12 +87,12 @@ export default function SaleScreen({
     }
   }, [activationDate, validity]);
 
-  // Auto set amount when brand or validity changes
+  // Auto set amount when brand, plan or validity changes
   useEffect(() => {
-    if (currentBrand?.prices && validity && currentBrand.prices[validity]) {
-      setAmount(String(currentBrand.prices[validity]));
+    if (activePlanPrices && validity && activePlanPrices[validity] !== undefined) {
+      setAmount(String(activePlanPrices[validity]));
     }
-  }, [currentBrand, validity]);
+  }, [currentBrand, selectedPricingPlan, validity]);
 
   // Load accounts for current brand to provide easy dropdown selection if needed
   useEffect(() => {
@@ -184,6 +203,7 @@ export default function SaleScreen({
       const salePayload = {
         brandId,
         brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
+        pricingPlan: enabledPlans.find(p => p.key === selectedPricingPlan)?.label || 'General',
         validity,
         activationDate,
         expiryDate,
@@ -204,6 +224,7 @@ export default function SaleScreen({
       const waMsg = formatSaleConfirmationMessage({
         customerName: customerName.trim(),
         brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
+        pricingPlan: enabledPlans.find(p => p.key === selectedPricingPlan)?.label || 'General',
         accountEmail: accountEmail.trim(),
         accountPassword: accountPassword.trim(),
         screenNumber: screenNumber.trim() || '01',
@@ -333,6 +354,53 @@ export default function SaleScreen({
     <div className="sale-form-compact" style={{ paddingBottom: '90px' }}>
       <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: '580px', margin: '0 auto' }}>
         
+        {/* Plan Variant Selector (Rendered when brand has multiple plans configured) */}
+        {enabledPlans.length > 1 && (
+          <div style={{ marginBottom: '10px' }}>
+            <div style={{
+              display: 'flex',
+              background: '#f1f5f9',
+              borderRadius: '10px',
+              padding: '3px',
+              gap: '4px',
+              border: '1px solid #e2e8f0'
+            }}>
+              {enabledPlans.map(p => {
+                const isSelected = selectedPricingPlan === p.key;
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => {
+                      setSelectedPricingPlan(p.key);
+                      const newPrices = (currentBrand?.pricingPlans?.[p.key]?.prices) || {};
+                      const newOpts = Object.keys(newPrices);
+                      if (newOpts.length > 0 && !newOpts.includes(validity)) {
+                        setValidity(newOpts[0]);
+                      }
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '6px 4px',
+                      borderRadius: '8px',
+                      border: 'none',
+                      background: isSelected ? '#ffffff' : 'transparent',
+                      color: isSelected ? '#0f172a' : '#64748b',
+                      fontSize: '12px',
+                      fontWeight: isSelected ? 900 : 700,
+                      cursor: 'pointer',
+                      boxShadow: isSelected ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Row 1: Brand & Validity (with compact Expiry preview) */}
         <div className="sale-row-2-compact">
           {/* Brand Box -> Clicking opens Brands List (image copy 31) */}
@@ -404,6 +472,7 @@ export default function SaleScreen({
               <div className="validity-popover-card">
                 {validityOptions.map(opt => {
                   const isSelected = opt === validity;
+                  const priceVal = activePlanPrices[opt];
                   return (
                     <button
                       key={opt}
@@ -411,11 +480,20 @@ export default function SaleScreen({
                       className={`validity-option-btn ${isSelected ? 'selected' : ''}`}
                       onClick={() => {
                         setValidity(opt);
+                        if (priceVal) setAmount(String(priceVal));
                         setShowValidityMenu(false);
                       }}
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
                     >
-                      {isSelected && <Check size={14} strokeWidth={3} />}
-                      <span>{opt}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {isSelected && <Check size={14} strokeWidth={3} />}
+                        <span>{opt}</span>
+                      </div>
+                      {priceVal !== undefined && (
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#16a34a' }}>
+                          ₹{priceVal}
+                        </span>
+                      )}
                     </button>
                   );
                 })}

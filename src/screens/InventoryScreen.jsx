@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft, Tv
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
@@ -103,10 +103,11 @@ export default function InventoryScreen({
           password: item.password,
           validity: item.validity,
           pins: (item.screens || []).map(s => s.pin || '1234'),
-          dates: (item.screens || []).map(s => s.expiryDate || '')
+          dates: (item.screens || []).map(s => s.expiryDate || ''),
+          deviceTypes: (item.screens || []).map(s => s.deviceType || 'tv')
         }
       }));
-      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Validity)', 'info');
+      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Devices, Validity)', 'info');
     }
   };
 
@@ -129,6 +130,30 @@ export default function InventoryScreen({
     showToast(`Account validity changed to ${nextPlan} (Click Save to apply)`, 'info');
   };
 
+  const handleCycleDeviceType = (itemId, sIdx, e) => {
+    if (e) e.stopPropagation();
+    if (!editingCards[itemId]) {
+      showToast('Please click Edit (UnLock) first to change device type', 'info');
+      return;
+    }
+    const types = ['tv', 'mobile', 'laptop'];
+    const currentTypes = editingCards[itemId]?.deviceTypes || [];
+    const curType = currentTypes[sIdx] || 'tv';
+    const nextType = types[(types.indexOf(curType) + 1) % types.length];
+
+    const newTypes = [...currentTypes];
+    newTypes[sIdx] = nextType;
+
+    setEditingCards(prev => ({
+      ...prev,
+      [itemId]: {
+        ...prev[itemId],
+        deviceTypes: newTypes
+      }
+    }));
+    showToast(`Screen-${sIdx + 1} device changed to ${nextType.toUpperCase()} (Click Save to persist)`, 'info');
+  };
+
   const handleSaveCard = async (item) => {
     const editState = editingCards[item.id];
     if (!editState) {
@@ -140,10 +165,12 @@ export default function InventoryScreen({
       const updatedScreens = (item.screens || []).map((screen, idx) => {
         const pin = editState.pins?.[idx] !== undefined ? editState.pins[idx] : screen.pin;
         const expiryDate = editState.dates?.[idx] !== undefined ? editState.dates[idx] : screen.expiryDate;
+        const deviceType = editState.deviceTypes?.[idx] || screen.deviceType || 'tv';
         const status = expiryDate && String(expiryDate).trim() ? 'occupied' : (expiryDate === '' ? 'empty' : screen.status);
         return {
           ...screen,
           pin,
+          deviceType,
           expiryDate: status === 'occupied' ? expiryDate : null,
           status
         };
@@ -511,33 +538,61 @@ export default function InventoryScreen({
                 ))}
               </div>
 
-              {/* Screen Buttons row (Orange pills - Strictly 01 liner per requirement) */}
+              {/* Screen Buttons row (Screen name on top, Device icon BELOW per requirement) */}
               <div className="screens-grid-row">
-                {(item.screens || []).map((screen, sIdx) => (
-                  <div
-                    key={sIdx}
-                    style={{
-                      background: '#ea580c',
-                      color: '#ffffff',
-                      borderRadius: '8px',
-                      padding: '7px 2px',
-                      textAlign: 'center',
-                      fontWeight: 800,
-                      fontSize: '11px',
-                      boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: '2px',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      lineHeight: 1
-                    }}
-                  >
-                    <Tv size={11} strokeWidth={2.5} style={{ flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap' }}>Screen-{sIdx + 1}</span>
-                  </div>
-                ))}
+                {(item.screens || []).map((screen, sIdx) => {
+                  const devType = isEditing
+                    ? (editState.deviceTypes?.[sIdx] || screen.deviceType || 'tv')
+                    : (screen.deviceType || 'tv');
+
+                  return (
+                    <div
+                      key={sIdx}
+                      onClick={(e) => {
+                        if (isEditing) {
+                          handleCycleDeviceType(item.id, sIdx, e);
+                        }
+                      }}
+                      style={{
+                        background: '#ea580c',
+                        color: '#ffffff',
+                        borderRadius: '8px',
+                        padding: '5px 2px',
+                        textAlign: 'center',
+                        boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '2px',
+                        cursor: isEditing ? 'pointer' : 'default',
+                        userSelect: 'none',
+                        lineHeight: 1
+                      }}
+                      title={isEditing ? `Click to cycle device type (Current: ${devType.toUpperCase()})` : `Device: ${devType.toUpperCase()}`}
+                    >
+                      <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                        Screen-{sIdx + 1}
+                      </span>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: isEditing ? '2px 4px' : '0',
+                        borderRadius: '4px',
+                        background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
+                      }}>
+                        {devType === 'mobile' ? (
+                          <Smartphone size={12} strokeWidth={2.5} />
+                        ) : devType === 'laptop' ? (
+                          <Laptop size={12} strokeWidth={2.5} />
+                        ) : (
+                          <Tv size={12} strokeWidth={2.5} />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Status / Expiry Boxes Row below Screens (Bigger boxes & clickable per requirement) */}

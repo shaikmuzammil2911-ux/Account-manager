@@ -101,7 +101,7 @@ export default function App() {
   };
 
   const navigateTo = (screenName, params = {}) => {
-    if (screenName === 'data' || screenName === 'inventory') {
+    if (screenName === 'data' || screenName === 'inventory' || screenName === 'recent-sales') {
       if (!params.brand) {
         setSelectedBrand(null);
       } else {
@@ -115,7 +115,7 @@ export default function App() {
   };
 
   const handleBack = () => {
-    if ((currentScreen === 'data' || currentScreen === 'inventory') && selectedBrand) {
+    if ((currentScreen === 'data' || currentScreen === 'inventory' || currentScreen === 'recent-sales') && selectedBrand) {
       setSelectedBrand(null);
       return;
     }
@@ -193,7 +193,7 @@ export default function App() {
       case 'inventory':
         return selectedBrand ? (selectedBrand.displayName || 'Data') : 'Select OTT';
       case 'recent-sales':
-        return "Recent Sale's";
+        return selectedBrand ? (selectedBrand.displayName || "Recent Sale's") : 'Select OTT';
       case 'cells-linkup':
         return 'Cells Linking';
       case 'brands-mgmt':
@@ -263,6 +263,7 @@ export default function App() {
           <RecentSalesScreen
             brands={brands}
             selectedBrand={selectedBrand}
+            onSelectBrand={setSelectedBrand}
             onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
             showToast={showToast}
           />
