@@ -1,13 +1,14 @@
 import React from 'react';
 import {
   ShoppingCart, Database, History, ChevronRight,
-  TrendingUp, Users, Tv, AlertCircle
+  TrendingUp, Users, Tv, AlertCircle, RefreshCw
 } from 'lucide-react';
 
 export default function HomeScreen({
   onNavigate,
   stats,
-  brands = []
+  brands = [],
+  onSyncSheets
 }) {
   const emptyScreens = stats?.emptyScreens ?? 0;
   const totalSales = stats?.totalSales ?? 0;
@@ -16,6 +17,52 @@ export default function HomeScreen({
 
   return (
     <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '16px' }}>
+      {/* Live Google Sheets Integration Status & Sync Pill */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)',
+        border: '1px solid #bbf7d0',
+        borderRadius: '12px',
+        padding: '8px 12px',
+        marginBottom: '16px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{
+            display: 'inline-block',
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: '#16a34a',
+            boxShadow: '0 0 8px #22c55e'
+          }} />
+          <span style={{ fontSize: '12px', fontWeight: 700, color: '#166534' }}>
+            Google Sheets: Live Linked
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onSyncSheets}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            background: '#ffffff',
+            border: '1px solid #86efac',
+            color: '#15803d',
+            fontSize: '11px',
+            fontWeight: 800,
+            padding: '5px 10px',
+            borderRadius: '8px',
+            cursor: 'pointer'
+          }}
+        >
+          <RefreshCw size={12} /> Sync Now
+        </button>
+      </div>
+
       {/* 4 Metric Cards Placed On Top (as per image copy 7.png) */}
       <div style={{ marginBottom: '20px' }}>
         <div style={{

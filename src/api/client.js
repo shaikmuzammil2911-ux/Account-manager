@@ -7,7 +7,9 @@ import {
   DEFAULT_SPREADSHEET_ID,
   DEFAULT_SPREADSHEET_OWNER,
   syncSaleToGoogleSheet,
+  syncSaleDeleteToGoogleSheet,
   syncAccountToGoogleSheet,
+  syncAccountDeleteToGoogleSheet,
   syncAllToGoogleSheet,
   fetchLiveSpreadsheetData
 } from '../utils/googleSheets';
@@ -304,6 +306,17 @@ export const api = {
     const local = getLocalData();
     local.inventory = [...(local.inventory || []), newItem];
     saveLocalData(local);
+
+    // Real-time sync newly created account to Google Sheet
+    this.getSheetsConfig().then(cfg => {
+      if (cfg?.webhookUrl) {
+        const b = (local.brands || []).find(x => x.id === newItem.brandId);
+        syncAccountToGoogleSheet(cfg.webhookUrl, newItem, b?.displayName || b?.name).catch(e => {
+          console.warn('GSheet inventory create sync warning:', e);
+        });
+      }
+    }).catch(() => {});
+
     return newItem;
   },
 
@@ -366,6 +379,16 @@ export const api = {
     if (item) {
       item.isDeleted = true;
       saveLocalData(local);
+
+      // Real-time sync account deletion to Google Sheet
+      this.getSheetsConfig().then(cfg => {
+        if (cfg?.webhookUrl) {
+          const b = (local.brands || []).find(x => x.id === item.brandId);
+          syncAccountDeleteToGoogleSheet(cfg.webhookUrl, item, b?.displayName || b?.name).catch(e => {
+            console.warn('GSheet inventory delete sync warning:', e);
+          });
+        }
+      }).catch(() => {});
     }
     try {
       fetch(`/api/inventory/${id}`, { method: 'DELETE' }).catch(() => {});
@@ -613,7 +636,37 @@ export const api = {
         updatedAt: new Date().toISOString()
       };
       local.sales[idx] = updated;
+
+      // If sale expiry date or pin changed, update linked screen in inventory
+      if (updated.inventoryId || updated.accountEmail) {
+        const inv = (local.inventory || []).find(i =>
+          (updated.inventoryId && i.id === updated.inventoryId) ||
+          (updated.accountEmail && i.email?.toLowerCase() === updated.accountEmail.toLowerCase())
+        );
+        if (inv && inv.screens) {
+          const sNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
+          const screen = inv.screens.find(s => s.screenNumber === sNum);
+          if (screen) {
+            if (updates.expiryDate !== undefined) screen.expiryDate = updates.expiryDate;
+            if (updates.screenPin !== undefined) screen.pin = updates.screenPin;
+            if (updates.deviceName !== undefined) screen.deviceType = updates.deviceName;
+            inv.updatedAt = Date.now();
+          }
+        }
+      }
+
       saveLocalData(local);
+
+      // Real-time sync sale update to Google Sheets
+      this.getSheetsConfig().then(cfg => {
+        if (cfg?.webhookUrl) {
+          syncSaleToGoogleSheet(cfg.webhookUrl, updated, true).then(res => {
+            if (res?.success) console.log('Google Sheet sale update synced successfully');
+          }).catch(err => {
+            console.warn('Google Sheet sale update background sync warning:', err.message);
+          });
+        }
+      }).catch(() => {});
     }
 
     try {
@@ -625,6 +678,47 @@ export const api = {
     } catch (e) {}
 
     return updated;
+  },
+
+  async deleteSale(id) {
+    const local = getLocalData();
+    const sale = (local.sales || []).find(s => s.id === id);
+    if (!sale) return false;
+
+    local.sales = (local.sales || []).filter(s => s.id !== id);
+
+    // Free the screen in inventory
+    const inv = (local.inventory || []).find(i =>
+      (sale.inventoryId && i.id === sale.inventoryId) ||
+      (sale.accountEmail && i.email?.toLowerCase() === sale.accountEmail.toLowerCase())
+    );
+    if (inv && inv.screens) {
+      const sNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
+      const screen = inv.screens.find(s => s.screenNumber === sNum);
+      if (screen) {
+        screen.status = 'empty';
+        screen.saleId = null;
+        screen.expiryDate = null;
+        inv.updatedAt = Date.now();
+      }
+    }
+
+    saveLocalData(local);
+
+    // Real-time sync sale deletion to Google Sheets
+    this.getSheetsConfig().then(cfg => {
+      if (cfg?.webhookUrl) {
+        syncSaleDeleteToGoogleSheet(cfg.webhookUrl, sale).catch(err => {
+          console.warn('Google Sheet sale delete sync warning:', err.message);
+        });
+      }
+    }).catch(() => {});
+
+    try {
+      fetch(`/api/sales/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+
+    return true;
   },
 
   // EXPIRY & STATS
@@ -819,27 +913,140 @@ export const api = {
       return { success: false, message: 'Google Sheet Webhook URL is not configured' };
     }
     const result = await fetchLiveSpreadsheetData(config.webhookUrl);
-    if (result.success) {
-      const local = getLocalData();
-      if (result.sales && result.sales.length > 0) {
-        const existingIds = new Set((local.sales || []).map(s => s.id));
-        const newSalesFromSheet = result.sales.filter(s => !existingIds.has(s.id));
-        local.sales = [...newSalesFromSheet, ...(local.sales || [])];
-      }
-      if (result.inventory && result.inventory.length > 0) {
-        result.inventory.forEach(invItem => {
-          const idx = (local.inventory || []).findIndex(i => i.email?.toLowerCase() === invItem.email?.toLowerCase());
-          if (idx !== -1) {
-            local.inventory[idx] = { ...local.inventory[idx], ...invItem };
-          } else {
-            local.inventory.push(invItem);
-          }
-        });
-      }
-      saveLocalData(local);
-      return { success: true, count: result.sales?.length || 0, inventoryCount: result.inventory?.length || 0 };
+    if (!result.success) {
+      return { success: false, message: result.message };
     }
-    return { success: false, message: result.message };
+
+    const local = getLocalData();
+    let updatedSalesCount = 0;
+    let newSalesCount = 0;
+    let updatedInvCount = 0;
+
+    // 1. Authoritatively sync SALES from Google Sheet
+    if (result.sales && Array.isArray(result.sales)) {
+      if (!local.sales) local.sales = [];
+
+      result.sales.forEach(sheetSale => {
+        const existingIdx = local.sales.findIndex(s => {
+          if (s.id && sheetSale.id && s.id === sheetSale.id) return true;
+          if (s.recordNumber && sheetSale.recordNumber && String(s.recordNumber) === String(sheetSale.recordNumber)) {
+            return !s.brandName || !sheetSale.brandName || s.brandName.toLowerCase() === sheetSale.brandName.toLowerCase();
+          }
+          if (s.accountEmail && sheetSale.accountEmail &&
+              s.accountEmail.trim().toLowerCase() === sheetSale.accountEmail.trim().toLowerCase()) {
+            const sScreen = String(s.screenNumber || '').replace(/\D/g, '');
+            const shScreen = String(sheetSale.screenNumber || '').replace(/\D/g, '');
+            if (sScreen && shScreen && sScreen === shScreen) return true;
+          }
+          return false;
+        });
+
+        if (existingIdx !== -1) {
+          const existing = local.sales[existingIdx];
+          // Authoritative update from Google Sheets (handles edited or cleared expiry dates)
+          local.sales[existingIdx] = {
+            ...existing,
+            ...sheetSale,
+            id: existing.id,
+            expiryDate: sheetSale.expiryDate !== undefined ? sheetSale.expiryDate : existing.expiryDate,
+            accountEmail: sheetSale.accountEmail || existing.accountEmail,
+            accountPassword: sheetSale.accountPassword || existing.accountPassword,
+            screenNumber: sheetSale.screenNumber || existing.screenNumber,
+            screenPin: sheetSale.screenPin || existing.screenPin,
+            validity: sheetSale.validity || existing.validity,
+            amount: sheetSale.amount !== undefined ? sheetSale.amount : existing.amount,
+            deviceName: sheetSale.deviceName || existing.deviceName,
+            customerName: existing.customerName || sheetSale.customerName,
+            customerNumber: existing.customerNumber || sheetSale.customerNumber,
+            updatedAt: new Date().toISOString()
+          };
+          updatedSalesCount++;
+        } else {
+          local.sales.unshift({
+            ...sheetSale,
+            id: sheetSale.id || `sale_sheet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            customerName: sheetSale.customerName || (sheetSale.accountEmail ? sheetSale.accountEmail.split('@')[0] : 'Customer'),
+            customerNumber: sheetSale.customerNumber || '',
+            sellerEmail: 'Fixyourmobiles10@gmail.com',
+            createdAt: sheetSale.saleDate || new Date().toISOString()
+          });
+          newSalesCount++;
+        }
+      });
+    }
+
+    // 2. Authoritatively sync INVENTORY / ACCOUNTS from Google Sheet
+    if (result.inventory && Array.isArray(result.inventory)) {
+      if (!local.inventory) local.inventory = [];
+
+      result.inventory.forEach(sheetInv => {
+        const existingIdx = local.inventory.findIndex(i =>
+          i.email && sheetInv.email && i.email.trim().toLowerCase() === sheetInv.email.trim().toLowerCase()
+        );
+
+        if (existingIdx !== -1) {
+          const existingAcc = local.inventory[existingIdx];
+          const mergedScreens = (existingAcc.screens || []).map((sc, scIdx) => {
+            const sheetSc = sheetInv.screens ? sheetInv.screens[scIdx] : null;
+            if (!sheetSc) return sc;
+            return {
+              ...sc,
+              name: sheetSc.name || sc.name,
+              status: sheetSc.status || sc.status,
+              pin: sheetSc.pin || sc.pin,
+              expiryDate: sheetSc.expiryDate !== undefined ? sheetSc.expiryDate : sc.expiryDate,
+              deviceType: sheetSc.deviceType || sc.deviceType
+            };
+          });
+
+          local.inventory[existingIdx] = {
+            ...existingAcc,
+            password: sheetInv.password || existingAcc.password,
+            validity: sheetInv.validity || existingAcc.validity,
+            screens: mergedScreens,
+            updatedAt: Date.now()
+          };
+          updatedInvCount++;
+        } else {
+          local.inventory.push({
+            id: `inv_sheet_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            brandId: sheetInv.brandId || 'netflix',
+            brandName: sheetInv.brandName || 'Netflix',
+            recordNumber: String(local.inventory.length + 1).padStart(2, '0'),
+            email: sheetInv.email || '',
+            password: sheetInv.password || '',
+            validity: sheetInv.validity || '01 Month',
+            screensCount: sheetInv.screensCount || 5,
+            screens: sheetInv.screens || [],
+            isLocked: true,
+            isSelected: false,
+            isDeleted: false,
+            createdAt: new Date().toISOString().slice(0, 10),
+            updatedAt: Date.now()
+          });
+          updatedInvCount++;
+        }
+      });
+    }
+
+    // Update last sync time
+    local.settings = local.settings || {};
+    local.settings.googleSheetConfig = {
+      ...(local.settings.googleSheetConfig || {}),
+      lastSyncTime: new Date().toISOString(),
+      status: 'Connected',
+      lastError: null
+    };
+
+    saveLocalData(local);
+
+    return {
+      success: true,
+      updatedSalesCount,
+      newSalesCount,
+      updatedInvCount,
+      lastSyncTime: local.settings.googleSheetConfig.lastSyncTime
+    };
   },
 
   async testSheetsConnection(webhookUrl) {

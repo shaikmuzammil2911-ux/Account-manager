@@ -187,6 +187,27 @@ var SOLD_HEADERS = [
   'EXPIRY', 'ID', 'PASSWORD', 'SCREEN', 'PIN', 'DEVICE', 'AMOUNT'
 ];
 
+function formatCellDate(val) {
+  if (!val) return '';
+  if (Object.prototype.toString.call(val) === '[object Date]' || val instanceof Date) {
+    var yr = val.getFullYear();
+    var mo = String(val.getMonth() + 1).padStart(2, '0');
+    var da = String(val.getDate()).padStart(2, '0');
+    return yr + '-' + mo + '-' + da;
+  }
+  var s = String(val).trim();
+  if (s.indexOf('GMT') !== -1) {
+    var d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var dt = String(d.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + dt;
+    }
+  }
+  return s;
+}
+
 // Handle GET requests (Returns data so website displays live Google Sheet data)
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -212,13 +233,13 @@ function doGet(e) {
         sales.push({
           id: 'sale_' + (idx + 1),
           recordNumber: String(r[0] || (idx + 1)).padStart(2, '0'),
-          saleDate: String(r[1] || ''),
+          saleDate: formatCellDate(r[1]),
           brandName: String(r[2] || 'NETFLIX'),
           brandId: String(r[2] || 'netflix').toLowerCase().replace(/[^a-z0-9]/g, '_'),
           validity: String(r[3] || '01 Month'),
           plan: String(r[4] || 'General'),
-          activationDate: String(r[5] || r[1] || ''),
-          expiryDate: String(r[6] || ''),
+          activationDate: formatCellDate(r[5] || r[1]),
+          expiryDate: formatCellDate(r[6]),
           accountEmail: String(r[7] || ''),
           accountPassword: String(r[8] || ''),
           screenNumber: String(r[9] || 'Screen-1'),
@@ -253,7 +274,8 @@ function doGet(e) {
       for (var s = 0; s < 5; s++) {
         var col = s + 1;
         var scrName = (bVals[r + 2] && bVals[r + 2][col]) ? String(bVals[r + 2][col]) : ('Screen-' + (s + 1));
-        var scrVal = (bVals[r + 3] && bVals[r + 3][col]) ? String(bVals[r + 3][col]) : '';
+        var rawVal = bVals[r + 3] ? bVals[r + 3][col] : '';
+        var scrVal = formatCellDate(rawVal);
         var isSold = scrVal && scrVal !== 'EMPTY' && scrVal !== '+' && scrVal.indexOf('+') === -1;
         screens.push({
           screenNumber: s + 1,
@@ -375,7 +397,107 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 4. UPDATE ACCOUNT IN DATABASE SHEET
+    // 4. UPDATE EXISTING SALE IN GOOGLE SHEETS
+    if (action === 'update_sale') {
+      var brand = (data.brand || data.brandName || 'NETFLIX').toUpperCase();
+      var soldSheetName = getSoldSheetName(brand);
+      var brandSoldSheet = ss.getSheetByName(soldSheetName);
+      var allBrandsSheet = ss.getSheetByName('ALL BRANDS DATA');
+      var updatedRow = data.saleRow;
+      if (!updatedRow && data.sale) {
+        updatedRow = formatSaleRowArray(data.sale, brand);
+      }
+
+      var email = data.accountEmail || (data.sale && (data.sale.accountEmail || data.sale.email));
+      var screenNum = data.screenNumber || (data.sale && data.sale.screenNumber);
+      var expiryDate = data.expiryDate !== undefined ? data.expiryDate : (data.sale ? data.sale.expiryDate : '');
+
+      if (updatedRow) {
+        // Update in ALL BRANDS DATA
+        if (allBrandsSheet && allBrandsSheet.getLastRow() >= 4) {
+          var vals = allBrandsSheet.getRange(4, 1, allBrandsSheet.getLastRow() - 3, 13).getValues();
+          for (var i = 0; i < vals.length; i++) {
+            var matchEmail = email && String(vals[i][7]).toLowerCase() === String(email).toLowerCase();
+            var matchScreen = screenNum && String(vals[i][9]) === String(screenNum);
+            var matchRec = data.sale && data.sale.recordNumber && String(vals[i][0]) === String(data.sale.recordNumber);
+            if ((matchEmail && matchScreen) || matchRec) {
+              updatedRow[0] = vals[i][0]; // preserve S.NO
+              allBrandsSheet.getRange(i + 4, 1, 1, 13).setValues([updatedRow]);
+              break;
+            }
+          }
+        }
+
+        // Update in Brand-Sold Sheet
+        if (brandSoldSheet && brandSoldSheet.getLastRow() >= 4) {
+          var bVals = brandSoldSheet.getRange(4, 1, brandSoldSheet.getLastRow() - 3, 13).getValues();
+          for (var j = 0; j < bVals.length; j++) {
+            var bMatchEmail = email && String(bVals[j][7]).toLowerCase() === String(email).toLowerCase();
+            var bMatchScreen = screenNum && String(bVals[j][9]) === String(screenNum);
+            var bMatchRec = data.sale && data.sale.recordNumber && String(bVals[j][0]) === String(data.sale.recordNumber);
+            if ((bMatchEmail && bMatchScreen) || bMatchRec) {
+              updatedRow[0] = bVals[j][0]; // preserve S.NO
+              brandSoldSheet.getRange(j + 4, 1, 1, 13).setValues([updatedRow]);
+              break;
+            }
+          }
+        }
+
+        // Also update Database screen cell
+        if (email) {
+          updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate);
+        }
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Sale updated in Google Sheets!',
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 5. DELETE SALE FROM GOOGLE SHEETS
+    if (action === 'delete_sale') {
+      var brand = (data.brand || data.brandName || 'NETFLIX').toUpperCase();
+      var soldSheetName = getSoldSheetName(brand);
+      var brandSoldSheet = ss.getSheetByName(soldSheetName);
+      var allBrandsSheet = ss.getSheetByName('ALL BRANDS DATA');
+      var email = data.accountEmail || (data.sale && (data.sale.accountEmail || data.sale.email));
+      var screenNum = data.screenNumber || (data.sale && data.sale.screenNumber);
+
+      if (allBrandsSheet && allBrandsSheet.getLastRow() >= 4) {
+        var aVals = allBrandsSheet.getRange(4, 1, allBrandsSheet.getLastRow() - 3, 13).getValues();
+        for (var a = 0; a < aVals.length; a++) {
+          if (email && String(aVals[a][7]).toLowerCase() === String(email).toLowerCase() && String(aVals[a][9]) === String(screenNum)) {
+            allBrandsSheet.deleteRow(a + 4);
+            break;
+          }
+        }
+      }
+
+      if (brandSoldSheet && brandSoldSheet.getLastRow() >= 4) {
+        var sVals = brandSoldSheet.getRange(4, 1, brandSoldSheet.getLastRow() - 3, 13).getValues();
+        for (var b = 0; b < sVals.length; b++) {
+          if (email && String(sVals[b][7]).toLowerCase() === String(email).toLowerCase() && String(sVals[b][9]) === String(screenNum)) {
+            brandSoldSheet.deleteRow(b + 4);
+            break;
+          }
+        }
+      }
+
+      // Reset screen cell in Database sheet to EMPTY
+      if (email) {
+        updateDatabaseScreenSold(ss, brand, email, screenNum, 'EMPTY');
+      }
+
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Sale deleted and screen reset to empty!',
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 6. UPDATE ACCOUNT IN DATABASE SHEET
     if (action === 'update_account') {
       var bName = (data.brand || data.brandName || 'NETFLIX').toUpperCase();
       var dbSheet = getOrCreateDatabaseSheet(ss, getDbSheetName(bName));
@@ -389,7 +511,28 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 5. SYNC ALL INVENTORY & SALES
+    // 7. DELETE ACCOUNT FROM DATABASE SHEET
+    if (action === 'delete_account') {
+      var bName = (data.brand || data.brandName || 'NETFLIX').toUpperCase();
+      var dbSheet = ss.getSheetByName(getDbSheetName(bName));
+      var targetEmail = data.email || (data.account && data.account.email);
+      if (dbSheet && targetEmail && dbSheet.getLastRow() >= 3) {
+        var dbVals = dbSheet.getRange(1, 1, dbSheet.getLastRow(), 5).getValues();
+        for (var dr = 0; dr < dbVals.length; dr++) {
+          if (dbVals[dr][2] && String(dbVals[dr][2]).trim().toLowerCase() === String(targetEmail).trim().toLowerCase()) {
+            dbSheet.getRange(dr + 1, 1, 5, 8).clearContent().clearFormat();
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Account removed from ' + bName + ' database sheet!',
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 8. SYNC ALL INVENTORY & SALES
     if (action === 'sync_all' || action === 'batch_sync') {
       ensureAllRequiredSheets(ss);
 
@@ -661,9 +804,9 @@ function syncInventoryAccountsToSheets(ss, inventory) {
 `;
 
 /**
- * Real-time sync sale to Google Sheets Web App endpoint
+ * Real-time sync sale to Google Sheets Web App endpoint (create or update)
  */
-export async function syncSaleToGoogleSheet(webhookUrl, sale) {
+export async function syncSaleToGoogleSheet(webhookUrl, sale, isUpdate = false) {
   if (!webhookUrl || !webhookUrl.trim()) {
     return { success: false, message: 'Google Sheet Webhook URL not configured' };
   }
@@ -676,13 +819,78 @@ export async function syncSaleToGoogleSheet(webhookUrl, sale) {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body: JSON.stringify({
-        action: 'add_sale',
+        action: isUpdate ? 'update_sale' : 'add_sale',
         brand: brandName,
         saleRow,
         sale,
         accountEmail: sale.accountEmail,
         screenNumber: sale.screenNumber,
         expiryDate: sale.expiryDate
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('HTTP error ' + response.status);
+    }
+
+    const data = await response.json();
+    return { success: data.status === 'success', data, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Real-time delete sale from Google Sheets Web App endpoint
+ */
+export async function syncSaleDeleteToGoogleSheet(webhookUrl, sale) {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return { success: false, message: 'Google Sheet Webhook URL not configured' };
+  }
+
+  try {
+    const brandName = getDbSheetName(sale.brandId, sale.brandName);
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'delete_sale',
+        brand: brandName,
+        accountEmail: sale.accountEmail,
+        screenNumber: sale.screenNumber,
+        sale
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('HTTP error ' + response.status);
+    }
+
+    const data = await response.json();
+    return { success: data.status === 'success', data, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Real-time delete account from Google Sheets database sheet
+ */
+export async function syncAccountDeleteToGoogleSheet(webhookUrl, account, brandName) {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return { success: false, message: 'Google Sheet Webhook URL not configured' };
+  }
+
+  try {
+    const brand = getDbSheetName(account.brandId, brandName);
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'delete_account',
+        brand,
+        email: account.email,
+        account
       })
     });
 

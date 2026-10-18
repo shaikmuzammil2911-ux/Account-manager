@@ -207,6 +207,49 @@ export const db = {
     return (data.brands || []).find(b => b.id === id);
   },
 
+  createBrand(brandData) {
+    const data = readDb();
+    if (!data.brands) data.brands = [];
+    const id = brandData.id || (brandData.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_') || `brand_${Date.now()}`;
+    const newBrand = {
+      ...brandData,
+      id,
+      updatedAt: Date.now()
+    };
+    const existingIdx = data.brands.findIndex(b => b.id === id);
+    if (existingIdx !== -1) {
+      data.brands[existingIdx] = newBrand;
+    } else {
+      data.brands.push(newBrand);
+    }
+    writeDb(data);
+    return newBrand;
+  },
+
+  updateBrand(id, updates) {
+    const data = readDb();
+    if (!data.brands) data.brands = [];
+    const idx = data.brands.findIndex(b => b.id === id);
+    if (idx === -1) return null;
+    const updated = {
+      ...data.brands[idx],
+      ...updates,
+      id,
+      updatedAt: Date.now()
+    };
+    data.brands[idx] = updated;
+    writeDb(data);
+    return updated;
+  },
+
+  deleteBrand(id) {
+    const data = readDb();
+    if (!data.brands) return false;
+    data.brands = data.brands.filter(b => b.id !== id);
+    writeDb(data);
+    return true;
+  },
+
   getInventory({ brandId, selectedOnly, emptyOnly, validity, sortOrder } = {}) {
     const data = readDb();
     let items = (data.inventory || []).filter(item => !item.isDeleted);

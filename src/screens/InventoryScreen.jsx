@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
@@ -127,6 +127,23 @@ export default function InventoryScreen({
       fetchInventory();
     }
   }, [currentBrand, filterSelectedOnly, filterEmptyOnly, selectedValidity, sortOrder]);
+
+  const handleSyncFromSheet = async () => {
+    try {
+      setLoading(true);
+      const res = await api.pullFromGoogleSheet();
+      if (res?.success) {
+        showToast(`Refreshed from Google Sheet (${res.updatedInvCount || 0} accounts checked)`, 'success');
+        await fetchInventory();
+      } else {
+        showToast(res?.message || 'Sync failed', 'info');
+      }
+    } catch (e) {
+      showToast('Failed to sync: ' + e.message, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSelectBrand = (brand) => {
     setCurrentBrand(brand);
@@ -483,15 +500,27 @@ export default function InventoryScreen({
           />
         </div>
 
-        <button
-          type="button"
-          className="glossy-btn glossy-btn-blue"
-          style={{ padding: '10px 14px', fontSize: '13px', whiteSpace: 'nowrap', borderRadius: '12px' }}
-          onClick={() => setShowAddAccountModal(true)}
-          id="inventory-add-account-btn"
-        >
-          <Plus size={16} /> Add Account
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            className="glossy-btn glossy-btn-green"
+            style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap', borderRadius: '12px' }}
+            onClick={handleSyncFromSheet}
+            title="Refresh accounts directly from Google Sheet"
+            id="inventory-sync-sheet-btn"
+          >
+            <RefreshCw size={15} /> Sync
+          </button>
+          <button
+            type="button"
+            className="glossy-btn glossy-btn-blue"
+            style={{ padding: '10px 14px', fontSize: '13px', whiteSpace: 'nowrap', borderRadius: '12px' }}
+            onClick={() => setShowAddAccountModal(true)}
+            id="inventory-add-account-btn"
+          >
+            <Plus size={16} /> Add Account
+          </button>
+        </div>
       </div>
 
       {/* Inventory Cards List */}

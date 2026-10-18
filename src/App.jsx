@@ -100,6 +100,50 @@ export default function App() {
     }
   };
 
+  const syncWithGoogleSheets = async (silent = false) => {
+    try {
+      const res = await api.pullFromGoogleSheet();
+      if (res?.success) {
+        const liveStats = await api.getStats();
+        setStats(liveStats);
+        if (!silent) {
+          showToast(`Synced with Google Sheets (${res.updatedSalesCount || 0} updated)`, 'success');
+        }
+      } else if (!silent && res?.message) {
+        showToast(res.message, 'info');
+      }
+    } catch (e) {
+      if (!silent) showToast('Sync failed: ' + e.message, 'error');
+    }
+  };
+
+  // Two-way synchronization: When switching back from Google Sheets tab/app, auto-refresh live data!
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleVisibilityOrFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncWithGoogleSheets(true);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    // Periodic gentle background poll (every 45 seconds)
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        syncWithGoogleSheets(true);
+      }
+    }, 45000);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      clearInterval(interval);
+    };
+  }, [currentUser]);
+
   // Initialize theme and text size on startup
   useEffect(() => {
     try {
@@ -343,6 +387,7 @@ export default function App() {
             stats={stats}
             brands={brands}
             onNavigate={navigateTo}
+            onSyncSheets={() => syncWithGoogleSheets(false)}
           />
         )}
 
