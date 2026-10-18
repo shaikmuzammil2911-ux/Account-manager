@@ -749,12 +749,15 @@ export const db = {
 
   getSheetsConfig() {
     const data = readDb();
-    return data.settings?.googleSheetConfig || {
-      enabled: false,
-      spreadsheetId: '1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg',
+    const envWebhook = (process.env.GOOGLE_SHEET_WEBHOOK_URL || '').trim();
+    const cfg = data.settings?.googleSheetConfig || {};
+    const webhookUrl = cfg.webhookUrl || envWebhook;
+    return {
+      enabled: Boolean(webhookUrl),
+      spreadsheetId: cfg.spreadsheetId || process.env.GOOGLE_SPREADSHEET_ID || '1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg',
       ownerEmail: 'Fixyourmobiles10@gmail.com',
       spreadsheetName: 'OTT A/C MANAGER',
-      webhookUrl: '',
+      webhookUrl: webhookUrl,
       sheetNames: {
         netflix: 'NETFLIX',
         netflixSold: 'NETFLIX-SOLD',
@@ -766,10 +769,10 @@ export const db = {
         ahaSold: 'AHA-SOLD',
         allBrandsData: 'ALL BRANDS DATA'
       },
-      autoSyncOnSale: true,
-      lastSyncTime: null,
-      status: 'Disconnected',
-      lastError: null
+      autoSyncOnSale: cfg.autoSyncOnSale !== false,
+      lastSyncTime: cfg.lastSyncTime || null,
+      status: webhookUrl ? 'Connected' : 'Disconnected',
+      lastError: cfg.lastError || null
     };
   },
 

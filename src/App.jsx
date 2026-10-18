@@ -102,6 +102,14 @@ export default function App() {
 
   const syncWithGoogleSheets = async (silent = false) => {
     try {
+      const cfg = await api.getSheetsConfig();
+      if (!cfg?.webhookUrl) {
+        if (!silent) {
+          navigateTo('cells-linkup');
+          showToast('Please configure your Google Apps Script Web App URL first', 'info');
+        }
+        return;
+      }
       const res = await api.pullFromGoogleSheet();
       if (res?.success) {
         const liveStats = await api.getStats();
