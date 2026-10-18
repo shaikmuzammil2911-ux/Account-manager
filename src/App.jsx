@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Calendar } from 'lucide-react';
 import { api } from './api/client';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
 import Toast from './components/Toast';
 import BrandSelectorModal from './components/BrandSelectorModal';
 import NotifyModal from './components/NotifyModal';
+import DatePickerModal from './components/DatePickerModal';
 import HomeMenuDrawer from './components/HomeMenuDrawer';
 
 import LoginScreen from './screens/LoginScreen';
@@ -46,6 +47,8 @@ export default function App() {
   const [notifySaleItem, setNotifySaleItem] = useState(null);
   const [recentSalesAddModalOpen, setRecentSalesAddModalOpen] = useState(false);
   const [brandsAddModalOpen, setBrandsAddModalOpen] = useState(false);
+  const [expiryDateFilter, setExpiryDateFilter] = useState('');
+  const [showExpiryDatePicker, setShowExpiryDatePicker] = useState(false);
 
   // Direct Password Reset link handler (from email ?reset=true&email=...&otp=...)
   const [directResetParams] = useState(() => {
@@ -266,7 +269,28 @@ export default function App() {
             onBrandClick={() => setShowBrandSelector(true)}
             onOpenMenu={() => setShowMenuDrawer(true)}
             rightAction={
-              currentScreen === 'recent-sales' && selectedBrand ? (
+              currentScreen === 'expiry' ? (
+                <button
+                  type="button"
+                  className="header-btn"
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    background: expiryDateFilter ? '#eff6ff' : '#ffffff',
+                    borderColor: expiryDateFilter ? '#2563eb' : '#cbd5e1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: expiryDateFilter ? '0 2px 6px rgba(37, 99, 235, 0.25)' : 'none'
+                  }}
+                  onClick={() => setShowExpiryDatePicker(true)}
+                  title={expiryDateFilter ? `Expiry Filter: ${expiryDateFilter}. Click to change` : 'Filter Expiry by Calendar'}
+                  id="expiry-header-calendar-btn"
+                >
+                  <Calendar size={19} color={expiryDateFilter ? '#2563eb' : '#475569'} strokeWidth={2.3} />
+                </button>
+              ) : currentScreen === 'recent-sales' && selectedBrand ? (
                 <button
                   type="button"
                   className="glossy-btn glossy-btn-orange"
@@ -395,10 +419,14 @@ export default function App() {
 
         {currentScreen === 'expiry' && (
           <ExpiryScreen
+            brands={brands}
             selectedBrand={selectedBrand}
             initialFilter={screenParams.filter || 'ALL'}
             onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
             showToast={showToast}
+            dateFilter={expiryDateFilter}
+            onOpenDatePicker={() => setShowExpiryDatePicker(true)}
+            onClearDateFilter={() => setExpiryDateFilter('')}
           />
         )}
 
@@ -469,6 +497,20 @@ export default function App() {
         onClose={() => setNotifySaleItem(null)}
         onConfirmSent={handleConfirmNotification}
       />
+
+      {/* Expiry Calendar Date Picker Modal */}
+      {showExpiryDatePicker && (
+        <DatePickerModal
+          isOpen={showExpiryDatePicker}
+          initialDate={expiryDateFilter || ''}
+          onSelect={(date) => {
+            setExpiryDateFilter(date);
+            setShowExpiryDatePicker(false);
+            showToast(`Filtering subscriptions expiring on ${date}`, 'success');
+          }}
+          onClose={() => setShowExpiryDatePicker(false)}
+        />
+      )}
     </div>
   );
 }
