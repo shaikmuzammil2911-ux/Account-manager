@@ -85,6 +85,13 @@ export default function App() {
       }
       const liveStats = await api.getStats();
       setStats(liveStats);
+
+      // Extract latest live data from Google Sheets if configured
+      api.pullFromGoogleSheet().then(res => {
+        if (res?.success) {
+          api.getStats().then(s => setStats(s)).catch(() => {});
+        }
+      }).catch(() => {});
     } catch (err) {
       console.error('Initial load error:', err);
     }

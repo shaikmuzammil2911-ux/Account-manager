@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Unlock, Save, Tv,
-  Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertCircle, Plus, X, FileText
+  Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertCircle, Plus, X, FileText,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDate, parseDate, calculateExpiryDate } from '../utils/dateUtils';
@@ -55,6 +56,7 @@ export default function RecentSalesScreen({
 
   // Sorting Direction: 'desc' (Newest to Oldest) vs 'asc' (Oldest to Newest / Past to Present)
   const [sortDirection, setSortDirection] = useState('desc');
+  const [isSyncingSheet, setIsSyncingSheet] = useState(false);
 
   // Add Sale Modal State
   const [localAddSaleOpen, setLocalAddSaleOpen] = useState(false);
@@ -270,6 +272,24 @@ export default function RecentSalesScreen({
         : 'Sorted: Past to Present (Oldest to Newest)',
       'info'
     );
+  };
+
+  const handleRefreshLiveSheet = async () => {
+    try {
+      setIsSyncingSheet(true);
+      const res = await api.pullFromGoogleSheet();
+      await fetchBrandSales();
+      await fetchAllSales();
+      if (res?.success) {
+        showToast(`Synced ${res.count || 0} sales from Google Sheets!`, 'success');
+      } else {
+        showToast(res?.message || 'Data refreshed', 'info');
+      }
+    } catch (err) {
+      showToast('Refresh failed: ' + err.message, 'error');
+    } finally {
+      setIsSyncingSheet(false);
+    }
   };
 
   const copyFullSaleDetails = (sale) => {
@@ -1058,6 +1078,28 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           id="recent-sales-sort-toggle-btn"
         >
           <ArrowUpDown size={18} color={sortDirection === 'asc' ? '#2563eb' : '#475569'} strokeWidth={2.3} />
+        </button>
+
+        {/* Refresh Live from Google Sheets Button */}
+        <button
+          type="button"
+          className="header-btn"
+          style={{
+            width: '40px',
+            height: '40px',
+            background: isSyncingSheet ? '#f0fdf4' : '#ffffff',
+            borderColor: isSyncingSheet ? '#16a34a' : '#cbd5e1',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer'
+          }}
+          onClick={handleRefreshLiveSheet}
+          disabled={isSyncingSheet}
+          title="Refresh Live Data from Google Sheets"
+          id="recent-sales-sheets-refresh-btn"
+        >
+          <RefreshCw size={17} color={isSyncingSheet ? '#16a34a' : '#475569'} className={isSyncingSheet ? 'animate-spin' : ''} />
         </button>
       </div>
 

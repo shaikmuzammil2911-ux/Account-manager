@@ -3,18 +3,40 @@ import { parseDate, getDaysDiff } from '../utils/dateUtils';
 import {
   testGoogleSheetConnection,
   validateGoogleSheets,
-  buildSpreadsheetPayload
+  buildSpreadsheetPayload,
+  DEFAULT_SPREADSHEET_ID,
+  DEFAULT_SPREADSHEET_OWNER,
+  syncSaleToGoogleSheet,
+  syncAccountToGoogleSheet,
+  syncAllToGoogleSheet,
+  fetchLiveSpreadsheetData
 } from '../utils/googleSheets';
 
 const STORAGE_KEY = 'accounts_manager_app_data_v5';
+const WEBHOOK_STORAGE_KEY = 'accounts_manager_google_sheet_webhook_v1';
+const SHEET_ID_STORAGE_KEY = 'accounts_manager_spreadsheet_id_v1';
 
-// Initialize or load from LocalStorage as fallback cache
+// Initialize or load from LocalStorage as primary persistent client store
 function getLocalData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.brands && parsed.brands.length > 0) {
+        // Ensure Google Sheet config defaults are intact
+        parsed.settings = parsed.settings || {};
+        parsed.settings.googleSheetConfig = parsed.settings.googleSheetConfig || {};
+        const savedWebhook = localStorage.getItem(WEBHOOK_STORAGE_KEY);
+        const savedSheetId = localStorage.getItem(SHEET_ID_STORAGE_KEY);
+        if (savedWebhook && !parsed.settings.googleSheetConfig.webhookUrl) {
+          parsed.settings.googleSheetConfig.webhookUrl = savedWebhook;
+        }
+        if (savedSheetId && !parsed.settings.googleSheetConfig.spreadsheetId) {
+          parsed.settings.googleSheetConfig.spreadsheetId = savedSheetId;
+        }
+        if (!parsed.settings.googleSheetConfig.spreadsheetId) {
+          parsed.settings.googleSheetConfig.spreadsheetId = DEFAULT_SPREADSHEET_ID;
+        }
         return parsed;
       }
     }
@@ -23,6 +45,20 @@ function getLocalData() {
   }
 
   const initial = getClientInitialData();
+  const savedWebhook = typeof localStorage !== 'undefined' ? localStorage.getItem(WEBHOOK_STORAGE_KEY) : '';
+  const savedSheetId = typeof localStorage !== 'undefined' ? localStorage.getItem(SHEET_ID_STORAGE_KEY) : '';
+  initial.settings = initial.settings || {};
+  initial.settings.googleSheetConfig = {
+    enabled: Boolean(savedWebhook),
+    spreadsheetId: savedSheetId || DEFAULT_SPREADSHEET_ID,
+    ownerEmail: DEFAULT_SPREADSHEET_OWNER,
+    spreadsheetName: 'OTT A/C MANAGER',
+    webhookUrl: savedWebhook || '',
+    autoSyncOnSale: true,
+    status: savedWebhook ? 'Connected' : 'Disconnected',
+    lastSyncTime: null,
+    lastError: null
+  };
   saveLocalData(initial);
   return initial;
 }
@@ -30,6 +66,14 @@ function getLocalData() {
 function saveLocalData(data) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const webhook = data?.settings?.googleSheetConfig?.webhookUrl;
+    if (webhook) {
+      localStorage.setItem(WEBHOOK_STORAGE_KEY, webhook);
+    }
+    const sheetId = data?.settings?.googleSheetConfig?.spreadsheetId;
+    if (sheetId) {
+      localStorage.setItem(SHEET_ID_STORAGE_KEY, sheetId);
+    }
   } catch (err) {
     console.warn('LocalStorage save error', err);
   }
@@ -38,20 +82,34 @@ function saveLocalData(data) {
 export const api = {
   // BRANDS
   async getBrands(userEmail) {
+    const local = getLocalData();
     try {
       const emailParam = userEmail ? `?userEmail=${encodeURIComponent(userEmail)}` : '';
       const res = await fetch(`/api/brands${emailParam}`);
       if (res.ok) {
-        const brands = await res.json();
-        const local = getLocalData();
-        local.brands = brands;
-        saveLocalData(local);
-        return brands;
+        const serverBrands = await res.json();
+        if (serverBrands && Array.isArray(serverBrands) && serverBrands.length > 0) {
+          // Merge safely: Never overwrite user-added brands or customized pricing plans with stale server defaults
+          const localBrands = local.brands || [];
+          const serverBrandMap = new Map(serverBrands.map(b => [b.id, b]));
+          const customBrands = localBrands.filter(b => !serverBrandMap.has(b.id));
+
+          const merged = serverBrands.map(sb => {
+            const lb = localBrands.find(b => b.id === sb.id);
+            if (lb && lb.updatedAt && (!sb.updatedAt || lb.updatedAt > sb.updatedAt)) {
+              return { ...sb, ...lb };
+            }
+            return lb ? { ...sb, ...lb } : sb;
+          });
+
+          local.brands = [...merged, ...customBrands];
+          saveLocalData(local);
+        }
       }
     } catch (e) {
       // offline fallback
     }
-    const local = getLocalData();
+
     let brands = [...(local.brands || [])];
     if (userEmail && local.sharedBrands) {
       const norm = userEmail.trim().toLowerCase();
@@ -84,6 +142,7 @@ export const api = {
 
   // INVENTORY (DATA SECTION)
   async getInventory(params = {}) {
+    const local = getLocalData();
     try {
       const query = new URLSearchParams();
       if (params.brandId) query.set('brandId', params.brandId);
@@ -94,27 +153,40 @@ export const api = {
 
       const res = await fetch(`/api/inventory?${query.toString()}`);
       if (res.ok) {
-        const items = await res.json();
-        // Update local cache
-        const local = getLocalData();
-        // Merge or replace inventory for this brand
-        if (!params.brandId || params.brandId === 'all') {
-          local.inventory = items;
-        } else {
-          local.inventory = [
-            ...(local.inventory || []).filter(i => i.brandId !== params.brandId),
-            ...items
-          ];
+        const serverItems = await res.json();
+        if (serverItems && Array.isArray(serverItems)) {
+          // Merge safely: preserve user edits, customized credentials, and occupied sales screens
+          const localItems = local.inventory || [];
+          const merged = serverItems.map(si => {
+            const li = localItems.find(i => i.id === si.id || (i.email && si.email && i.email.toLowerCase() === si.email.toLowerCase()));
+            if (li) {
+              const hasSoldScreens = (li.screens || []).some(s => s.status === 'occupied');
+              if (hasSoldScreens || li.updatedAt || li.isLocked === false) {
+                return { ...si, ...li };
+              }
+            }
+            return si;
+          });
+
+          const serverIds = new Set(serverItems.map(i => i.id));
+          const extraLocal = localItems.filter(i => !serverIds.has(i.id) && (!params.brandId || params.brandId === 'all' || i.brandId === params.brandId));
+
+          if (!params.brandId || params.brandId === 'all') {
+            local.inventory = [...merged, ...extraLocal];
+          } else {
+            local.inventory = [
+              ...(local.inventory || []).filter(i => i.brandId !== params.brandId),
+              ...merged,
+              ...extraLocal
+            ];
+          }
+          saveLocalData(local);
         }
-        saveLocalData(local);
-        return items;
       }
     } catch (e) {
       // network error
     }
 
-    // Local fallback
-    const local = getLocalData();
     let items = (local.inventory || []).filter(i => !i.isDeleted);
 
     if (params.brandId && params.brandId !== 'all') {
@@ -138,16 +210,13 @@ export const api = {
         const isAllEmptyA = emptyA === totalA && totalA > 0;
         const isAllEmptyB = emptyB === totalB && totalB > 0;
 
-        // 1. Complete all empty screens account on top!
         if (isAllEmptyA && !isAllEmptyB) return -1;
         if (!isAllEmptyA && isAllEmptyB) return 1;
 
-        // 2. Then sort descending by empty screens count (4 empty, then 3 empty, etc.)
         if (emptyB !== emptyA) {
           return emptyB - emptyA;
         }
 
-        // 3. Ties broken by recordNumber according to sortOrder
         const recA = parseInt(a.recordNumber || '0', 10);
         const recB = parseInt(b.recordNumber || '0', 10);
         return params.sortOrder === 'bottom' ? recB - recA : recA - recB;
@@ -239,117 +308,104 @@ export const api = {
   },
 
   async updateInventory(id, updates) {
+    const local = getLocalData();
+    const idx = (local.inventory || []).findIndex(i => i.id === id);
     let updated = null;
+    if (idx !== -1) {
+      const existing = local.inventory[idx];
+      let mergedScreens = existing.screens;
+      if (updates.screens && Array.isArray(updates.screens)) {
+        mergedScreens = updates.screens.map((newS, sIdx) => {
+          const oldS = existing.screens ? existing.screens[sIdx] : null;
+          return {
+            screenNumber: sIdx + 1,
+            name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
+            pin: newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234'),
+            deviceType: newS.deviceType || oldS?.deviceType || 'tv',
+            status: newS.status || oldS?.status || 'empty',
+            saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
+            expiryDate: newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null)
+          };
+        });
+      }
+      updated = {
+        ...existing,
+        ...updates,
+        screens: mergedScreens,
+        updatedAt: Date.now(),
+        id
+      };
+      local.inventory[idx] = updated;
+      saveLocalData(local);
+
+      // Real-time sync account to Google Sheet
+      this.getSheetsConfig().then(cfg => {
+        if (cfg?.webhookUrl) {
+          const b = (local.brands || []).find(x => x.id === updated.brandId);
+          syncAccountToGoogleSheet(cfg.webhookUrl, updated, b?.displayName || b?.name).catch(e => {
+            console.warn('GSheet inventory sync warning:', e);
+          });
+        }
+      }).catch(() => {});
+    }
+
     try {
-      const res = await fetch(`/api/inventory/${id}`, {
+      fetch(`/api/inventory/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
-      });
-      if (res.ok) {
-        updated = await res.json();
-      }
-    } catch (e) {
-      // offline fallback
-    }
-
-    const local = getLocalData();
-    const idx = (local.inventory || []).findIndex(i => i.id === id);
-    if (idx !== -1) {
-      if (!updated) {
-        const existing = local.inventory[idx];
-        let mergedScreens = existing.screens;
-        if (updates.screens && Array.isArray(updates.screens)) {
-          mergedScreens = updates.screens.map((newS, sIdx) => {
-            const oldS = existing.screens ? existing.screens[sIdx] : null;
-            return {
-              screenNumber: sIdx + 1,
-              name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
-              pin: newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234'),
-              deviceType: newS.deviceType || oldS?.deviceType || 'tv',
-              status: newS.status || oldS?.status || 'empty',
-              saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
-              expiryDate: newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null)
-            };
-          });
-        }
-        updated = {
-          ...existing,
-          ...updates,
-          screens: mergedScreens,
-          updatedAt: new Date().toISOString().slice(0, 10),
-          id
-        };
-      }
-      local.inventory[idx] = updated;
-      saveLocalData(local);
-    }
+      }).catch(() => {});
+    } catch (e) {}
 
     return updated;
   },
 
   async deleteInventory(id) {
-    try {
-      await fetch(`/api/inventory/${id}`, { method: 'DELETE' });
-    } catch (e) {}
-
     const local = getLocalData();
     const item = (local.inventory || []).find(i => i.id === id);
     if (item) {
       item.isDeleted = true;
       saveLocalData(local);
     }
+    try {
+      fetch(`/api/inventory/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
     return true;
   },
 
   async toggleInventoryLock(id) {
-    try {
-      const res = await fetch(`/api/inventory/${id}/lock`, { method: 'POST' });
-      if (res.ok) {
-        const updated = await res.json();
-        const local = getLocalData();
-        const idx = (local.inventory || []).findIndex(i => i.id === id);
-        if (idx !== -1) {
-          local.inventory[idx] = updated;
-          saveLocalData(local);
-        }
-        return updated;
-      }
-    } catch (e) {}
-
     const local = getLocalData();
     const item = (local.inventory || []).find(i => i.id === id);
     if (!item) return null;
     item.isLocked = !item.isLocked;
+    item.updatedAt = Date.now();
     saveLocalData(local);
+
+    try {
+      fetch(`/api/inventory/${id}/lock`, { method: 'POST' }).catch(() => {});
+    } catch (e) {}
+
     return item;
   },
 
   async toggleInventorySelect(id) {
-    try {
-      const res = await fetch(`/api/inventory/${id}/select`, { method: 'POST' });
-      if (res.ok) {
-        const updated = await res.json();
-        const local = getLocalData();
-        const idx = (local.inventory || []).findIndex(i => i.id === id);
-        if (idx !== -1) {
-          local.inventory[idx] = updated;
-          saveLocalData(local);
-        }
-        return updated;
-      }
-    } catch (e) {}
-
     const local = getLocalData();
     const item = (local.inventory || []).find(i => i.id === id);
     if (!item) return null;
     item.isSelected = !item.isSelected;
     saveLocalData(local);
+
+    try {
+      fetch(`/api/inventory/${id}/select`, { method: 'POST' }).catch(() => {});
+    } catch (e) {}
+
     return item;
   },
 
   // SALES
   async getSales(params = {}) {
+    const local = getLocalData();
+
     try {
       const query = new URLSearchParams();
       if (params.brandId) query.set('brandId', params.brandId);
@@ -360,15 +416,18 @@ export const api = {
 
       const res = await fetch(`/api/sales?${query.toString()}`);
       if (res.ok) {
-        const sales = await res.json();
-        const local = getLocalData();
-        local.sales = sales;
-        saveLocalData(local);
-        return sales;
+        const serverSales = await res.json();
+        if (serverSales && Array.isArray(serverSales)) {
+          // Merge safely: union server sales with local sales by ID, never delete user sales!
+          const localSales = local.sales || [];
+          const serverMap = new Map(serverSales.map(s => [s.id, s]));
+          const uniqueLocal = localSales.filter(s => !serverMap.has(s.id));
+          local.sales = [...serverSales, ...uniqueLocal];
+          saveLocalData(local);
+        }
       }
     } catch (e) {}
 
-    const local = getLocalData();
     let sales = [...(local.sales || [])];
 
     if (params.sellerEmail) {
@@ -407,92 +466,61 @@ export const api = {
   },
 
   async createSale(saleData) {
-    // 1. Try server first (authoritative transaction-safe endpoint)
-    try {
-      const res = await fetch('/api/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saleData)
-      });
+    const local = getLocalData();
+    const brand = local.brands.find(b => b.id === saleData.brandId) || local.brands[0];
+    const nextRecordNum = String((local.sales || []).length + 1).padStart(2, '0');
 
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({}));
-        throw new Error(errJson.error || `Sale failed with status ${res.status}`);
+    // 1. Transactionally record the sale in local storage first (0ms latency, zero data loss!)
+    let assignedAccount = null;
+    if (saleData.inventoryId) {
+      assignedAccount = (local.inventory || []).find(i => i.id === saleData.inventoryId && !i.isDeleted);
+    } else if (saleData.accountEmail) {
+      assignedAccount = (local.inventory || []).find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase() && !i.isDeleted);
+    }
+
+    if (!assignedAccount) {
+      assignedAccount = (local.inventory || []).find(i =>
+        !i.isDeleted &&
+        i.brandId === saleData.brandId &&
+        i.screens && i.screens.some(s => s.status === 'empty')
+      );
+    }
+
+    if (!assignedAccount && saleData.accountEmail) {
+      const screensCount = brand?.screensCount || 5;
+      const screens = [];
+      for (let s = 1; s <= screensCount; s++) {
+        screens.push({
+          screenNumber: s,
+          name: `Screen-${s}`,
+          status: 'empty',
+          saleId: null,
+          expiryDate: null,
+          pin: String(1000 + s * 1111).slice(-4),
+          deviceType: 'TV'
+        });
       }
+      assignedAccount = {
+        id: `inv_auto_${Date.now()}`,
+        brandId: brand?.id || saleData.brandId || 'netflix',
+        brandName: brand?.displayName || 'Netflix',
+        email: saleData.accountEmail,
+        password: saleData.accountPassword || 'Password@123',
+        screensCount,
+        screens,
+        isDeleted: false,
+        isSelected: true
+      };
+      if (!local.inventory) local.inventory = [];
+      local.inventory.push(assignedAccount);
+    }
 
-      const result = await res.json();
-      // Update local storage cache
-      const local = getLocalData();
-      local.sales = [result.sale, ...(local.sales || [])];
+    const saleId = `sale_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+    let assignedScreen = null;
 
-      if (result.assignedAccount) {
-        const aIdx = (local.inventory || []).findIndex(i => i.id === result.assignedAccount.id);
-        if (aIdx !== -1) {
-          local.inventory[aIdx] = result.assignedAccount;
-        }
-      }
-      saveLocalData(local);
-      return result;
-    } catch (err) {
-      // If error message indicates conflict or validation, rethrow to user
-      if (err.message && (err.message.includes('Double-booking') || err.message.includes('sold') || err.message.includes('Missing'))) {
-        throw err;
-      }
-      // If network offline, perform local transaction with duplicate prevention check
-      const local = getLocalData();
-      const brand = local.brands.find(b => b.id === saleData.brandId) || local.brands[0];
-      const nextRecordNum = String((local.sales || []).length + 1).padStart(2, '0');
-
-      let assignedAccount = null;
-      if (saleData.inventoryId) {
-        assignedAccount = local.inventory.find(i => i.id === saleData.inventoryId && !i.isDeleted);
-      } else if (saleData.accountEmail) {
-        assignedAccount = local.inventory.find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase() && !i.isDeleted);
-      }
-
-      if (!assignedAccount) {
-        assignedAccount = local.inventory.find(i =>
-          !i.isDeleted &&
-          i.brandId === saleData.brandId &&
-          i.screens && i.screens.some(s => s.status === 'empty')
-        );
-      }
-
-      if (!assignedAccount) {
-        if (saleData.accountEmail) {
-          const screensCount = brand.screensCount || 5;
-          const screens = [];
-          for (let s = 1; s <= screensCount; s++) {
-            screens.push({
-              screenNumber: s,
-              name: `Screen-${s}`,
-              status: 'empty',
-              saleId: null,
-              expiryDate: null,
-              pin: String(1000 + s * 1111).slice(-4),
-              deviceType: 'TV'
-            });
-          }
-          assignedAccount = {
-            id: `inv_auto_${Date.now()}`,
-            brandId: brand.id,
-            brandName: brand.displayName,
-            email: saleData.accountEmail,
-            password: saleData.accountPassword || 'Password@123',
-            screensCount,
-            screens,
-            isDeleted: false,
-            isSelected: true
-          };
-          if (!local.inventory) local.inventory = [];
-          local.inventory.push(assignedAccount);
-        } else {
-          throw new Error('No available account found in inventory.');
-        }
-      }
-
+    if (assignedAccount && assignedAccount.screens) {
       const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '0', 10);
-      let assignedScreen = assignedAccount.screens.find(s => s.screenNumber === screenNum);
+      assignedScreen = assignedAccount.screens.find(s => s.screenNumber === screenNum);
       if (!assignedScreen) {
         assignedScreen = assignedAccount.screens.find(s => s.status === 'empty');
       }
@@ -509,70 +537,93 @@ export const api = {
         assignedAccount.screens.push(assignedScreen);
       }
 
-      const saleId = `sale_${Date.now()}`;
       assignedScreen.status = 'occupied';
       assignedScreen.saleId = saleId;
       assignedScreen.expiryDate = saleData.expiryDate;
       if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
-
-      const newSale = {
-        id: saleId,
-        recordNumber: nextRecordNum,
-        customerName: saleData.customerName || 'Customer',
-        customerNumber: saleData.customerNumber || '',
-        referenceName: saleData.referenceName || '',
-        referenceNumber: saleData.referenceNumber || '',
-        brandId: brand.id,
-        brandName: brand.displayName,
-        accountEmail: saleData.accountEmail || assignedAccount?.email || '',
-        accountPassword: saleData.accountPassword || assignedAccount?.password || '',
-        validity: saleData.validity || '01 Month',
-        screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
-        screenPin: saleData.screenPin || assignedScreen?.pin || '1234',
-        activationDate: saleData.activationDate,
-        expiryDate: saleData.expiryDate,
-        amount: Number(saleData.amount) || brand.prices[saleData.validity] || 199,
-        deviceName: saleData.deviceName || 'Personal Device',
-        saleDate: saleData.activationDate,
-        note: saleData.note || '',
-        status: 'Active',
-        notificationSent: false,
-        lastNotifiedAt: null,
-        inventoryId: assignedAccount?.id || null
-      };
-
-      local.sales.unshift(newSale);
-      saveLocalData(local);
-      return { sale: newSale, assignedAccount };
+      if (saleData.deviceName) assignedScreen.deviceType = saleData.deviceName;
+      assignedAccount.updatedAt = Date.now();
     }
+
+    const newSale = {
+      id: saleId,
+      recordNumber: nextRecordNum,
+      customerName: saleData.customerName || 'Customer',
+      customerNumber: saleData.customerNumber || '',
+      sellerEmail: saleData.sellerEmail || 'Fixyourmobiles10@gmail.com',
+      referenceName: saleData.referenceName || '',
+      referenceNumber: saleData.referenceNumber || '',
+      brandId: brand?.id || saleData.brandId || 'netflix',
+      brandName: saleData.brandName || brand?.displayName || 'Netflix',
+      accountEmail: saleData.accountEmail || assignedAccount?.email || '',
+      accountPassword: saleData.accountPassword || assignedAccount?.password || '',
+      validity: saleData.validity || '01 Month',
+      pricingPlan: saleData.pricingPlan || 'General',
+      screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
+      screenPin: saleData.screenPin || assignedScreen?.pin || '1234',
+      activationDate: saleData.activationDate,
+      expiryDate: saleData.expiryDate,
+      amount: Number(saleData.amount) || brand?.prices?.[saleData.validity] || 199,
+      deviceName: saleData.deviceName || 'Personal TV',
+      saleDate: saleData.activationDate,
+      note: saleData.note || '',
+      status: 'Active',
+      notificationSent: false,
+      lastNotifiedAt: null,
+      inventoryId: assignedAccount?.id || null,
+      createdAt: new Date().toISOString()
+    };
+
+    local.sales = [newSale, ...(local.sales || [])];
+    saveLocalData(local);
+
+    // 2. REAL-TIME GOOGLE SHEETS SYNC: Instantly push this sale to Google Sheets!
+    this.getSheetsConfig().then(cfg => {
+      if (cfg?.webhookUrl) {
+        syncSaleToGoogleSheet(cfg.webhookUrl, newSale).then(res => {
+          if (res?.success) {
+            console.log('Google Sheet sale sync succeeded');
+          }
+        }).catch(err => {
+          console.warn('Google Sheet sale background sync warning:', err.message);
+        });
+      }
+    }).catch(() => {});
+
+    // 3. Background sync to backend API
+    try {
+      fetch('/api/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(saleData)
+      }).catch(() => {});
+    } catch (e) {}
+
+    return { sale: newSale, assignedAccount };
   },
 
   async updateSale(id, updates) {
-    let updated = null;
-    try {
-      const res = await fetch(`/api/sales/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      });
-      if (res.ok) {
-        updated = await res.json();
-      }
-    } catch (e) {}
-
     const local = getLocalData();
     const idx = (local.sales || []).findIndex(s => s.id === id);
+    let updated = null;
     if (idx !== -1) {
-      if (!updated) {
-        updated = {
-          ...local.sales[idx],
-          ...updates,
-          updatedAt: new Date().toISOString()
-        };
-      }
+      updated = {
+        ...local.sales[idx],
+        ...updates,
+        updatedAt: new Date().toISOString()
+      };
       local.sales[idx] = updated;
       saveLocalData(local);
     }
+
+    try {
+      fetch(`/api/sales/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      }).catch(() => {});
+    } catch (e) {}
+
     return updated;
   },
 
@@ -673,51 +724,71 @@ export const api = {
 
   // GOOGLE SHEETS / CELLS LINKUP
   async getSheetsConfig() {
+    let webhookUrl = '';
+    let spreadsheetId = DEFAULT_SPREADSHEET_ID;
     try {
-      const res = await fetch('/api/sheets/config');
-      if (res.ok) {
-        const config = await res.json();
-        const local = getLocalData();
-        local.settings = local.settings || {};
-        local.settings.googleSheetConfig = config;
-        saveLocalData(local);
-        return config;
-      }
+      webhookUrl = localStorage.getItem(WEBHOOK_STORAGE_KEY) || '';
+      spreadsheetId = localStorage.getItem(SHEET_ID_STORAGE_KEY) || DEFAULT_SPREADSHEET_ID;
     } catch (e) {}
 
     const local = getLocalData();
-    return local.settings?.googleSheetConfig || {
-      enabled: false,
-      spreadsheetId: '',
-      webhookUrl: '',
+    const localConfig = local.settings?.googleSheetConfig || {};
+
+    if (!webhookUrl && localConfig.webhookUrl) {
+      webhookUrl = localConfig.webhookUrl;
+    }
+    if (!spreadsheetId && localConfig.spreadsheetId) {
+      spreadsheetId = localConfig.spreadsheetId;
+    }
+
+    try {
+      const res = await fetch('/api/sheets/config');
+      if (res.ok) {
+        const serverConfig = await res.json();
+        // NEVER overwrite a saved webhookUrl with an empty string
+        if (serverConfig?.webhookUrl && !webhookUrl) {
+          webhookUrl = serverConfig.webhookUrl;
+        }
+      }
+    } catch (e) {}
+
+    const config = {
+      enabled: Boolean(webhookUrl && webhookUrl.trim()),
+      spreadsheetId: spreadsheetId || DEFAULT_SPREADSHEET_ID,
+      ownerEmail: DEFAULT_SPREADSHEET_OWNER,
+      spreadsheetName: 'OTT A/C MANAGER',
+      webhookUrl: webhookUrl || '',
       sheetNames: {
-        netflix: 'Netflix',
-        amazon: 'Amazon',
-        aha: 'Aha',
-        allData: 'All Data',
-        sales: 'Sales'
+        netflix: 'NETFLIX',
+        netflixSold: 'NETFLIX-SOLD',
+        primeVideo: 'PRIME VIDEO',
+        primeVideoSold: 'PRIME VIDEO-SOLD',
+        zee5: 'ZEE5',
+        zee5Sold: 'ZEE5-SOLD',
+        aha: 'AHA',
+        ahaSold: 'AHA-SOLD',
+        allBrandsData: 'ALL BRANDS DATA'
       },
-      autoSyncOnSale: true,
-      lastSyncTime: null,
-      status: 'Disconnected',
+      autoSyncOnSale: localConfig.autoSyncOnSale !== false,
+      lastSyncTime: localConfig.lastSyncTime || null,
+      status: webhookUrl ? 'Connected' : 'Disconnected',
       lastError: null
     };
+
+    local.settings = local.settings || {};
+    local.settings.googleSheetConfig = config;
+    saveLocalData(local);
+
+    return config;
   },
 
   async updateSheetsConfig(config) {
     try {
-      const res = await fetch('/api/sheets/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(config)
-      });
-      if (res.ok) {
-        const updated = await res.json();
-        const local = getLocalData();
-        local.settings = local.settings || {};
-        local.settings.googleSheetConfig = updated;
-        saveLocalData(local);
-        return updated;
+      if (config.webhookUrl !== undefined) {
+        localStorage.setItem(WEBHOOK_STORAGE_KEY, config.webhookUrl.trim());
+      }
+      if (config.spreadsheetId !== undefined) {
+        localStorage.setItem(SHEET_ID_STORAGE_KEY, config.spreadsheetId.trim());
       }
     } catch (e) {}
 
@@ -725,10 +796,50 @@ export const api = {
     local.settings = local.settings || {};
     local.settings.googleSheetConfig = {
       ...(local.settings.googleSheetConfig || {}),
-      ...config
+      ...config,
+      ownerEmail: DEFAULT_SPREADSHEET_OWNER,
+      spreadsheetName: 'OTT A/C MANAGER'
     };
     saveLocalData(local);
+
+    try {
+      await fetch('/api/sheets/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(local.settings.googleSheetConfig)
+      });
+    } catch (e) {}
+
     return local.settings.googleSheetConfig;
+  },
+
+  async pullFromGoogleSheet() {
+    const config = await this.getSheetsConfig();
+    if (!config?.webhookUrl) {
+      return { success: false, message: 'Google Sheet Webhook URL is not configured' };
+    }
+    const result = await fetchLiveSpreadsheetData(config.webhookUrl);
+    if (result.success) {
+      const local = getLocalData();
+      if (result.sales && result.sales.length > 0) {
+        const existingIds = new Set((local.sales || []).map(s => s.id));
+        const newSalesFromSheet = result.sales.filter(s => !existingIds.has(s.id));
+        local.sales = [...newSalesFromSheet, ...(local.sales || [])];
+      }
+      if (result.inventory && result.inventory.length > 0) {
+        result.inventory.forEach(invItem => {
+          const idx = (local.inventory || []).findIndex(i => i.email?.toLowerCase() === invItem.email?.toLowerCase());
+          if (idx !== -1) {
+            local.inventory[idx] = { ...local.inventory[idx], ...invItem };
+          } else {
+            local.inventory.push(invItem);
+          }
+        });
+      }
+      saveLocalData(local);
+      return { success: true, count: result.sales?.length || 0, inventoryCount: result.inventory?.length || 0 };
+    }
+    return { success: false, message: result.message };
   },
 
   async testSheetsConnection(webhookUrl) {
@@ -974,50 +1085,63 @@ export const api = {
 
   // BRANDS CRUD
   async createBrand(brandData) {
-    try {
-      const res = await fetch('/api/brands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(brandData)
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {}
     const local = getLocalData();
     if (!local.brands) local.brands = [];
     const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const newBrand = { ...brandData, id };
-    local.brands.push(newBrand);
+    const newBrand = { ...brandData, id, updatedAt: Date.now() };
+    const existingIdx = local.brands.findIndex(b => b.id === id);
+    if (existingIdx !== -1) {
+      local.brands[existingIdx] = newBrand;
+    } else {
+      local.brands.push(newBrand);
+    }
     saveLocalData(local);
+
+    try {
+      fetch('/api/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(brandData)
+      }).catch(() => {});
+    } catch (e) {}
+
     return newBrand;
   },
 
   async updateBrand(id, updates) {
+    const local = getLocalData();
+    const idx = (local.brands || []).findIndex(b => b.id === id);
+    let updated = null;
+    if (idx !== -1) {
+      updated = {
+        ...local.brands[idx],
+        ...updates,
+        updatedAt: Date.now()
+      };
+      local.brands[idx] = updated;
+      saveLocalData(local);
+    }
+
     try {
-      const res = await fetch(`/api/brands/${id}`, {
+      fetch(`/api/brands/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updates)
-      });
-      if (res.ok) return await res.json();
+      }).catch(() => {});
     } catch (e) {}
-    const local = getLocalData();
-    const idx = (local.brands || []).findIndex(b => b.id === id);
-    if (idx !== -1) {
-      local.brands[idx] = { ...local.brands[idx], ...updates };
-      saveLocalData(local);
-      return local.brands[idx];
-    }
-    return null;
+
+    return updated;
   },
 
   async deleteBrand(id) {
-    try {
-      const res = await fetch(`/api/brands/${id}`, { method: 'DELETE' });
-      if (res.ok) return true;
-    } catch (e) {}
     const local = getLocalData();
     local.brands = (local.brands || []).filter(b => b.id !== id);
     saveLocalData(local);
+
+    try {
+      fetch(`/api/brands/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+
     return true;
   },
 

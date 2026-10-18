@@ -202,7 +202,7 @@ function doGet(e) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
 
-  // Fetch all sold customer data & accounts to show in website
+  // Fetch all sold customer data from ALL BRANDS DATA sheet
   var sales = [];
   var allDataSheet = ss.getSheetByName('ALL BRANDS DATA');
   if (allDataSheet && allDataSheet.getLastRow() >= 4) {
@@ -211,23 +211,74 @@ function doGet(e) {
       if (r[0] || r[7]) { // Has S.NO or ID
         sales.push({
           id: 'sale_' + (idx + 1),
-          sNo: r[0],
-          saleDate: r[1],
-          brandName: r[2],
-          validity: r[3],
-          plan: r[4],
-          activationDate: r[5],
-          expiryDate: r[6],
-          accountEmail: r[7],
-          accountPassword: r[8],
-          screenNumber: r[9],
-          screenPin: r[10],
-          deviceName: r[11],
-          amount: r[12]
+          recordNumber: String(r[0] || (idx + 1)).padStart(2, '0'),
+          saleDate: String(r[1] || ''),
+          brandName: String(r[2] || 'NETFLIX'),
+          brandId: String(r[2] || 'netflix').toLowerCase().replace(/[^a-z0-9]/g, '_'),
+          validity: String(r[3] || '01 Month'),
+          plan: String(r[4] || 'General'),
+          activationDate: String(r[5] || r[1] || ''),
+          expiryDate: String(r[6] || ''),
+          accountEmail: String(r[7] || ''),
+          accountPassword: String(r[8] || ''),
+          screenNumber: String(r[9] || 'Screen-1'),
+          screenPin: String(r[10] || ''),
+          deviceName: String(r[11] || 'Personal Device'),
+          amount: Number(r[12]) || 0,
+          customerName: String(r[7] || '').split('@')[0],
+          status: 'Active'
         });
       }
     });
   }
+
+  // Also fetch Database Accounts from NETFLIX, PRIME VIDEO, ZEE5, AHA, etc.
+  var inventory = [];
+  var allSheets = ss.getSheets();
+  allSheets.forEach(function(sheet) {
+    var sName = sheet.getName();
+    if (sName.indexOf('-SOLD') !== -1 || sName.indexOf('ALL BRANDS') !== -1) return;
+    if (sheet.getLastRow() < 4) return;
+
+    var brandId = sName.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    var bVals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
+    for (var r = 0; r < bVals.length; r += 5) {
+      var num = bVals[r] ? bVals[r][0] : '';
+      var email = bVals[r] ? bVals[r][2] : '';
+      var validity = bVals[r] ? bVals[r][4] : '01 Month';
+      var password = (bVals[r + 1]) ? bVals[r + 1][2] : '';
+      if (!email && !num) continue;
+
+      var screens = [];
+      for (var s = 0; s < 5; s++) {
+        var col = s + 1;
+        var scrName = (bVals[r + 2] && bVals[r + 2][col]) ? String(bVals[r + 2][col]) : ('Screen-' + (s + 1));
+        var scrVal = (bVals[r + 3] && bVals[r + 3][col]) ? String(bVals[r + 3][col]) : '';
+        var isSold = scrVal && scrVal !== 'EMPTY' && scrVal !== '+' && scrVal.indexOf('+') === -1;
+        screens.push({
+          screenNumber: s + 1,
+          name: scrName,
+          status: isSold ? 'occupied' : 'empty',
+          pin: isSold ? '1234' : (scrVal.replace(/[^\\d]/g, '') || String((s + 1) * 1111)),
+          expiryDate: isSold ? scrVal : null,
+          deviceType: 'tv'
+        });
+      }
+
+      inventory.push({
+        id: 'acc_' + brandId + '_' + (Math.floor(r / 5) + 1),
+        brandId: brandId,
+        brandName: sName,
+        email: email,
+        password: password,
+        validity: validity,
+        screensCount: screens.length,
+        screens: screens,
+        isLocked: true,
+        isSelected: false
+      });
+    }
+  });
 
   return ContentService.createTextOutput(JSON.stringify({
     status: 'connected',
@@ -236,6 +287,7 @@ function doGet(e) {
     sheets: ss.getSheets().map(function(s) { return s.getName(); }),
     salesCount: sales.length,
     sales: sales,
+    inventory: inventory,
     timestamp: new Date().toISOString()
   })).setMimeType(ContentService.MimeType.JSON);
 }
@@ -309,10 +361,11 @@ function doPost(e) {
       }
 
       // Update Screen in Database sheet if account ID / email provided
-      if (data.accountEmail || (data.sale && data.sale.accountEmail)) {
-        var email = data.accountEmail || data.sale.accountEmail;
-        var screenNum = data.screenNumber || (data.sale && data.sale.screenNumber);
-        updateDatabaseScreenSold(ss, brand, email, screenNum);
+      var email = data.accountEmail || (data.sale && data.sale.accountEmail);
+      var screenNum = data.screenNumber || (data.sale && data.sale.screenNumber);
+      var expiryDate = data.expiryDate || (data.sale && data.sale.expiryDate);
+      if (email) {
+        updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate);
       }
 
       return ContentService.createTextOutput(JSON.stringify({
@@ -322,14 +375,27 @@ function doPost(e) {
       })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    // 4. SYNC ALL INVENTORY & SALES
+    // 4. UPDATE ACCOUNT IN DATABASE SHEET
+    if (action === 'update_account') {
+      var bName = (data.brand || data.brandName || 'NETFLIX').toUpperCase();
+      var dbSheet = getOrCreateDatabaseSheet(ss, getDbSheetName(bName));
+      if (data.account) {
+        updateOrInsertAccountInDbSheet(dbSheet, data.account);
+      }
+      return ContentService.createTextOutput(JSON.stringify({
+        status: 'success',
+        message: 'Account updated in ' + bName + ' database sheet!',
+        timestamp: new Date().toISOString()
+      })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 5. SYNC ALL INVENTORY & SALES
     if (action === 'sync_all' || action === 'batch_sync') {
       ensureAllRequiredSheets(ss);
 
       // Write Sales if provided
       if (data.sales && data.sales.length > 0) {
         var allBrandsSheet = getOrCreateSoldSheet(ss, 'ALL BRANDS DATA', 'ALL BRANDS DATA');
-        // Clear old rows after header (row 4 onwards)
         if (allBrandsSheet.getLastRow() >= 4) {
           allBrandsSheet.getRange(4, 1, allBrandsSheet.getLastRow() - 3, 13).clearContent();
         }
@@ -354,13 +420,13 @@ function doPost(e) {
           allBrandsSheet.getRange(4, 1, allRows.length, 13).setValues(allRows);
         }
 
-        for (var bName in brandRowsMap) {
-          var bSheet = getOrCreateSoldSheet(ss, bName, bName.replace('-SOLD', ''));
+        for (var bNameKey in brandRowsMap) {
+          var bSheet = getOrCreateSoldSheet(ss, bNameKey, bNameKey.replace('-SOLD', ''));
           if (bSheet.getLastRow() >= 4) {
             bSheet.getRange(4, 1, bSheet.getLastRow() - 3, 13).clearContent();
           }
-          if (brandRowsMap[bName].length > 0) {
-            bSheet.getRange(4, 1, brandRowsMap[bName].length, 13).setValues(brandRowsMap[bName]);
+          if (brandRowsMap[bNameKey].length > 0) {
+            bSheet.getRange(4, 1, brandRowsMap[bNameKey].length, 13).setValues(brandRowsMap[bNameKey]);
           }
         }
       }
@@ -479,19 +545,77 @@ function formatSaleRowArray(sale, brand) {
   ];
 }
 
-function updateDatabaseScreenSold(ss, brand, email, screenNum) {
+function updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate) {
   var dbSheetName = getDbSheetName(brand);
   var sheet = ss.getSheetByName(dbSheetName);
   if (!sheet) return;
-  // Look for email in Column C
   var lastRow = sheet.getLastRow();
   if (lastRow < 3) return;
-  var values = sheet.getRange(1, 1, lastRow, 6).getValues();
+  var values = sheet.getRange(1, 1, lastRow, 8).getValues();
   for (var r = 0; r < values.length; r++) {
     if (values[r][2] && String(values[r][2]).trim().toLowerCase() === String(email).trim().toLowerCase()) {
-      // Screen row is usually 2 rows below ID
-      // Mark screen as sold
+      var sIdx = 1;
+      if (typeof screenNum === 'number') {
+        sIdx = screenNum;
+      } else if (typeof screenNum === 'string') {
+        var match = screenNum.match(/\\d+/);
+        if (match) sIdx = parseInt(match[0], 10);
+      }
+      if (sIdx < 1 || sIdx > 10) sIdx = 1;
+      var targetCol = sIdx + 1;
+      var cellVal = expiryDate || 'SOLD';
+      var targetRow = r + 4;
+      sheet.getRange(targetRow, targetCol).setValue(cellVal);
+      sheet.getRange(targetRow, targetCol).setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
       break;
+    }
+  }
+}
+
+function updateOrInsertAccountInDbSheet(sheet, account) {
+  var lastRow = sheet.getLastRow();
+  var foundRow = -1;
+  if (lastRow >= 3) {
+    var values = sheet.getRange(1, 1, lastRow, 5).getValues();
+    for (var r = 0; r < values.length; r++) {
+      if (values[r][2] && String(values[r][2]).trim().toLowerCase() === String(account.email).trim().toLowerCase()) {
+        foundRow = r + 1;
+        break;
+      }
+    }
+  }
+
+  if (foundRow !== -1) {
+    // Update existing account
+    sheet.getRange(foundRow, 5).setValue(account.validity || '01-MONTH');
+    sheet.getRange(foundRow + 1, 3).setValue(account.password || '');
+    var screens = account.screens || [];
+    for (var s = 0; s < Math.max(screens.length, 5); s++) {
+      var col = s + 2;
+      sheet.getRange(foundRow + 2, col).setValue('SCREEN-' + (s + 1));
+      var scr = screens[s];
+      var cellText = scr ? (scr.status === 'occupied' ? (scr.expiryDate || 'SOLD') : (scr.pin || 'EMPTY')) : '';
+      sheet.getRange(foundRow + 3, col).setValue(cellText);
+    }
+  } else {
+    // Append new account block
+    var nextRow = Math.max(lastRow + 1, 2);
+    var accNum = String(Math.floor(nextRow / 5) + 1).padStart(2, '0');
+    sheet.getRange(nextRow, 1).setValue(accNum).setFontWeight('bold');
+    sheet.getRange(nextRow, 2).setValue('ID').setBackground('#2563eb').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.getRange(nextRow, 3).setValue(account.email || '');
+    sheet.getRange(nextRow, 5, 1, 2).merge().setValue(account.validity || '01-MONTH').setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
+
+    sheet.getRange(nextRow + 1, 2).setValue('PASSWORD').setBackground('#7c3aed').setFontColor('#ffffff').setFontWeight('bold');
+    sheet.getRange(nextRow + 1, 3).setValue(account.password || '');
+
+    var newScreens = account.screens || [];
+    for (var ns = 0; ns < Math.max(newScreens.length, 5); ns++) {
+      var nCol = ns + 2;
+      sheet.getRange(nextRow + 2, nCol).setValue('SCREEN-' + (ns + 1)).setBackground('#ea580c').setFontColor('#ffffff').setFontWeight('bold');
+      var nScr = newScreens[ns];
+      var nCellText = nScr ? (nScr.status === 'occupied' ? (nScr.expiryDate || 'SOLD') : (nScr.pin || 'EMPTY')) : '';
+      sheet.getRange(nextRow + 3, nCol).setValue(nCellText);
     }
   }
 }
@@ -507,7 +631,6 @@ function syncInventoryAccountsToSheets(ss, inventory) {
   for (var brandName in byBrand) {
     var sheet = getOrCreateDatabaseSheet(ss, brandName);
     var items = byBrand[brandName];
-    // Start writing at row 2
     var curRow = 2;
     sheet.clearContents();
     sheet.getRange('A1:F1').merge().setValue(brandName);
@@ -515,30 +638,26 @@ function syncInventoryAccountsToSheets(ss, inventory) {
 
     items.forEach(function(item, idx) {
       var numStr = String(idx + 1).padStart(2, '0');
-      // Row 1 of Account: [Num, ID, email, '', Validity, '']
       sheet.getRange(curRow, 1).setValue(numStr).setFontWeight('bold');
       sheet.getRange(curRow, 2).setValue('ID').setBackground('#2563eb').setFontColor('#ffffff').setFontWeight('bold');
       sheet.getRange(curRow, 3).setValue(item.email || '');
       sheet.getRange(curRow, 5, 1, 2).merge().setValue(item.validity || '01-MONTH').setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
 
-      // Row 2: ['', PASSWORD, password, '', '', '']
       sheet.getRange(curRow + 1, 2).setValue('PASSWORD').setBackground('#7c3aed').setFontColor('#ffffff').setFontWeight('bold');
       sheet.getRange(curRow + 1, 3).setValue(item.password || '');
 
-      // Row 3: Screens Headers: SCREEN-1 to SCREEN-5
       var screens = item.screens || [];
       for (var s = 0; s < Math.max(screens.length, 5); s++) {
         var col = s + 2;
         sheet.getRange(curRow + 2, col).setValue('SCREEN-' + (s + 1)).setBackground('#ea580c').setFontColor('#ffffff').setFontWeight('bold');
         var scr = screens[s];
-        var cellText = scr ? (scr.status === 'occupied' ? 'SOLD' : (scr.pin || 'EMPTY')) : '';
+        var cellText = scr ? (scr.status === 'occupied' ? (scr.expiryDate || 'SOLD') : (scr.pin || 'EMPTY')) : '';
         sheet.getRange(curRow + 3, col).setValue(cellText);
       }
 
       curRow += 5;
     });
   }
-}
 `;
 
 /**
@@ -562,12 +681,77 @@ export async function syncSaleToGoogleSheet(webhookUrl, sale) {
         saleRow,
         sale,
         accountEmail: sale.accountEmail,
-        screenNumber: sale.screenNumber
+        screenNumber: sale.screenNumber,
+        expiryDate: sale.expiryDate
       })
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
+      throw new Error('HTTP error ' + response.status);
+    }
+
+    const data = await response.json();
+    return { success: data.status === 'success', data, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Real-time sync single account to Google Sheets database sheet
+ */
+export async function syncAccountToGoogleSheet(webhookUrl, account, brandName) {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return { success: false, message: 'Google Sheet Webhook URL not configured' };
+  }
+
+  try {
+    const brand = getDbSheetName(account.brandId, brandName);
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({
+        action: 'update_account',
+        brand,
+        account
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error('HTTP error ' + response.status);
+    }
+
+    const data = await response.json();
+    return { success: data.status === 'success', data, message: data.message };
+  } catch (err) {
+    return { success: false, message: err.message };
+  }
+}
+
+/**
+ * Full sync all inventory, sales, brands to Google Sheets
+ */
+export async function syncAllToGoogleSheet(webhookUrl, inventory, sales, brands) {
+  if (!webhookUrl || !webhookUrl.trim()) {
+    return { success: false, message: 'Google Sheet Webhook URL not configured' };
+  }
+
+  try {
+    const payload = {
+      action: 'sync_all',
+      inventory,
+      sales,
+      brands
+    };
+
+    const response = await fetch(webhookUrl.trim(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error('HTTP error ' + response.status);
     }
 
     const data = await response.json();
@@ -602,7 +786,9 @@ export async function fetchLiveSpreadsheetData(webhookUrl) {
     const data = await response.json();
     return {
       success: true,
+      status: data.status || 'success',
       sales: data.sales || [],
+      inventory: data.inventory || [],
       sheets: data.sheets || [],
       spreadsheetName: data.spreadsheetName || 'OTT A/C MANAGER'
     };
