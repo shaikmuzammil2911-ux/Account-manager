@@ -1,13 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
   FileSpreadsheet, CheckCircle2, AlertTriangle, RefreshCw,
-  ExternalLink, Copy, Check, ShieldCheck, ArrowRight, Info
+  ExternalLink, Copy, Check, ShieldCheck, ArrowRight, Info,
+  Database, Download, Table
 } from 'lucide-react';
 import { api } from '../api/client';
-import { REQUIRED_WORKSHEETS, GOOGLE_APPS_SCRIPT_TEMPLATE } from '../utils/googleSheets';
+import {
+  REQUIRED_WORKSHEETS,
+  GOOGLE_APPS_SCRIPT_TEMPLATE,
+  DEFAULT_SPREADSHEET_ID,
+  DEFAULT_SPREADSHEET_OWNER,
+  fetchLiveSpreadsheetData
+} from '../utils/googleSheets';
 
 export default function CellsLinkupScreen({ showToast, onBack }) {
-  const [spreadsheetId, setSpreadsheetId] = useState('');
+  const [spreadsheetId, setSpreadsheetId] = useState(DEFAULT_SPREADSHEET_ID);
   const [webhookUrl, setWebhookUrl] = useState('');
   const [autoSyncOnSale, setAutoSyncOnSale] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState('Disconnected'); // 'Connected' | 'Disconnected' | 'Testing' | 'Error'
@@ -21,6 +28,9 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
   const [isValidating, setIsValidating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isFetchingLive, setIsFetchingLive] = useState(false);
+  const [liveSheetData, setLiveSheetData] = useState(null);
+  const [selectedLiveSheet, setSelectedLiveSheet] = useState('ALL BRANDS DATA');
 
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [scriptCopied, setScriptCopied] = useState(false);
@@ -47,12 +57,14 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
       try {
         const config = await api.getSheetsConfig();
         if (config) {
-          setSpreadsheetId(config.spreadsheetId || '');
+          setSpreadsheetId(config.spreadsheetId || DEFAULT_SPREADSHEET_ID);
           setWebhookUrl(config.webhookUrl || '');
           setAutoSyncOnSale(config.autoSyncOnSale ?? true);
           setConnectionStatus(config.status || (config.webhookUrl ? 'Connected' : 'Disconnected'));
           setLastSyncTime(config.lastSyncTime || null);
           setLastError(config.lastError || null);
+        } else {
+          setSpreadsheetId(DEFAULT_SPREADSHEET_ID);
         }
       } catch (err) {
         console.warn('Error loading sheets config', err);
@@ -240,6 +252,34 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
     }
   };
 
+  const handleFetchLive = async () => {
+    if (!webhookUrl.trim()) {
+      showToast('Please enter your Google Apps Script Web App URL first to fetch live data.', 'error');
+      return;
+    }
+
+    try {
+      setIsFetchingLive(true);
+      setLastError(null);
+      const res = await fetchLiveSpreadsheetData(webhookUrl.trim());
+      if (res && res.status === 'success' && res.sheets) {
+        setLiveSheetData(res.sheets);
+        const availableTabs = Object.keys(res.sheets);
+        if (availableTabs.length > 0 && !res.sheets[selectedLiveSheet]) {
+          setSelectedLiveSheet(availableTabs[0]);
+        }
+        showToast('Live Google Sheet data fetched successfully!', 'success');
+      } else {
+        showToast(res.message || 'Could not fetch live data from Google Sheet', 'error');
+      }
+    } catch (err) {
+      setLastError(err.message);
+      showToast(`Fetch failed: ${err.message}`, 'error');
+    } finally {
+      setIsFetchingLive(false);
+    }
+  };
+
   const handleCopyScript = () => {
     navigator.clipboard.writeText(GOOGLE_APPS_SCRIPT_TEMPLATE);
     setScriptCopied(true);
@@ -376,18 +416,116 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
           </button>
         </div>
 
-        {/* Full Sync Button */}
+        {/* Push to GSheet Button */}
         <button
           type="button"
           className="glossy-btn glossy-btn-green"
-          style={{ width: '100%', padding: '14px', fontSize: '16px', fontWeight: 800, marginBottom: '12px' }}
+          style={{ width: '100%', padding: '13px', fontSize: '15.5px', fontWeight: 800, marginBottom: '10px' }}
           onClick={handleSyncNow}
           disabled={isSyncing}
           id="linkup-btn-sync-now"
         >
           <RefreshCw size={18} className={isSyncing ? 'spin-anim' : ''} />
-          <span>{isSyncing ? 'Synchronizing All Records...' : 'Sync Now (Push All Records)'}</span>
+          <span>{isSyncing ? 'Synchronizing All Records...' : 'Push All Records to Google Sheet'}</span>
         </button>
+
+        {/* Fetch Live Data from GSheet Button (Per user request: Gsheet Data will be shown in the Website) */}
+        <button
+          type="button"
+          className="glossy-btn glossy-btn-blue"
+          style={{ width: '100%', padding: '13px', fontSize: '15px', fontWeight: 800, marginBottom: '12px' }}
+          onClick={handleFetchLive}
+          disabled={isFetchingLive}
+          id="linkup-btn-fetch-live"
+        >
+          <Download size={18} className={isFetchingLive ? 'spin-anim' : ''} />
+          <span>{isFetchingLive ? 'Fetching Live Data from Google Sheets...' : 'Fetch Live Data from Google Sheet (View Data)'}</span>
+        </button>
+
+        {/* Live GSheet Data Viewer */}
+        {liveSheetData && (
+          <div style={{
+            marginTop: '10px',
+            marginBottom: '16px',
+            background: '#ffffff',
+            border: '2px solid #3b82f6',
+            borderRadius: '14px',
+            padding: '14px',
+            boxShadow: '0 4px 14px rgba(37,99,235,0.12)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Table size={18} color="#2563eb" />
+                <span style={{ fontSize: '14.5px', fontWeight: 900, color: '#0f172a' }}>
+                  Live Google Sheet Viewer
+                </span>
+                <span style={{ fontSize: '11px', background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '12px', fontWeight: 800 }}>
+                  Live Data Loaded
+                </span>
+              </div>
+            </div>
+
+            {/* Sheet Tabs */}
+            <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', paddingBottom: '6px', marginBottom: '8px' }}>
+              {Object.keys(liveSheetData).map(sheetName => (
+                <button
+                  key={sheetName}
+                  type="button"
+                  onClick={() => setSelectedLiveSheet(sheetName)}
+                  style={{
+                    padding: '5px 11px',
+                    borderRadius: '8px',
+                    border: selectedLiveSheet === sheetName ? '2px solid #2563eb' : '1px solid #cbd5e1',
+                    background: selectedLiveSheet === sheetName ? '#2563eb' : '#f8fafc',
+                    color: selectedLiveSheet === sheetName ? '#ffffff' : '#334155',
+                    fontSize: '11.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {sheetName} ({(liveSheetData[sheetName]?.rows || []).length})
+                </button>
+              ))}
+            </div>
+
+            {/* Selected Sheet Table */}
+            {liveSheetData[selectedLiveSheet] && (
+              <div style={{ overflowX: 'auto', maxHeight: '320px', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                  <thead style={{ background: '#f1f5f9', position: 'sticky', top: 0 }}>
+                    <tr>
+                      {(liveSheetData[selectedLiveSheet].headers || []).map((h, i) => (
+                        <th key={i} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 800, color: '#475569', borderBottom: '1.5px solid #cbd5e1', whiteSpace: 'nowrap' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(liveSheetData[selectedLiveSheet].rows || []).length === 0 ? (
+                      <tr>
+                        <td colSpan={liveSheetData[selectedLiveSheet].headers?.length || 1} style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>
+                          No records in worksheet "{selectedLiveSheet}"
+                        </td>
+                      </tr>
+                    ) : (
+                      liveSheetData[selectedLiveSheet].rows.map((row, rIdx) => (
+                        <tr key={rIdx} style={{ background: rIdx % 2 === 0 ? '#ffffff' : '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                          {row.map((cell, cIdx) => (
+                            <td key={cIdx} style={{ padding: '8px 10px', color: '#1e293b', whiteSpace: 'nowrap' }}>
+                              {String(cell || '')}
+                            </td>
+                          ))}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Save Config Button */}
         <button
@@ -553,26 +691,28 @@ export default function CellsLinkupScreen({ showToast, onBack }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
           <div>
             <h3 style={{ fontSize: '16px', fontWeight: 800, color: '#0f172a', margin: 0 }}>
-              Required Google Worksheets (7 Sheets)
+              Required Google Worksheets (9 Sheets - OTT A/C MANAGER)
             </h3>
             <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#64748b' }}>
-              Multi-sheet structure with individual brand accounts and sold history
+              Database accounts &amp; 13-column sold customer history ({DEFAULT_SPREADSHEET_OWNER})
             </p>
           </div>
           <span style={{ fontSize: '12px', fontWeight: 700, color: '#3b82f6' }}>
-            1 Spreadsheet
+            9 Worksheets
           </span>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
           {[
-            { name: 'Netflix', desc: 'Account Details (Mail, Password, Screens, Pins, Expiry Date)' },
-            { name: 'Netflix-Sold', desc: 'Sold data stored for Netflix' },
-            { name: 'Amazon', desc: 'Amazon Account & Screen Details' },
-            { name: 'Amazon-Sold', desc: 'Amazon Sold History' },
-            { name: 'Hotstar', desc: 'Hotstar Account & Screen Details' },
-            { name: 'Hotstar-Sold', desc: 'Hotstar Sold History' },
-            { name: 'All-In-One', desc: 'Consolidated view of all brands sales' }
+            { name: 'NETFLIX', desc: 'Netflix Account Database (Account #, Mail, Password, Validity, Screens 1-5)' },
+            { name: 'NETFLIX-SOLD', desc: 'Netflix Sold Customer Records (13 Columns)' },
+            { name: 'PRIME VIDEO', desc: 'Prime Video Account Database (Account #, Mail, Password, Validity, Screens 1-5)' },
+            { name: 'PRIME VIDEO-SOLD', desc: 'Prime Video Sold Customer Records (13 Columns)' },
+            { name: 'ZEE5', desc: 'ZEE5 Account Database (Account #, Mail, Password, Validity, Screens 1-5)' },
+            { name: 'ZEE5-SOLD', desc: 'ZEE5 Sold Customer Records (13 Columns)' },
+            { name: 'AHA', desc: 'AHA Account Database (Account #, Mail, Password, Validity, Screens 1-5)' },
+            { name: 'AHA-SOLD', desc: 'AHA Sold Customer Records (13 Columns)' },
+            { name: 'ALL BRANDS DATA', desc: 'Consolidated Sold Customer Records Across All Brands (13 Columns)' }
           ].map((sheet, sIdx) => {
             const isMissing = missingSheets.includes(sheet.name);
             const isPresent = existingSheets.includes(sheet.name);

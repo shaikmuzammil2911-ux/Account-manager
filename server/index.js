@@ -620,6 +620,34 @@ app.post('/api/sheets/sync', async (req, res) => {
   }
 });
 
+app.get('/api/sheets/live-data', async (req, res) => {
+  try {
+    const config = db.getSheetsConfig();
+    const webhookUrl = req.query.webhookUrl || config?.webhookUrl;
+    if (!webhookUrl || !webhookUrl.trim()) {
+      return res.status(400).json({ status: 'error', message: 'No Google Sheet Webhook URL configured' });
+    }
+
+    const fetchUrl = new URL(webhookUrl.trim());
+    fetchUrl.searchParams.set('action', 'fetch_all');
+    fetchUrl.searchParams.set('_t', String(Date.now()));
+
+    const response = await fetch(fetchUrl.toString(), {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' }
+    });
+
+    if (!response.ok) {
+      return res.status(response.status).json({ status: 'error', message: `HTTP ${response.status}: ${response.statusText}` });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 // Reset
 app.post('/api/reset', (req, res) => {
   try {

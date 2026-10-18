@@ -135,16 +135,24 @@ export default function FormsManagementScreen({
     const nextNum = String(currentList.length + 1).padStart(2, '0');
     const defaultTitle = currentSectionType === 'sale' ? `SALE FORM ${nextNum}` : `DATABASE FORM ${nextNum}`;
 
-    setEditingForm(null);
-    setFormType(currentSectionType);
-    setFormTitle(defaultTitle);
-    setFormHeading(currentSectionType === 'sale' ? 'Multi-Brand OTT Subscription' : 'Multi-Brand Subscriptions');
-    setFormSubheading('');
-    setFormGroupId(groups[0]?.id || '');
-    setFormBrands(brands.slice(0, 3).map(b => b.id));
-    setFormIsAllBrands(false);
-    setFormIsDefault(currentList.length === 0);
-    setShowFormModal(true);
+    // Per user request: "After Clicking Create New Form, it should open plain white background then I will add the Boxes etc."
+    setOpenedForm({
+      type: currentSectionType,
+      template: {
+        title: defaultTitle,
+        name: defaultTitle,
+        heading: defaultTitle,
+        type: currentSectionType,
+        groupId: groups[0]?.id || null,
+        brands: brands.map(b => b.id),
+        isAllBrands: true,
+        elements: [], // Plain white canvas with 0 elements!
+        isNew: true,
+        isNewForm: true,
+        isLocked: true
+      },
+      mode: 'builder'
+    });
   };
 
   const handleSaveForm = async (e) => {
@@ -164,15 +172,22 @@ export default function FormsManagementScreen({
         groupId: formGroupId || null,
         brands: formIsAllBrands ? brands.map(b => b.id) : formBrands,
         isAllBrands: formIsAllBrands,
-        isDefault: formIsDefault
+        isDefault: formIsDefault,
+        elements: editingForm?.elements || [],
+        isLocked: true
       };
 
       if (editingForm) {
         await api.updateCustomForm(editingForm.id, payload);
         showToast('Form template updated successfully!', 'success');
       } else {
-        await api.createCustomForm(payload);
+        const created = await api.createCustomForm(payload);
         showToast('Form template created successfully!', 'success');
+        setOpenedForm({
+          type: formType,
+          template: created || payload,
+          mode: 'builder'
+        });
       }
 
       setShowFormModal(false);
@@ -182,13 +197,14 @@ export default function FormsManagementScreen({
     }
   };
 
-  // Toggle Lock/Unlock state on a form
+  // Toggle Lock/Unlock state on a form (Default is Locked)
   const handleToggleLock = async (form) => {
-    const newLockState = !form.isLocked;
+    const currentLock = form.isLocked === undefined ? true : Boolean(form.isLocked);
+    const newLockState = !currentLock;
     try {
       await api.updateCustomForm(form.id, { isLocked: newLockState });
       setCustomForms(prev => prev.map(f => f.id === form.id ? { ...f, isLocked: newLockState } : f));
-      showToast(newLockState ? 'Form Locked 🔒' : 'Form Unlocked 🔓', 'info');
+      showToast(newLockState ? 'Form Locked 🔒' : 'Form Unlocked 🔓 Select Brands is now enabled!', 'info');
     } catch (err) {
       showToast('Failed to toggle lock', 'error');
     }
@@ -335,7 +351,12 @@ export default function FormsManagementScreen({
   // =========================================================================
   if (activeSection === null) {
     return (
-      <div className="forms-hub-page" style={{ paddingBottom: '90px', minHeight: 'calc(100vh - 80px)', display: 'flex', flexDirection: 'column' }}>
+      <div className="forms-hub-page" style={{
+        paddingBottom: '24px',
+        minHeight: 'calc(100dvh - 140px)',
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
         {/* Top Header */}
         <div style={{
           background: '#ffffff',
@@ -369,13 +390,12 @@ export default function FormsManagementScreen({
           <div style={{ width: '40px' }} />
         </div>
 
-        {/* Content Body matching image copy 51.png */}
+        {/* Content Body */}
         <div style={{
           padding: '24px 16px',
           display: 'flex',
           flexDirection: 'column',
-          flex: 1,
-          justifyContent: 'space-between'
+          flex: 1
         }}>
           {/* Top 02 Primary Category Buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', paddingTop: '16px' }}>
@@ -436,8 +456,11 @@ export default function FormsManagementScreen({
             </button>
           </div>
 
-          {/* Bottom Button matching image copy 73.png: Create Group on Down */}
-          <div style={{ paddingBottom: '16px', paddingTop: '40px' }}>
+          {/* Spacer pushing Create Group firmly down to the bottom */}
+          <div style={{ flex: 1, minHeight: '60px' }} />
+
+          {/* Bottom Button matching image copy 87.png: Create Group on Down */}
+          <div style={{ marginTop: 'auto', paddingBottom: '16px', paddingTop: '16px' }}>
             <button
               type="button"
               onClick={handleOpenCreateGroup}
@@ -600,7 +623,7 @@ export default function FormsManagementScreen({
       .map(bId => brands.find(b => b.id === bId))
       .filter(Boolean);
 
-    const isLocked = Boolean(form.isLocked);
+    const isLocked = form.isLocked === undefined ? true : Boolean(form.isLocked);
     const isDefault = Boolean(form.isDefault || index === 0);
 
     return (
@@ -705,11 +728,16 @@ export default function FormsManagementScreen({
               )}
             </div>
 
-            {/* Select Brands Button in Blue (Per image copy 74.png requirement) */}
+            {/* Select Brands Button in Blue: Only works when unlocked per image copy 90.png */}
             <button
               type="button"
+              disabled={isLocked}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isLocked) {
+                  showToast('Form is Locked 🔒 Please click "Locked" to unlock first!', 'warning');
+                  return;
+                }
                 setBrandAssignForm(form);
               }}
               id={`select-brands-btn-${form.id}`}
@@ -718,18 +746,21 @@ export default function FormsManagementScreen({
                 fontSize: '12px',
                 fontWeight: 800,
                 borderRadius: '10px',
-                border: '1.5px solid #2563eb',
-                background: '#eff6ff',
-                color: '#1d4ed8',
-                cursor: 'pointer',
+                border: isLocked ? '1.5px solid #cbd5e1' : '1.5px solid #2563eb',
+                background: isLocked ? '#f1f5f9' : '#eff6ff',
+                color: isLocked ? '#94a3b8' : '#1d4ed8',
+                cursor: isLocked ? 'not-allowed' : 'pointer',
                 whiteSpace: 'nowrap',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '5px',
+                opacity: isLocked ? 0.6 : 1,
                 transition: 'all 0.15s ease',
-                boxShadow: '0 2px 6px rgba(37,99,235,0.15)'
+                boxShadow: isLocked ? 'none' : '0 2px 6px rgba(37,99,235,0.15)'
               }}
+              title={isLocked ? 'Form is Locked. Unlock first to change brands.' : 'Click to select brands'}
             >
+              {isLocked && <Lock size={12} color="#94a3b8" />}
               <span>Select Brands</span>
             </button>
           </div>
@@ -1306,10 +1337,31 @@ export default function FormsManagementScreen({
   }
 }
 
+// Helper: Get brand specific theme color matching image copy 89.png
+function getBrandThemeColor(brand) {
+  if (!brand) return '#2563eb';
+  const id = (brand.id || '').toLowerCase();
+  const name = (brand.displayName || brand.name || '').toLowerCase();
+  if (id.includes('netflix') || name.includes('netflix')) return '#e50914';
+  if (id.includes('prime') || name.includes('prime') || id.includes('amazon')) return '#00a8e1';
+  if (id.includes('hotstar') || name.includes('hotstar') || id.includes('disney')) return '#113ccf';
+  if (id.includes('sonyliv') || name.includes('sonyliv') || name.includes('sony')) return '#7c3aed';
+  if (id.includes('zee5') || name.includes('zee5') || name.includes('zee')) return '#ea580c';
+  if (id.includes('aha') || name.includes('aha')) return '#ff6600';
+  if (id.includes('youtube') || name.includes('youtube')) return '#ff0000';
+  if (id.includes('spotify') || name.includes('spotify')) return '#1ed760';
+  if (id.includes('apple') || name.includes('apple')) return '#111827';
+  if (id.includes('jiocinema') || name.includes('jiocinema') || id.includes('jio')) return '#e11d48';
+  if (id.includes('sunnxt') || name.includes('sunnxt')) return '#f59e0b';
+  if (id.includes('voot') || name.includes('voot')) return '#9333ea';
+  if (id.includes('altbalaji') || name.includes('altbalaji')) return '#ef4444';
+  return brand.color || '#2563eb';
+}
+
 // =========================================================================
 // SUB-COMPONENT: BRAND SELECTION MODAL
-// With Big "All Brands" Button at Top & Individual Selection below side-by-side
-// Matching image copy 76.png & image copy 78.png
+// Centered small popup on middle of screen matching image copy 88.png & 89.png
+// Each brand has its related signature color
 // =========================================================================
 function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
   const [isAllBrands, setIsAllBrands] = useState(Boolean(form.isAllBrands));
@@ -1344,22 +1396,67 @@ function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
   };
 
   return (
-    <div className="modal-backdrop" onClick={onClose} style={{ zIndex: 100 }}>
-      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '420px', padding: '16px' }}>
+    <div
+      className="modal-overlay"
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        backgroundColor: 'rgba(15, 23, 42, 0.72)',
+        backdropFilter: 'blur(6px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '16px'
+      }}
+    >
+      <div
+        className="modal-card"
+        onClick={e => e.stopPropagation()}
+        style={{
+          maxWidth: '380px',
+          width: '100%',
+          borderRadius: '20px',
+          padding: '20px',
+          background: '#ffffff',
+          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)',
+          maxHeight: '85vh',
+          display: 'flex',
+          flexDirection: 'column'
+        }}
+      >
         <div className="modal-header" style={{ marginBottom: '12px' }}>
           <div>
-            <h3 className="modal-title" style={{ fontSize: '17px' }}>Select Brands</h3>
+            <h3 className="modal-title" style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a' }}>
+              Select Brands
+            </h3>
             <p style={{ margin: 0, fontSize: '11.5px', color: '#64748b' }}>
               Assign to {form.heading || form.title || form.name}
             </p>
           </div>
-          <button type="button" className="modal-close-btn" onClick={onClose}>
+          <button
+            type="button"
+            className="modal-close-btn"
+            onClick={onClose}
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '8px',
+              border: '1px solid #e2e8f0',
+              background: '#f8fafc',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer'
+            }}
+          >
             <X size={18} />
           </button>
         </div>
 
         <div>
-          {/* BIG "ALL BRANDS" BUTTON AT TOP (Per requirement image copy 76 & 78) */}
+          {/* BIG "ALL BRANDS" BUTTON AT TOP */}
           <button
             type="button"
             onClick={handleSelectAllBrands}
@@ -1401,7 +1498,7 @@ function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
             paddingTop: '4px',
             borderTop: '1px solid #e2e8f0'
           }}>
-            <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
               Or Select Individual Brands ({brands.length})
             </span>
             {!isAllBrands && selectedBrands.length > 0 && (
@@ -1415,18 +1512,19 @@ function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
             )}
           </div>
 
-          {/* Individual Brands Grid - Side by Side in small popup */}
+          {/* Individual Brands Grid - Side by Side in small popup with Signature Brand Colors */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(105px, 1fr))',
             gap: '8px',
-            maxHeight: '220px',
+            maxHeight: '230px',
             overflowY: 'auto',
             marginBottom: '16px',
             padding: '2px 0'
           }}>
             {brands.map(brand => {
               const isSelected = !isAllBrands && selectedBrands.includes(brand.id);
+              const brandColor = getBrandThemeColor(brand);
               return (
                 <button
                   key={brand.id}
@@ -1436,24 +1534,35 @@ function BrandSelectionModal({ form, brands = [], onSave, onClose }) {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    gap: '4px',
+                    gap: '6px',
                     padding: '8px 10px',
-                    borderRadius: '20px',
-                    border: isSelected ? `2px solid ${brand.color || '#2563eb'}` : '1.5px solid #cbd5e1',
-                    background: isSelected ? (brand.color || '#2563eb') : '#ffffff',
-                    color: isSelected ? '#ffffff' : '#334155',
-                    fontWeight: 800,
+                    borderRadius: '24px',
+                    border: `2px solid ${brandColor}`,
+                    background: isSelected ? brandColor : '#ffffff',
+                    color: isSelected ? '#ffffff' : brandColor,
+                    fontWeight: 900,
                     fontSize: '11.5px',
                     cursor: 'pointer',
-                    boxShadow: isSelected ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+                    boxShadow: isSelected ? `0 4px 10px ${brandColor}40` : '0 1px 3px rgba(0,0,0,0.06)',
                     transition: 'all 0.15s ease',
                     textAlign: 'center',
                     whiteSpace: 'nowrap',
                     textOverflow: 'ellipsis',
                     overflow: 'hidden'
                   }}
+                  title={brand.displayName || brand.name}
                 >
-                  {isSelected && <Check size={12} strokeWidth={3} />}
+                  {isSelected ? (
+                    <Check size={12} strokeWidth={3} />
+                  ) : (
+                    <span style={{
+                      width: '7px',
+                      height: '7px',
+                      borderRadius: '50%',
+                      backgroundColor: brandColor,
+                      display: 'inline-block'
+                    }} />
+                  )}
                   <span>{brand.displayName || brand.name}</span>
                 </button>
               );

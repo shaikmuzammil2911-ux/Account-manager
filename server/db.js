@@ -560,6 +560,14 @@ export const db = {
 
     data.sales.unshift(newSale);
     writeDb(data);
+
+    // Auto-sync sale to Google Sheets in real-time (Per user request: Data entered in Website will be updated on GSheet)
+    setTimeout(() => {
+      this.syncSingleSaleToGoogleSheets(newSale).catch(err => {
+        console.warn('Google Sheet sale background sync warning:', err.message);
+      });
+    }, 50);
+
     return { sale: newSale, assignedAccount };
   },
 
@@ -700,14 +708,20 @@ export const db = {
     const data = readDb();
     return data.settings?.googleSheetConfig || {
       enabled: false,
-      spreadsheetId: '',
+      spreadsheetId: '1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg',
+      ownerEmail: 'Fixyourmobiles10@gmail.com',
+      spreadsheetName: 'OTT A/C MANAGER',
       webhookUrl: '',
       sheetNames: {
-        netflix: 'Netflix',
-        amazon: 'Amazon',
-        aha: 'Aha',
-        allData: 'All Data',
-        sales: 'Sales'
+        netflix: 'NETFLIX',
+        netflixSold: 'NETFLIX-SOLD',
+        primeVideo: 'PRIME VIDEO',
+        primeVideoSold: 'PRIME VIDEO-SOLD',
+        zee5: 'ZEE5',
+        zee5Sold: 'ZEE5-SOLD',
+        aha: 'AHA',
+        ahaSold: 'AHA-SOLD',
+        allBrandsData: 'ALL BRANDS DATA'
       },
       autoSyncOnSale: true,
       lastSyncTime: null,
@@ -734,36 +748,39 @@ export const db = {
       brandMap[b.id] = b.displayName || b.name;
     });
 
-    const getSheetName = (brandId) => {
+    const getCanonicalBrandKey = (brandId) => {
       const id = (brandId || '').toLowerCase();
-      if (id === 'netflix') return 'Netflix';
-      if (id === 'prime_video' || id.includes('prime') || id.includes('amazon')) return 'Amazon';
-      if (id === 'aha') return 'Aha';
-      if (id === 'disney_hotstar') return 'Disney+ Hotstar';
-      if (id === 'sonyliv') return 'SonyLIV';
-      if (id === 'zee5') return 'ZEE5';
-      if (id === 'youtube_premium') return 'YouTube Premium';
-      if (id === 'spotify') return 'Spotify';
-      if (id === 'apple_tv') return 'Apple TV+';
-      if (id === 'jiocinema') return 'JioCinema';
-      return brandMap[brandId] || 'Other Brand';
+      if (id === 'netflix') return { db: 'NETFLIX', sold: 'NETFLIX-SOLD' };
+      if (id.includes('prime') || id.includes('amazon')) return { db: 'PRIME VIDEO', sold: 'PRIME VIDEO-SOLD' };
+      if (id.includes('zee')) return { db: 'ZEE5', sold: 'ZEE5-SOLD' };
+      if (id.includes('aha')) return { db: 'AHA', sold: 'AHA-SOLD' };
+      return { db: 'NETFLIX', sold: 'ALL BRANDS DATA' };
     };
 
-    const brandSheets = {};
-    const allDataRows = [];
+    const brandSheets = {
+      'NETFLIX': [],
+      'PRIME VIDEO': [],
+      'ZEE5': [],
+      'AHA': []
+    };
 
+    const soldSheets = {
+      'NETFLIX-SOLD': [],
+      'PRIME VIDEO-SOLD': [],
+      'ZEE5-SOLD': [],
+      'AHA-SOLD': [],
+      'ALL BRANDS DATA': []
+    };
+
+    // Populate Database Account rows
     (data.inventory || []).filter(item => !item.isDeleted).forEach(item => {
-      const brandName = brandMap[item.brandId] || item.brandId;
-      const sheetName = getSheetName(item.brandId);
-
-      if (!brandSheets[sheetName]) {
-        brandSheets[sheetName] = [];
-      }
+      const brandKeys = getCanonicalBrandKey(item.brandId);
+      const targetDbSheet = brandSheets[brandKeys.db] ? brandKeys.db : 'NETFLIX';
 
       (item.screens || []).forEach(screen => {
         const row = [
           String(item.id || ''),
-          String(brandName),
+          String(brandMap[item.brandId] || item.brandId),
           String(item.email || ''),
           String(item.password || ''),
           String(item.screens?.length || 5),
@@ -776,30 +793,81 @@ export const db = {
           new Date().toISOString().slice(0, 10)
         ];
 
-        brandSheets[sheetName].push(row);
-        allDataRows.push(row);
+        brandSheets[targetDbSheet].push(row);
       });
     });
 
-    const salesRows = (data.sales || []).map(sale => [
-      String(sale.id || ''),
-      String(sale.inventoryId || ''),
-      String(sale.brandName || sale.brandId || ''),
-      String(sale.screenNumber || ''),
-      String(sale.screenPin || ''),
-      String(sale.customerName || ''),
-      String(sale.customerNumber || ''),
-      String(sale.amount || ''),
-      String(sale.activationDate || sale.saleDate || ''),
-      String(sale.expiryDate || ''),
-      String(sale.status || 'Active')
-    ]);
+    // Populate Sold Customer rows (13 exact columns matching video)
+    // S.NO, SOLD DATE, BRAND, VALIDITY, PLAN, ACTIVATION, EXPIRY, ID, PASSWORD, SCREEN, PIN, DEVICE, AMOUNT
+    (data.sales || []).forEach((sale, idx) => {
+      const brandKeys = getCanonicalBrandKey(sale.brandId);
+      const soldRow = [
+        String(idx + 1),
+        String(sale.activationDate || sale.saleDate || new Date().toISOString().slice(0, 10)),
+        String(sale.brandName || brandMap[sale.brandId] || sale.brandId || 'OTT'),
+        String(sale.validity || '01 Month'),
+        String(sale.pricingPlan || 'Standard'),
+        String(sale.activationDate || sale.saleDate || ''),
+        String(sale.expiryDate || ''),
+        String(sale.accountEmail || ''),
+        String(sale.accountPassword || ''),
+        String(sale.screenNumber || '01'),
+        String(sale.screenPin || '1234'),
+        String(sale.deviceName || 'Personal Device'),
+        String(sale.amount || '0')
+      ];
+
+      // Add to consolidated sheet
+      soldSheets['ALL BRANDS DATA'].push(soldRow);
+
+      // Add to brand-specific sold sheet if applicable
+      if (soldSheets[brandKeys.sold]) {
+        soldSheets[brandKeys.sold].push(soldRow);
+      }
+    });
 
     return {
       brandSheets,
-      allDataRows,
-      salesRows
+      soldSheets,
+      allDataRows: soldSheets['ALL BRANDS DATA'],
+      salesRows: soldSheets['ALL BRANDS DATA']
     };
+  },
+
+  async syncSingleSaleToGoogleSheets(sale) {
+    const config = this.getSheetsConfig();
+    if (!config?.webhookUrl || !config.autoSyncOnSale) return;
+
+    try {
+      const payload = {
+        action: 'sync_sale',
+        sale: {
+          id: sale.id,
+          brand: sale.brandName || sale.brandId,
+          brandId: sale.brandId,
+          validity: sale.validity || '01 Month',
+          plan: sale.pricingPlan || 'Standard',
+          activationDate: sale.activationDate || sale.saleDate || new Date().toISOString().slice(0, 10),
+          expiryDate: sale.expiryDate || '',
+          email: sale.accountEmail || '',
+          password: sale.accountPassword || '',
+          screenNumber: sale.screenNumber || '01',
+          screenPin: sale.screenPin || '1234',
+          device: sale.deviceName || 'TV / Mobile / Laptop',
+          amount: Number(sale.amount) || 0,
+          customerName: sale.customerName || '',
+          customerNumber: sale.customerNumber || ''
+        }
+      };
+
+      await fetch(config.webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      console.warn('Background single sale Google Sheet sync error:', err.message);
+    }
   },
 
   async syncAllToGoogleSheets() {

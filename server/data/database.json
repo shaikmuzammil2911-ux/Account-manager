@@ -755,14 +755,20 @@
     },
     "googleSheetConfig": {
       "enabled": false,
-      "spreadsheetId": "",
+      "spreadsheetId": "1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg",
+      "ownerEmail": "Fixyourmobiles10@gmail.com",
+      "spreadsheetName": "OTT A/C MANAGER",
       "webhookUrl": "",
       "sheetNames": {
-        "netflix": "Netflix",
-        "amazon": "Amazon",
-        "aha": "Aha",
-        "allData": "All Data",
-        "sales": "Sales"
+        "netflix": "NETFLIX",
+        "netflixSold": "NETFLIX-SOLD",
+        "primeVideo": "PRIME VIDEO",
+        "primeVideoSold": "PRIME VIDEO-SOLD",
+        "zee5": "ZEE5",
+        "zee5Sold": "ZEE5-SOLD",
+        "aha": "AHA",
+        "ahaSold": "AHA-SOLD",
+        "allBrandsData": "ALL BRANDS DATA"
       },
       "autoSyncOnSale": true,
       "lastSyncTime": null,

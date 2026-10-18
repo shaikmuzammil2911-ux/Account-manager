@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  ArrowLeft, Save, Plus, Square, Type, Copy, ExternalLink,
+  ArrowLeft, ArrowUp, ArrowDown, ArrowRight, Save, Plus, Square, Type, Copy, ExternalLink,
   Trash2, Palette, Check, Sparkles, ChevronUp, ChevronDown,
   ChevronLeft, ChevronRight, Layers, Sliders, Tv, Shield,
-  Eye, User, Phone, Key, Smartphone, Calendar, Hash
+  Eye, User, Phone, Key, Smartphone, Calendar, Hash, X
 } from 'lucide-react';
 import { api } from '../api/client';
 
@@ -391,14 +391,17 @@ export default function FormBuilderCanvas({
     ];
   };
 
+  const isNewForm = !initialData?.id || initialData?.isNewForm || initialData?.isNew;
+
   const [elements, setElements] = useState(
     Array.isArray(initialData?.elements) && initialData.elements.length > 0
       ? initialData.elements
-      : getDefaultElements()
+      : (isNewForm ? [] : getDefaultElements())
   );
 
   const [selectedElementId, setSelectedElementId] = useState(elements[0]?.id || null);
-  const [dragState, setDragState] = useState(null);
+  const [moveStep, setMoveStep] = useState(10);
+  const [showToolsPanel, setShowToolsPanel] = useState(true);
   const canvasRef = useRef(null);
 
   const selectedElement = elements.find(el => el.id === selectedElementId);
@@ -442,8 +445,12 @@ export default function FormBuilderCanvas({
   };
 
   // Position control steps (Up, Down, Left, Right) per image copy 85.png
-  const handleMovePosition = (direction, step = 15) => {
-    if (!selectedElementId) return;
+  // Touching & moving freely disabled per user request: user selects Box and uses Navigation buttons
+  const handleMovePosition = (direction, step = moveStep) => {
+    if (!selectedElementId) {
+      showToast('Please select a Box or Text on canvas to move it!', 'info');
+      return;
+    }
     setElements(prev => prev.map(el => {
       if (el.id !== selectedElementId) return el;
       let newX = el.x;
@@ -454,44 +461,6 @@ export default function FormBuilderCanvas({
       if (direction === 'right') newX = el.x + step;
       return { ...el, x: newX, y: newY };
     }));
-  };
-
-  // Pointer dragging handlers
-  const handlePointerDown = (e, el) => {
-    e.stopPropagation();
-    setSelectedElementId(el.id);
-    const clientX = e.clientX || e.touches?.[0]?.clientX;
-    const clientY = e.clientY || e.touches?.[0]?.clientY;
-    setDragState({
-      id: el.id,
-      startX: clientX,
-      startY: clientY,
-      origX: el.x,
-      origY: el.y
-    });
-  };
-
-  const handlePointerMove = (e) => {
-    if (!dragState) return;
-    const clientX = e.clientX || e.touches?.[0]?.clientX;
-    const clientY = e.clientY || e.touches?.[0]?.clientY;
-    const dx = clientX - dragState.startX;
-    const dy = clientY - dragState.startY;
-
-    setElements(prev => prev.map(el => {
-      if (el.id === dragState.id) {
-        return {
-          ...el,
-          x: Math.max(0, Math.round(dragState.origX + dx)),
-          y: Math.max(0, Math.round(dragState.origY + dy))
-        };
-      }
-      return el;
-    }));
-  };
-
-  const handlePointerUp = () => {
-    setDragState(null);
   };
 
   // =========================================================================
@@ -685,10 +654,6 @@ export default function FormBuilderCanvas({
         background: '#f8fafc',
         userSelect: 'none'
       }}
-      onMouseMove={handlePointerMove}
-      onTouchMove={handlePointerMove}
-      onMouseUp={handlePointerUp}
-      onTouchEnd={handlePointerUp}
     >
       {/* 1. TOP HEADER BAR */}
       <div style={{
@@ -731,50 +696,31 @@ export default function FormBuilderCanvas({
                 maxWidth: '280px'
               }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
-              <span style={{
-                fontSize: '10.5px',
-                fontWeight: 800,
-                padding: '2px 6px',
-                borderRadius: '6px',
-                background: formType === 'sale' ? '#ffedd5' : '#dcfce7',
-                color: formType === 'sale' ? '#c2410c' : '#15803d'
-              }}>
-                {formType === 'sale' ? 'Sale Form Builder' : 'DataBase Form Builder'}
-              </span>
-              {isAllBrands ? (
-                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#2563eb' }}>
-                  • All Brands Assigned
-                </span>
-              ) : selectedBrands.length > 0 ? (
-                <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#2563eb' }}>
-                  • {selectedBrands.length} Brands Assigned
-                </span>
-              ) : null}
-            </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Toggle Tools Button (per user request: down Tools put open close button) */}
           <button
             type="button"
-            onClick={() => setShowBrandSelector(true)}
+            onClick={() => setShowToolsPanel(prev => !prev)}
             style={{
               padding: '7px 12px',
               borderRadius: '10px',
-              border: '1.5px solid #2563eb',
-              background: '#eff6ff',
-              color: '#1d4ed8',
-              fontSize: '12px',
+              border: showToolsPanel ? '1.5px solid #2563eb' : '1.5px solid #cbd5e1',
+              background: showToolsPanel ? '#eff6ff' : '#ffffff',
+              color: showToolsPanel ? '#1d4ed8' : '#334155',
+              fontSize: '12.5px',
               fontWeight: 800,
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',
-              gap: '4px'
+              gap: '5px'
             }}
+            id="builder-toggle-tools-btn"
           >
-            <Sparkles size={14} />
-            <span>Select Brands</span>
+            <Sliders size={14} />
+            <span>{showToolsPanel ? 'Close Tools' : 'Open Tools'}</span>
           </button>
 
           <button
@@ -805,7 +751,7 @@ export default function FormBuilderCanvas({
         flexDirection: window.innerWidth < 768 ? 'column' : 'row',
         position: 'relative'
       }}>
-        {/* LEFT / CENTER: CANVAS */}
+        {/* LEFT / CENTER: CANVAS (Clean plain white background, tap to select, no free dragging) */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '600px' }}>
           <div
             ref={canvasRef}
@@ -815,12 +761,65 @@ export default function FormBuilderCanvas({
               position: 'relative',
               minHeight: '620px',
               background: '#ffffff',
-              backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)',
-              backgroundSize: '20px 20px',
               overflow: 'auto',
               padding: '24px'
             }}
           >
+            {elements.length === 0 && (
+              <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '360px',
+                textAlign: 'center',
+                color: '#64748b',
+                padding: '24px',
+                border: '2px dashed #e2e8f0',
+                borderRadius: '16px',
+                margin: '20px 0'
+              }}>
+                <div style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '16px',
+                  background: '#eff6ff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: '12px'
+                }}>
+                  <Square size={26} color="#2563eb" />
+                </div>
+                <h3 style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>
+                  Plain White Form Canvas
+                </h3>
+                <p style={{ fontSize: '13px', margin: '0 0 16px', maxWidth: '300px', color: '#64748b' }}>
+                  Tap <strong>+ Add Box</strong> or <strong>+ Add Heading</strong> from the Tools panel on the right to start building your form.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowToolsPanel(true)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    border: '1.5px solid #2563eb',
+                    background: '#eff6ff',
+                    color: '#1d4ed8',
+                    fontSize: '12.5px',
+                    fontWeight: 800,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}
+                >
+                  <Sliders size={14} />
+                  <span>Open Tools</span>
+                </button>
+              </div>
+            )}
+
             {elements.map(el => {
               const isSelected = el.id === selectedElementId;
 
@@ -829,13 +828,15 @@ export default function FormBuilderCanvas({
                 return (
                   <div
                     key={el.id}
-                    onMouseDown={e => handlePointerDown(e, el)}
-                    onTouchStart={e => handlePointerDown(e, el)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSelectedElementId(el.id);
+                    }}
                     style={{
                       position: 'absolute',
                       left: el.x,
                       top: el.y,
-                      cursor: 'move',
+                      cursor: 'pointer',
                       fontSize: `${el.fontSize || 18}px`,
                       fontWeight: el.fontWeight || '900',
                       color: el.color || '#0f172a',
@@ -856,15 +857,17 @@ export default function FormBuilderCanvas({
                 return (
                   <div
                     key={el.id}
-                    onMouseDown={e => handlePointerDown(e, el)}
-                    onTouchStart={e => handlePointerDown(e, el)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSelectedElementId(el.id);
+                    }}
                     style={{
                       position: 'absolute',
                       left: el.x,
                       top: el.y,
                       width: `${el.width || 320}px`,
                       minHeight: `${el.height || 44}px`,
-                      cursor: 'move',
+                      cursor: 'pointer',
                       backgroundColor: el.bgColor || '#ffffff',
                       border: `${el.borderWidth || 2}px solid ${el.borderColor || '#cbd5e1'}`,
                       borderRadius: `${el.borderRadius || 12}px`,
@@ -873,7 +876,7 @@ export default function FormBuilderCanvas({
                       color: el.textColor || '#0f172a',
                       fontWeight: el.fontWeight || '700',
                       fontSize: `${el.fontSize || 13}px`,
-                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.35)' : '0 2px 6px rgba(0,0,0,0.04)',
+                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.45)' : '0 2px 6px rgba(0,0,0,0.04)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -890,16 +893,18 @@ export default function FormBuilderCanvas({
                 return (
                   <div
                     key={el.id}
-                    onMouseDown={e => handlePointerDown(e, el)}
-                    onTouchStart={e => handlePointerDown(e, el)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSelectedElementId(el.id);
+                    }}
                     style={{
                       position: 'absolute',
                       left: el.x,
                       top: el.y,
                       width: `${el.width || 320}px`,
-                      cursor: 'move',
+                      cursor: 'pointer',
                       boxSizing: 'border-box',
-                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.35)' : 'none',
+                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.45)' : 'none',
                       borderRadius: '10px'
                     }}
                   >
@@ -951,15 +956,17 @@ export default function FormBuilderCanvas({
                 return (
                   <div
                     key={el.id}
-                    onMouseDown={e => handlePointerDown(e, el)}
-                    onTouchStart={e => handlePointerDown(e, el)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSelectedElementId(el.id);
+                    }}
                     style={{
                       position: 'absolute',
                       left: el.x,
                       top: el.y,
                       width: `${el.width || 320}px`,
                       height: `${el.height || 46}px`,
-                      cursor: 'move',
+                      cursor: 'pointer',
                       background: el.bgColor || '#ea580c',
                       color: el.textColor || '#ffffff',
                       borderRadius: '12px',
@@ -969,7 +976,7 @@ export default function FormBuilderCanvas({
                       justifyContent: 'center',
                       fontWeight: 900,
                       fontSize: '13.5px',
-                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.4)' : '0 4px 12px rgba(0,0,0,0.12)'
+                      boxShadow: isSelected ? '0 0 0 3px rgba(37,99,235,0.45)' : '0 4px 12px rgba(0,0,0,0.12)'
                     }}
                   >
                     {el.label}
@@ -982,13 +989,15 @@ export default function FormBuilderCanvas({
                 return (
                   <div
                     key={el.id}
-                    onMouseDown={e => handlePointerDown(e, el)}
-                    onTouchStart={e => handlePointerDown(e, el)}
+                    onClick={e => {
+                      e.stopPropagation();
+                      setSelectedElementId(el.id);
+                    }}
                     style={{
                       position: 'absolute',
                       left: el.x,
                       top: el.y,
-                      cursor: 'move',
+                      cursor: 'pointer',
                       padding: '6px',
                       borderRadius: '8px',
                       border: isSelected ? '2px dashed #2563eb' : 'none'
@@ -1003,61 +1012,130 @@ export default function FormBuilderCanvas({
             })}
           </div>
 
-          {/* BOTTOM CANVAS TOOLBAR: POSITION CONTROLS [ ↑ Up ] [ ↓ Down ] [ ← Left ] [ → Right ] */}
+          {/* BOTTOM CANVAS TOOLBAR: 4 NAVIGATION BUTTONS MATCHING image copy 85.png */}
           <div style={{
             background: '#ffffff',
             borderTop: '1.5px solid #e2e8f0',
             padding: '10px 16px',
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: '10px'
+            flexDirection: 'column',
+            gap: '8px'
           }}>
-            {/* Selected Element Label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#64748b' }}>
-                Selected Element:
-              </span>
-              <span style={{
-                fontSize: '12px',
-                fontWeight: 900,
-                color: selectedElement ? '#2563eb' : '#94a3b8',
-                background: selectedElement ? '#eff6ff' : '#f1f5f9',
-                padding: '3px 8px',
-                borderRadius: '6px'
-              }}>
-                {selectedElement
-                  ? (selectedElement.label || selectedElement.text || selectedElement.type.toUpperCase())
-                  : 'None (Tap an element on canvas)'}
-              </span>
+            {/* Status & Quick Action Row */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              fontSize: '12px',
+              flexWrap: 'wrap',
+              gap: '6px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontWeight: 700, color: '#64748b' }}>Selected:</span>
+                <span style={{
+                  fontWeight: 800,
+                  color: selectedElement ? '#1d4ed8' : '#94a3b8',
+                  background: selectedElement ? '#eff6ff' : '#f1f5f9',
+                  padding: '2px 8px',
+                  borderRadius: '6px'
+                }}>
+                  {selectedElement ? (selectedElement.label || selectedElement.text || selectedElement.type.toUpperCase()) : 'None (Tap element on canvas)'}
+                </span>
+              </div>
+
+              {/* Step selector & Actions */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Step:</span>
+                {[5, 10, 20].map(s => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setMoveStep(s)}
+                    style={{
+                      padding: '2px 7px',
+                      borderRadius: '6px',
+                      border: moveStep === s ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                      background: moveStep === s ? '#2563eb' : '#ffffff',
+                      color: moveStep === s ? '#ffffff' : '#475569',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {s}px
+                  </button>
+                ))}
+
+                {selectedElement && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleDuplicateElement}
+                      title="Duplicate Element"
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: '1.5px solid #cbd5e1',
+                        background: '#f8fafc',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Copy size={13} color="#475569" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteElement(selectedElement.id)}
+                      title="Delete Element"
+                      style={{
+                        padding: '4px 8px',
+                        borderRadius: '6px',
+                        border: '1.5px solid #fca5a5',
+                        background: '#fef2f2',
+                        color: '#dc2626',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
 
-            {/* Position Controls matching image copy 85.png */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ fontSize: '11px', fontWeight: 800, color: '#475569', textTransform: 'uppercase', marginRight: '4px' }}>
-                Position:
-              </span>
-
+            {/* Exactly 4 Navigation Buttons side-by-side matching image copy 85.png */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '8px'
+            }}>
               <button
                 type="button"
                 onClick={() => handleMovePosition('up')}
                 disabled={!selectedElement}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
+                  padding: '12px 6px',
+                  borderRadius: '12px',
+                  border: '2px solid #2563eb',
                   background: '#ffffff',
+                  color: '#2563eb',
                   fontWeight: 800,
-                  fontSize: '12px',
+                  fontSize: '14.5px',
                   cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.5,
+                  opacity: selectedElement ? 1 : 0.45,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
                 }}
+                id="builder-move-up-btn"
               >
-                <ChevronUp size={15} /> Up
+                <ArrowUp size={18} strokeWidth={2.5} />
+                <span>Up</span>
               </button>
 
               <button
@@ -1065,20 +1143,25 @@ export default function FormBuilderCanvas({
                 onClick={() => handleMovePosition('down')}
                 disabled={!selectedElement}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
+                  padding: '12px 6px',
+                  borderRadius: '12px',
+                  border: '2px solid #2563eb',
                   background: '#ffffff',
+                  color: '#2563eb',
                   fontWeight: 800,
-                  fontSize: '12px',
+                  fontSize: '14.5px',
                   cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.5,
+                  opacity: selectedElement ? 1 : 0.45,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
                 }}
+                id="builder-move-down-btn"
               >
-                <ChevronDown size={15} /> Down
+                <ArrowDown size={18} strokeWidth={2.5} />
+                <span>Down</span>
               </button>
 
               <button
@@ -1086,20 +1169,25 @@ export default function FormBuilderCanvas({
                 onClick={() => handleMovePosition('left')}
                 disabled={!selectedElement}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
+                  padding: '12px 6px',
+                  borderRadius: '12px',
+                  border: '2px solid #2563eb',
                   background: '#ffffff',
+                  color: '#2563eb',
                   fontWeight: 800,
-                  fontSize: '12px',
+                  fontSize: '14.5px',
                   cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.5,
+                  opacity: selectedElement ? 1 : 0.45,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
                 }}
+                id="builder-move-left-btn"
               >
-                <ChevronLeft size={15} /> Left
+                <ArrowLeft size={18} strokeWidth={2.5} />
+                <span>Left</span>
               </button>
 
               <button
@@ -1107,78 +1195,90 @@ export default function FormBuilderCanvas({
                 onClick={() => handleMovePosition('right')}
                 disabled={!selectedElement}
                 style={{
-                  padding: '6px 12px',
-                  borderRadius: '8px',
-                  border: '1.5px solid #cbd5e1',
+                  padding: '12px 6px',
+                  borderRadius: '12px',
+                  border: '2px solid #2563eb',
                   background: '#ffffff',
+                  color: '#2563eb',
                   fontWeight: 800,
-                  fontSize: '12px',
+                  fontSize: '14.5px',
                   cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.5,
+                  opacity: selectedElement ? 1 : 0.45,
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
                 }}
+                id="builder-move-right-btn"
               >
-                <ChevronRight size={15} /> Right
+                <ArrowRight size={18} strokeWidth={2.5} />
+                <span>Right</span>
               </button>
-
-              {/* Duplicate & Delete shortcuts */}
-              {selectedElement && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleDuplicateElement}
-                    title="Duplicate element"
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #cbd5e1',
-                      background: '#f8fafc',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Copy size={14} color="#475569" />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteElement(selectedElement.id)}
-                    title="Delete element"
-                    style={{
-                      padding: '6px 10px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #fca5a5',
-                      background: '#fef2f2',
-                      color: '#dc2626',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </>
-              )}
             </div>
           </div>
         </div>
 
-        {/* RIGHT: TOOLS PANEL (Matching image copy 85.png layout) */}
-        <div style={{
-          width: window.innerWidth < 768 ? '100%' : '340px',
-          background: '#ffffff',
-          borderLeft: '1.5px solid #e2e8f0',
-          display: 'flex',
-          flexDirection: 'column',
-          maxHeight: 'calc(100vh - 65px)',
-          overflowY: 'auto'
-        }}>
-          {/* Tools Panel Tab Header */}
+        {/* RIGHT: TOOLS PANEL (Fixed on right, with close button, matching image copy 85.png) */}
+        {showToolsPanel && (
           <div style={{
+            width: window.innerWidth < 768 ? '100%' : '350px',
+            background: '#ffffff',
+            borderLeft: '1.5px solid #e2e8f0',
             display: 'flex',
-            borderBottom: '1.5px solid #e2e8f0',
-            background: '#f8fafc',
-            overflowX: 'auto'
+            flexDirection: 'column',
+            position: window.innerWidth < 768 ? 'fixed' : 'sticky',
+            top: window.innerWidth < 768 ? '55px' : '60px',
+            right: 0,
+            bottom: window.innerWidth < 768 ? 0 : 'auto',
+            height: window.innerWidth < 768 ? 'calc(100vh - 55px)' : 'calc(100vh - 60px)',
+            zIndex: window.innerWidth < 768 ? 120 : 40,
+            boxShadow: window.innerWidth < 768 ? '-6px 0 24px rgba(0,0,0,0.18)' : 'none',
+            overflowY: 'auto'
           }}>
+            {/* Panel Top Title with Close button */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '10px 14px',
+              background: '#f8fafc',
+              borderBottom: '1.5px solid #e2e8f0'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sliders size={16} color="#2563eb" />
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>Tools & Options</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowToolsPanel(false)}
+                style={{
+                  border: 'none',
+                  background: '#fee2e2',
+                  color: '#dc2626',
+                  borderRadius: '8px',
+                  padding: '4px 8px',
+                  fontSize: '11.5px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+                id="builder-close-tools-btn"
+              >
+                <X size={14} />
+                <span>Close</span>
+              </button>
+            </div>
+
+            {/* Tools Panel Tab Header */}
+            <div style={{
+              display: 'flex',
+              borderBottom: '1.5px solid #e2e8f0',
+              background: '#f8fafc',
+              overflowX: 'auto'
+            }}>
             <button
               type="button"
               onClick={() => setActiveToolTab('add')}
@@ -1648,6 +1748,7 @@ export default function FormBuilderCanvas({
             )}
           </div>
         </div>
+      )}
       </div>
 
       {/* BRAND ASSIGNMENT MODAL (Big All Brands button at top + individual below) */}
