@@ -367,6 +367,13 @@ export const db = {
 
     data.inventory.push(newItem);
     writeDb(data);
+
+    setTimeout(() => {
+      this.syncAccountToGoogleSheets(newItem).catch(err => {
+        console.warn('Google Sheet account sync warning:', err.message);
+      });
+    }, 50);
+
     return newItem;
   },
 
@@ -404,6 +411,13 @@ export const db = {
     };
 
     writeDb(data);
+
+    setTimeout(() => {
+      this.syncAccountToGoogleSheets(data.inventory[idx]).catch(err => {
+        console.warn('Google Sheet account update sync warning:', err.message);
+      });
+    }, 50);
+
     return data.inventory[idx];
   },
 
@@ -433,6 +447,13 @@ export const db = {
     item.isDeleted = true;
     item.deletedAt = new Date().toISOString();
     writeDb(data);
+
+    setTimeout(() => {
+      this.syncAccountToGoogleSheets(item, true).catch(err => {
+        console.warn('Google Sheet account delete sync warning:', err.message);
+      });
+    }, 50);
+
     return true;
   },
 
@@ -624,7 +645,47 @@ export const db = {
       updatedAt: new Date().toISOString()
     };
     writeDb(data);
+
+    setTimeout(() => {
+      this.syncSingleSaleToGoogleSheets(data.sales[idx], true).catch(err => {
+        console.warn('Google Sheet sale update background sync warning:', err.message);
+      });
+    }, 50);
+
     return data.sales[idx];
+  },
+
+  deleteSale(id) {
+    const data = readDb();
+    const idx = (data.sales || []).findIndex(s => s.id === id);
+    if (idx === -1) return null;
+
+    const [deletedSale] = data.sales.splice(idx, 1);
+
+    // Free the screen in inventory
+    const inv = (data.inventory || []).find(i =>
+      (deletedSale.inventoryId && i.id === deletedSale.inventoryId) ||
+      (deletedSale.accountEmail && i.email?.toLowerCase() === deletedSale.accountEmail.toLowerCase())
+    );
+    if (inv && inv.screens) {
+      const sNum = parseInt(String(deletedSale.screenNumber).replace(/\D/g, '') || '1', 10);
+      const screen = inv.screens.find(s => s.screenNumber === sNum);
+      if (screen) {
+        screen.status = 'empty';
+        screen.saleId = null;
+        screen.expiryDate = null;
+      }
+    }
+
+    writeDb(data);
+
+    setTimeout(() => {
+      this.syncSaleDeleteToGoogleSheets(deletedSale).catch(err => {
+        console.warn('Google Sheet delete sale warning:', err.message);
+      });
+    }, 50);
+
+    return deletedSale;
   },
 
   getExpiryList({ filter = 'ALL', brandId = 'all' } = {}) {
@@ -880,39 +941,120 @@ export const db = {
     };
   },
 
-  async syncSingleSaleToGoogleSheets(sale) {
+  async syncSingleSaleToGoogleSheets(sale, isUpdate = false) {
     const config = this.getSheetsConfig();
     if (!config?.webhookUrl || !config.autoSyncOnSale) return;
 
     try {
+      const getCanonicalBrand = (brandId, brandName) => {
+        const norm = (brandId || brandName || '').toLowerCase().trim();
+        if (norm.includes('netflix')) return 'NETFLIX';
+        if (norm.includes('prime') || norm.includes('amazon')) return 'PRIME VIDEO';
+        if (norm.includes('zee5') || norm.includes('zee')) return 'ZEE5';
+        if (norm.includes('aha')) return 'AHA';
+        if (norm.includes('hotstar') || norm.includes('disney')) return 'DISNEY+ HOTSTAR';
+        if (norm.includes('sonyliv') || norm.includes('sony')) return 'SONYLIV';
+        if (norm.includes('youtube')) return 'YOUTUBE';
+        if (norm.includes('spotify')) return 'SPOTIFY';
+        if (norm.includes('apple')) return 'APPLE TV';
+        if (norm.includes('jio')) return 'JIOCINEMA';
+        return (brandName || brandId || 'BRAND').toUpperCase();
+      };
+
+      const brand = getCanonicalBrand(sale.brandId, sale.brandName);
+      const saleRow = [
+        String(sale.recordNumber || '01'),
+        String(sale.saleDate || sale.activationDate || new Date().toISOString().slice(0, 10)),
+        brand,
+        String(sale.validity || '01-MONTH').toUpperCase(),
+        String(sale.pricingPlan || sale.plan || 'STANDARD').toUpperCase(),
+        String(sale.activationDate || sale.saleDate || ''),
+        String(sale.expiryDate || ''),
+        String(sale.accountEmail || sale.email || ''),
+        String(sale.accountPassword || sale.password || ''),
+        String(sale.screenNumber || 'Screen-1'),
+        String(sale.screenPin || sale.pin || '1234'),
+        String(sale.deviceName || 'Personal TV'),
+        String(sale.amount !== undefined ? sale.amount : '0')
+      ];
+
       const payload = {
-        action: 'sync_sale',
-        sale: {
-          id: sale.id,
-          brand: sale.brandName || sale.brandId,
-          brandId: sale.brandId,
-          validity: sale.validity || '01 Month',
-          plan: sale.pricingPlan || 'Standard',
-          activationDate: sale.activationDate || sale.saleDate || new Date().toISOString().slice(0, 10),
-          expiryDate: sale.expiryDate || '',
-          email: sale.accountEmail || '',
-          password: sale.accountPassword || '',
-          screenNumber: sale.screenNumber || '01',
-          screenPin: sale.screenPin || '1234',
-          device: sale.deviceName || 'TV / Mobile / Laptop',
-          amount: Number(sale.amount) || 0,
-          customerName: sale.customerName || '',
-          customerNumber: sale.customerNumber || ''
-        }
+        action: isUpdate ? 'update_sale' : 'add_sale',
+        brand,
+        saleRow,
+        sale,
+        accountEmail: sale.accountEmail,
+        screenNumber: sale.screenNumber,
+        expiryDate: sale.expiryDate
       };
 
       await fetch(config.webhookUrl.trim(), {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        redirect: 'follow'
       });
     } catch (err) {
       console.warn('Background single sale Google Sheet sync error:', err.message);
+    }
+  },
+
+  async syncSaleDeleteToGoogleSheets(sale) {
+    const config = this.getSheetsConfig();
+    if (!config?.webhookUrl) return;
+
+    try {
+      const norm = (sale.brandId || sale.brandName || '').toLowerCase().trim();
+      let brand = (sale.brandName || sale.brandId || 'BRAND').toUpperCase();
+      if (norm.includes('netflix')) brand = 'NETFLIX';
+      else if (norm.includes('prime') || norm.includes('amazon')) brand = 'PRIME VIDEO';
+      else if (norm.includes('zee5') || norm.includes('zee')) brand = 'ZEE5';
+      else if (norm.includes('aha')) brand = 'AHA';
+
+      await fetch(config.webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: 'delete_sale',
+          brand,
+          accountEmail: sale.accountEmail,
+          screenNumber: sale.screenNumber,
+          sale
+        }),
+        redirect: 'follow'
+      });
+    } catch (err) {
+      console.warn('Background delete sale Google Sheet sync error:', err.message);
+    }
+  },
+
+  async syncAccountToGoogleSheets(account, isDelete = false) {
+    const config = this.getSheetsConfig();
+    if (!config?.webhookUrl) return;
+
+    try {
+      const data = readDb();
+      const bObj = (data.brands || []).find(b => b.id === account.brandId);
+      const norm = (account.brandId || bObj?.name || '').toLowerCase().trim();
+      let brand = (bObj?.displayName || bObj?.name || account.brandId || 'NETFLIX').toUpperCase();
+      if (norm.includes('netflix')) brand = 'NETFLIX';
+      else if (norm.includes('prime') || norm.includes('amazon')) brand = 'PRIME VIDEO';
+      else if (norm.includes('zee5') || norm.includes('zee')) brand = 'ZEE5';
+      else if (norm.includes('aha')) brand = 'AHA';
+
+      await fetch(config.webhookUrl.trim(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          action: isDelete ? 'delete_account' : 'update_account',
+          brand,
+          email: account.email,
+          account
+        }),
+        redirect: 'follow'
+      });
+    } catch (err) {
+      console.warn('Background account Google Sheet sync error:', err.message);
     }
   },
 

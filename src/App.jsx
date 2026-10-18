@@ -70,7 +70,13 @@ export default function App() {
   const [toast, setToast] = useState({ message: '', type: 'info' });
 
   const showToast = (message, type = 'info') => {
-    setToast({ message, type });
+    let cleanMessage = message;
+    if (typeof cleanMessage === 'string') {
+      if (cleanMessage === 'Failed to fetch' || cleanMessage.includes('Failed to fetch') || cleanMessage.includes('NetworkError') || cleanMessage.includes('Load failed')) {
+        cleanMessage = 'Unable to reach Google Sheets. In Apps Script, click Deploy > Manage deployments > Edit > set "Who has access" to "Anyone".';
+      }
+    }
+    setToast({ message: cleanMessage, type });
     setTimeout(() => {
       setToast({ message: '', type: 'info' });
     }, 3200);
@@ -118,10 +124,20 @@ export default function App() {
           showToast(`Synced with Google Sheets (${res.updatedSalesCount || 0} updated)`, 'success');
         }
       } else if (!silent && res?.message) {
-        showToast(res.message, 'info');
+        let msg = res.message;
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          msg = 'Unable to reach Google Sheets. In Apps Script, click Deploy > Manage deployments > Edit > set "Who has access" to "Anyone".';
+        }
+        showToast(msg, 'info');
       }
     } catch (e) {
-      if (!silent) showToast('Sync failed: ' + e.message, 'error');
+      if (!silent) {
+        let msg = e.message || 'Sync failed';
+        if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('Load failed')) {
+          msg = 'Unable to reach Google Sheets. In Apps Script, click Deploy > Manage deployments > Edit > set "Who has access" to "Anyone".';
+        }
+        showToast(msg, 'error');
+      }
     }
   };
 

@@ -469,6 +469,16 @@ app.put('/api/sales/:id', (req, res) => {
   }
 });
 
+app.delete('/api/sales/:id', (req, res) => {
+  try {
+    const deleted = db.deleteSale(req.params.id);
+    if (!deleted) return res.status(404).json({ error: 'Sale not found' });
+    res.json({ success: true, deleted });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Expiry
 app.get('/api/expiry', (req, res) => {
   try {
@@ -552,18 +562,30 @@ app.post('/api/sheets/test', async (req, res) => {
 
     const response = await fetch(testUrl.toString(), {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      redirect: 'follow'
     });
 
-    if (!response.ok) {
-      db.updateSheetsConfig({ status: 'Error', lastError: `HTTP ${response.status}` });
-      return res.status(response.status).json({
+    const text = await response.text();
+    if (text.includes('ServiceLogin') || text.includes('accounts.google.com')) {
+      db.updateSheetsConfig({ status: 'Error', lastError: 'Permission error: Access must be set to Anyone' });
+      return res.status(401).json({
         connected: false,
-        message: `HTTP error ${response.status}: ${response.statusText}`
+        message: 'Apps Script permission error: In Apps Script, click Deploy > Manage deployments > Edit > set "Who has access" to "Anyone" and redeploy.'
       });
     }
 
-    const data = await response.json();
+    let data = {};
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      db.updateSheetsConfig({ status: 'Error', lastError: 'Invalid JSON returned' });
+      return res.status(502).json({
+        connected: false,
+        message: 'Google Apps Script did not return JSON. Ensure Apps Script code is deployed as Web App.'
+      });
+    }
+
     const isConnected = data.status === 'connected';
     db.updateSheetsConfig({
       status: isConnected ? 'Connected' : 'Error',
@@ -598,7 +620,8 @@ app.post('/api/sheets/validate', async (req, res) => {
     const response = await fetch(webhookUrl.trim(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'validate_sheets', autoCreate })
+      body: JSON.stringify({ action: 'validate_sheets', autoCreate }),
+      redirect: 'follow'
     });
 
     const data = await response.json();
@@ -620,6 +643,45 @@ app.post('/api/sheets/sync', async (req, res) => {
   }
 });
 
+// Server-side relay proxy for all Google Sheet write actions (prevents browser CORS & Failed to fetch)
+app.post('/api/sheets/proxy', async (req, res) => {
+  try {
+    const config = db.getSheetsConfig();
+    const webhookUrl = req.body.webhookUrl || config?.webhookUrl;
+    if (!webhookUrl || !webhookUrl.trim()) {
+      return res.status(400).json({ status: 'error', message: 'No Google Sheet Webhook URL configured' });
+    }
+
+    const targetUrl = webhookUrl.trim();
+    const payload = { ...req.body };
+    delete payload.webhookUrl;
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(payload),
+      redirect: 'follow'
+    });
+
+    const text = await response.text();
+    if (text.includes('ServiceLogin') || text.includes('accounts.google.com')) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Apps Script permission error: Set "Who has access" to "Anyone" in Web App deployment.'
+      });
+    }
+
+    try {
+      const json = JSON.parse(text);
+      return res.json(json);
+    } catch (parseErr) {
+      return res.json({ status: 'success', raw: text });
+    }
+  } catch (err) {
+    res.status(500).json({ status: 'error', message: err.message });
+  }
+});
+
 app.get('/api/sheets/live-data', async (req, res) => {
   try {
     const config = db.getSheetsConfig();
@@ -634,15 +696,24 @@ app.get('/api/sheets/live-data', async (req, res) => {
 
     const response = await fetch(fetchUrl.toString(), {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      redirect: 'follow'
     });
 
-    if (!response.ok) {
-      return res.status(response.status).json({ status: 'error', message: `HTTP ${response.status}: ${response.statusText}` });
+    const text = await response.text();
+    if (text.includes('ServiceLogin') || text.includes('accounts.google.com')) {
+      return res.status(401).json({
+        status: 'error',
+        message: 'Apps Script permission error: In Apps Script, set "Who has access" to "Anyone".'
+      });
     }
 
-    const data = await response.json();
-    res.json(data);
+    try {
+      const data = JSON.parse(text);
+      res.json(data);
+    } catch (e) {
+      res.status(502).json({ status: 'error', message: 'Spreadsheet returned non-JSON response' });
+    }
   } catch (err) {
     res.status(500).json({ status: 'error', message: err.message });
   }

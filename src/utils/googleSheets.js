@@ -804,29 +804,43 @@ function syncInventoryAccountsToSheets(ss, inventory) {
 `;
 
 /**
- * Real-time sync sale to Google Sheets Web App endpoint (create or update)
+ * Safely post to Google Sheets:
+ * 1. Tries the same-origin backend relay /api/sheets/proxy (bypasses browser CORS & eliminates "Failed to fetch")
+ * 2. Falls back to direct browser fetch if proxy is unreachable.
  */
-export async function syncSaleToGoogleSheet(webhookUrl, sale, isUpdate = false) {
+async function sendToSheetsEndpoint(webhookUrl, payload) {
+  // 1. Same-origin backend proxy
+  try {
+    const res = await fetch('/api/sheets/proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: webhookUrl || '', ...payload })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { success: data.status === 'success' || data.success === true, data, message: data.message };
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (!webhookUrl || !webhookUrl.trim()) {
+        return { success: false, message: errData?.message || 'Google Sheet Webhook URL not configured' };
+      }
+    }
+  } catch (proxyErr) {
+    console.warn('Backend proxy fetch failed, attempting direct browser fallback:', proxyErr.message);
+  }
+
+  // 2. Direct browser fallback (only if webhookUrl is non-empty)
   if (!webhookUrl || !webhookUrl.trim()) {
     return { success: false, message: 'Google Sheet Webhook URL not configured' };
   }
 
   try {
-    const brandName = getDbSheetName(sale.brandId, sale.brandName);
-    const saleRow = formatSaleRow13(sale);
-
     const response = await fetch(webhookUrl.trim(), {
       method: 'POST',
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: isUpdate ? 'update_sale' : 'add_sale',
-        brand: brandName,
-        saleRow,
-        sale,
-        accountEmail: sale.accountEmail,
-        screenNumber: sale.screenNumber,
-        expiryDate: sale.expiryDate
-      })
+      body: JSON.stringify(payload),
+      mode: 'cors',
+      redirect: 'follow'
     });
 
     if (!response.ok) {
@@ -838,145 +852,111 @@ export async function syncSaleToGoogleSheet(webhookUrl, sale, isUpdate = false) 
   } catch (err) {
     return { success: false, message: err.message };
   }
+}
+
+/**
+ * Real-time sync sale to Google Sheets Web App endpoint (create or update)
+ */
+export async function syncSaleToGoogleSheet(webhookUrl, sale, isUpdate = false) {
+  const brandName = getDbSheetName(sale.brandId, sale.brandName);
+  const saleRow = formatSaleRow13(sale);
+
+  return await sendToSheetsEndpoint(webhookUrl || '', {
+    action: isUpdate ? 'update_sale' : 'add_sale',
+    brand: brandName,
+    saleRow,
+    sale,
+    accountEmail: sale.accountEmail,
+    screenNumber: sale.screenNumber,
+    expiryDate: sale.expiryDate
+  });
 }
 
 /**
  * Real-time delete sale from Google Sheets Web App endpoint
  */
 export async function syncSaleDeleteToGoogleSheet(webhookUrl, sale) {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return { success: false, message: 'Google Sheet Webhook URL not configured' };
-  }
-
-  try {
-    const brandName = getDbSheetName(sale.brandId, sale.brandName);
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'delete_sale',
-        brand: brandName,
-        accountEmail: sale.accountEmail,
-        screenNumber: sale.screenNumber,
-        sale
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('HTTP error ' + response.status);
-    }
-
-    const data = await response.json();
-    return { success: data.status === 'success', data, message: data.message };
-  } catch (err) {
-    return { success: false, message: err.message };
-  }
+  const brandName = getDbSheetName(sale.brandId, sale.brandName);
+  return await sendToSheetsEndpoint(webhookUrl || '', {
+    action: 'delete_sale',
+    brand: brandName,
+    accountEmail: sale.accountEmail,
+    screenNumber: sale.screenNumber,
+    sale
+  });
 }
 
 /**
  * Real-time delete account from Google Sheets database sheet
  */
 export async function syncAccountDeleteToGoogleSheet(webhookUrl, account, brandName) {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return { success: false, message: 'Google Sheet Webhook URL not configured' };
-  }
-
-  try {
-    const brand = getDbSheetName(account.brandId, brandName);
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'delete_account',
-        brand,
-        email: account.email,
-        account
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('HTTP error ' + response.status);
-    }
-
-    const data = await response.json();
-    return { success: data.status === 'success', data, message: data.message };
-  } catch (err) {
-    return { success: false, message: err.message };
-  }
+  const brand = getDbSheetName(account.brandId, brandName);
+  return await sendToSheetsEndpoint(webhookUrl || '', {
+    action: 'delete_account',
+    brand,
+    email: account.email,
+    account
+  });
 }
 
 /**
  * Real-time sync single account to Google Sheets database sheet
  */
 export async function syncAccountToGoogleSheet(webhookUrl, account, brandName) {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return { success: false, message: 'Google Sheet Webhook URL not configured' };
-  }
-
-  try {
-    const brand = getDbSheetName(account.brandId, brandName);
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({
-        action: 'update_account',
-        brand,
-        account
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('HTTP error ' + response.status);
-    }
-
-    const data = await response.json();
-    return { success: data.status === 'success', data, message: data.message };
-  } catch (err) {
-    return { success: false, message: err.message };
-  }
+  const brand = getDbSheetName(account.brandId, brandName);
+  return await sendToSheetsEndpoint(webhookUrl || '', {
+    action: 'update_account',
+    brand,
+    account
+  });
 }
 
 /**
  * Full sync all inventory, sales, brands to Google Sheets
  */
 export async function syncAllToGoogleSheet(webhookUrl, inventory, sales, brands) {
-  if (!webhookUrl || !webhookUrl.trim()) {
-    return { success: false, message: 'Google Sheet Webhook URL not configured' };
-  }
-
-  try {
-    const payload = {
-      action: 'sync_all',
-      inventory,
-      sales,
-      brands
-    };
-
-    const response = await fetch(webhookUrl.trim(), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload)
-    });
-
-    if (!response.ok) {
-      throw new Error('HTTP error ' + response.status);
-    }
-
-    const data = await response.json();
-    return { success: data.status === 'success', data, message: data.message };
-  } catch (err) {
-    return { success: false, message: err.message };
-  }
+  return await sendToSheetsEndpoint(webhookUrl || '', {
+    action: 'sync_all',
+    inventory,
+    sales,
+    brands
+  });
 }
 
 /**
  * Fetch live data from Google Sheets to display in Website
  */
 export async function fetchLiveSpreadsheetData(webhookUrl) {
+  // 1. Same-origin backend proxy (/api/sheets/live-data)
+  // This completely eliminates "Failed to fetch" CORS errors on mobile and desktop!
+  try {
+    const query = webhookUrl ? `?webhookUrl=${encodeURIComponent(webhookUrl.trim())}&_t=${Date.now()}` : `?_t=${Date.now()}`;
+    const res = await fetch(`/api/sheets/live-data${query}`);
+    if (res.ok) {
+      const data = await res.json();
+      return {
+        success: data.status === 'connected' || data.status === 'success' || Array.isArray(data.sales),
+        status: data.status || 'success',
+        sales: data.sales || [],
+        inventory: data.inventory || [],
+        sheets: data.sheets || [],
+        spreadsheetName: data.spreadsheetName || 'OTT A/C MANAGER'
+      };
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.message && !webhookUrl) {
+        return { success: false, message: errData.message };
+      }
+    }
+  } catch (proxyErr) {
+    console.warn('Backend live-data proxy failed, attempting direct browser fallback:', proxyErr.message);
+  }
+
   if (!webhookUrl || !webhookUrl.trim()) {
     return { success: false, message: 'Google Sheet Webhook URL not configured' };
   }
 
+  // 2. Direct browser fallback
   try {
     const url = new URL(webhookUrl.trim());
     url.searchParams.set('action', 'fetch_all');
@@ -984,7 +964,9 @@ export async function fetchLiveSpreadsheetData(webhookUrl) {
 
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      mode: 'cors',
+      redirect: 'follow'
     });
 
     if (!response.ok) {
@@ -1016,6 +998,26 @@ export async function testGoogleSheetConnection(webhookUrl) {
     };
   }
 
+  // 1. Try server endpoint /api/sheets/test
+  try {
+    const res = await fetch('/api/sheets/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ webhookUrl: webhookUrl.trim() })
+    });
+    if (res.ok) {
+      return await res.json();
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.message) {
+        return { connected: false, message: errData.message };
+      }
+    }
+  } catch (e) {
+    console.warn('Backend sheets test failed, attempting direct browser ping:', e.message);
+  }
+
+  // 2. Direct browser test
   try {
     const url = new URL(webhookUrl.trim());
     url.searchParams.set('action', 'test_connection');
@@ -1023,7 +1025,9 @@ export async function testGoogleSheetConnection(webhookUrl) {
 
     const response = await fetch(url.toString(), {
       method: 'GET',
-      headers: { 'Accept': 'application/json' }
+      headers: { 'Accept': 'application/json' },
+      mode: 'cors',
+      redirect: 'follow'
     });
 
     if (!response.ok) {

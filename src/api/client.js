@@ -309,12 +309,10 @@ export const api = {
 
     // Real-time sync newly created account to Google Sheet
     this.getSheetsConfig().then(cfg => {
-      if (cfg?.webhookUrl) {
-        const b = (local.brands || []).find(x => x.id === newItem.brandId);
-        syncAccountToGoogleSheet(cfg.webhookUrl, newItem, b?.displayName || b?.name).catch(e => {
-          console.warn('GSheet inventory create sync warning:', e);
-        });
-      }
+      const b = (local.brands || []).find(x => x.id === newItem.brandId);
+      syncAccountToGoogleSheet(cfg?.webhookUrl || '', newItem, b?.displayName || b?.name).catch(e => {
+        console.warn('GSheet inventory create sync warning:', e);
+      });
     }).catch(() => {});
 
     return newItem;
@@ -353,12 +351,10 @@ export const api = {
 
       // Real-time sync account to Google Sheet
       this.getSheetsConfig().then(cfg => {
-        if (cfg?.webhookUrl) {
-          const b = (local.brands || []).find(x => x.id === updated.brandId);
-          syncAccountToGoogleSheet(cfg.webhookUrl, updated, b?.displayName || b?.name).catch(e => {
-            console.warn('GSheet inventory sync warning:', e);
-          });
-        }
+        const b = (local.brands || []).find(x => x.id === updated.brandId);
+        syncAccountToGoogleSheet(cfg?.webhookUrl || '', updated, b?.displayName || b?.name).catch(e => {
+          console.warn('GSheet inventory sync warning:', e);
+        });
       }).catch(() => {});
     }
 
@@ -382,12 +378,10 @@ export const api = {
 
       // Real-time sync account deletion to Google Sheet
       this.getSheetsConfig().then(cfg => {
-        if (cfg?.webhookUrl) {
-          const b = (local.brands || []).find(x => x.id === item.brandId);
-          syncAccountDeleteToGoogleSheet(cfg.webhookUrl, item, b?.displayName || b?.name).catch(e => {
-            console.warn('GSheet inventory delete sync warning:', e);
-          });
-        }
+        const b = (local.brands || []).find(x => x.id === item.brandId);
+        syncAccountDeleteToGoogleSheet(cfg?.webhookUrl || '', item, b?.displayName || b?.name).catch(e => {
+          console.warn('GSheet inventory delete sync warning:', e);
+        });
       }).catch(() => {});
     }
     try {
@@ -602,15 +596,13 @@ export const api = {
 
     // 2. REAL-TIME GOOGLE SHEETS SYNC: Instantly push this sale to Google Sheets!
     this.getSheetsConfig().then(cfg => {
-      if (cfg?.webhookUrl) {
-        syncSaleToGoogleSheet(cfg.webhookUrl, newSale).then(res => {
-          if (res?.success) {
-            console.log('Google Sheet sale sync succeeded');
-          }
-        }).catch(err => {
-          console.warn('Google Sheet sale background sync warning:', err.message);
-        });
-      }
+      syncSaleToGoogleSheet(cfg?.webhookUrl || '', newSale).then(res => {
+        if (res?.success) {
+          console.log('Google Sheet sale sync succeeded');
+        }
+      }).catch(err => {
+        console.warn('Google Sheet sale background sync warning:', err.message);
+      });
     }).catch(() => {});
 
     // 3. Background sync to backend API
@@ -659,13 +651,11 @@ export const api = {
 
       // Real-time sync sale update to Google Sheets
       this.getSheetsConfig().then(cfg => {
-        if (cfg?.webhookUrl) {
-          syncSaleToGoogleSheet(cfg.webhookUrl, updated, true).then(res => {
-            if (res?.success) console.log('Google Sheet sale update synced successfully');
-          }).catch(err => {
-            console.warn('Google Sheet sale update background sync warning:', err.message);
-          });
-        }
+        syncSaleToGoogleSheet(cfg?.webhookUrl || '', updated, true).then(res => {
+          if (res?.success) console.log('Google Sheet sale update synced successfully');
+        }).catch(err => {
+          console.warn('Google Sheet sale update background sync warning:', err.message);
+        });
       }).catch(() => {});
     }
 
@@ -707,11 +697,9 @@ export const api = {
 
     // Real-time sync sale deletion to Google Sheets
     this.getSheetsConfig().then(cfg => {
-      if (cfg?.webhookUrl) {
-        syncSaleDeleteToGoogleSheet(cfg.webhookUrl, sale).catch(err => {
-          console.warn('Google Sheet sale delete sync warning:', err.message);
-        });
-      }
+      syncSaleDeleteToGoogleSheet(cfg?.webhookUrl || '', sale).catch(err => {
+        console.warn('Google Sheet sale delete sync warning:', err.message);
+      });
     }).catch(() => {});
 
     try {
