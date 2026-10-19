@@ -492,7 +492,7 @@ export const api = {
     if (saleData.inventoryId) {
       assignedAccount = (local.inventory || []).find(i => i.id === saleData.inventoryId && !i.isDeleted);
     } else if (saleData.accountEmail) {
-      assignedAccount = (local.inventory || []).find(i => i.email.toLowerCase() === saleData.accountEmail.toLowerCase() && !i.isDeleted);
+      assignedAccount = (local.inventory || []).find(i => String(i?.email || '').toLowerCase() === String(saleData.accountEmail).toLowerCase() && !i.isDeleted);
     }
 
     if (!assignedAccount) {
@@ -633,7 +633,7 @@ export const api = {
       if (updated.inventoryId || updated.accountEmail) {
         const inv = (local.inventory || []).find(i =>
           (updated.inventoryId && i.id === updated.inventoryId) ||
-          (updated.accountEmail && i.email?.toLowerCase() === updated.accountEmail.toLowerCase())
+          (updated.accountEmail && String(i?.email || '').toLowerCase() === String(updated.accountEmail).toLowerCase())
         );
         if (inv && inv.screens) {
           const sNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
@@ -680,7 +680,7 @@ export const api = {
     // Free the screen in inventory
     const inv = (local.inventory || []).find(i =>
       (sale.inventoryId && i.id === sale.inventoryId) ||
-      (sale.accountEmail && i.email?.toLowerCase() === sale.accountEmail.toLowerCase())
+      (sale.accountEmail && String(i?.email || '').toLowerCase() === String(sale.accountEmail).toLowerCase())
     );
     if (inv && inv.screens) {
       const sNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
@@ -916,14 +916,17 @@ export const api = {
 
       result.sales.forEach(sheetSale => {
         const existingIdx = local.sales.findIndex(s => {
-          if (s.id && sheetSale.id && s.id === sheetSale.id) return true;
-          if (s.recordNumber && sheetSale.recordNumber && String(s.recordNumber) === String(sheetSale.recordNumber)) {
-            return !s.brandName || !sheetSale.brandName || s.brandName.toLowerCase() === sheetSale.brandName.toLowerCase();
+          if (s?.id && sheetSale?.id && String(s.id) === String(sheetSale.id)) return true;
+          if (s?.recordNumber && sheetSale?.recordNumber && String(s.recordNumber) === String(sheetSale.recordNumber)) {
+            const sBrand = String(s.brandName || '').toLowerCase();
+            const shBrand = String(sheetSale.brandName || '').toLowerCase();
+            return !sBrand || !shBrand || sBrand === shBrand;
           }
-          if (s.accountEmail && sheetSale.accountEmail &&
-              s.accountEmail.trim().toLowerCase() === sheetSale.accountEmail.trim().toLowerCase()) {
-            const sScreen = String(s.screenNumber || '').replace(/\D/g, '');
-            const shScreen = String(sheetSale.screenNumber || '').replace(/\D/g, '');
+          const sAccEmail = String(s?.accountEmail || '').trim().toLowerCase();
+          const shAccEmail = String(sheetSale?.accountEmail || '').trim().toLowerCase();
+          if (sAccEmail && shAccEmail && sAccEmail === shAccEmail) {
+            const sScreen = String(s?.screenNumber || '').replace(/\D/g, '');
+            const shScreen = String(sheetSale?.screenNumber || '').replace(/\D/g, '');
             if (sScreen && shScreen && sScreen === shScreen) return true;
           }
           return false;
@@ -968,9 +971,13 @@ export const api = {
       if (!local.inventory) local.inventory = [];
 
       result.inventory.forEach(sheetInv => {
-        const existingIdx = local.inventory.findIndex(i =>
-          i.email && sheetInv.email && i.email.trim().toLowerCase() === sheetInv.email.trim().toLowerCase()
-        );
+        const existingIdx = local.inventory.findIndex(i => {
+          const localEmail = String(i?.email || '').trim().toLowerCase();
+          const sheetEmail = String(sheetInv?.email || '').trim().toLowerCase();
+          if (localEmail && sheetEmail && localEmail === sheetEmail) return true;
+          if (i?.id && sheetInv?.id && String(i.id) === String(sheetInv.id)) return true;
+          return false;
+        });
 
         if (existingIdx !== -1) {
           const existingAcc = local.inventory[existingIdx];
