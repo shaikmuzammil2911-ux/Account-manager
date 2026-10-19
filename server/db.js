@@ -934,6 +934,9 @@ export const db = {
     });
 
     return {
+      sales: data.sales || [],
+      inventory: (data.inventory || []).filter(item => !item.isDeleted),
+      brands: data.brands || [],
       brandSheets,
       soldSheets,
       allDataRows: soldSheets['ALL BRANDS DATA'],

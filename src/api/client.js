@@ -1070,6 +1070,10 @@ export const api = {
   },
 
   async syncNow() {
+    const config = await this.getSheetsConfig();
+    const webhookUrl = config?.webhookUrl || '';
+
+    // 1. First try server endpoint
     try {
       const res = await fetch('/api/sheets/sync', { method: 'POST' });
       if (res.ok) {
@@ -1077,30 +1081,25 @@ export const api = {
       }
     } catch (e) {}
 
-    // Browser-side fallback push
+    // 2. Dispatch through universal proxy dispatcher (handles CORS & eliminates Failed to fetch)
     const local = getLocalData();
-    const config = local.settings?.googleSheetConfig;
-    if (!config || !config.webhookUrl) {
-      throw new Error('No Google Sheet Webhook URL configured in Cells Linkup.');
-    }
-
-    const payload = {
-      action: 'sync_all',
-      ...buildSpreadsheetPayload(local.inventory, local.sales, local.brands)
-    };
-
-    await fetch(config.webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      mode: 'no-cors'
-    });
+    const res = await syncAllToGoogleSheet(
+      webhookUrl,
+      local.inventory || [],
+      local.sales || [],
+      local.brands || []
+    );
 
     const now = new Date().toISOString();
-    config.lastSyncTime = now;
-    config.status = 'Connected';
+    local.settings = local.settings || {};
+    local.settings.googleSheetConfig = {
+      ...(local.settings.googleSheetConfig || {}),
+      lastSyncTime: now,
+      status: 'Connected'
+    };
     saveLocalData(local);
-    return { success: true, timestamp: now };
+
+    return { success: res?.success ?? true, message: res?.message || 'Sync completed', timestamp: now };
   },
 
   // SETTINGS

@@ -1163,6 +1163,9 @@ export function buildSpreadsheetPayload(inventory = [], sales = [], brands = [])
   });
 
   return {
+    inventory: (inventory || []).filter(item => !item.isDeleted),
+    sales: sales || [],
+    brands: brands || [],
     brandSheets,
     soldSheets,
     allDataRows: soldSheets['ALL BRANDS DATA'],

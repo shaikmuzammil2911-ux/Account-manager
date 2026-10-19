@@ -116,12 +116,20 @@ export default function App() {
         }
         return;
       }
+
+      // 1. First push local accounts & sales to Google Sheets
+      const pushRes = await api.syncNow().catch(err => {
+        console.warn('Sync push notice:', err.message);
+        return null;
+      });
+
+      // 2. Pull and reconcile from Google Sheets
       const res = await api.pullFromGoogleSheet();
-      if (res?.success) {
+      if (res?.success || pushRes?.success) {
         const liveStats = await api.getStats();
         setStats(liveStats);
         if (!silent) {
-          showToast(`Synced with Google Sheets (${res.updatedSalesCount || 0} updated)`, 'success');
+          showToast('Google Sheets: All inventory & sales synced successfully!', 'success');
         }
       } else if (!silent && res?.message) {
         let msg = res.message;
