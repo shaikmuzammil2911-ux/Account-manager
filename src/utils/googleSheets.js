@@ -163,16 +163,26 @@ export const GOOGLE_APPS_SCRIPT_TEMPLATE = `// =================================
 // File: OTT A/C MANAGER (Fixyourmobiles10@gmail.com)
 // Spreadsheet ID: 1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg
 // ============================================================================
-// HOW TO DEPLOY:
-// 1. In your Google Sheet, click Extensions > Apps Script.
-// 2. Select all existing text and delete it.
-// 3. Paste this entire code into the editor.
-// 4. Click "Deploy" > "New deployment" > Select type: "Web app".
-// 5. Description: "OTT Manager Live Sync"
-// 6. Execute as: "Me (Fixyourmobiles10@gmail.com)"
-// 7. Who has access: "Anyone"
-// 8. Click "Deploy", authorize access, and copy the Web App URL into the Website!
+// HOW TO DEPLOY / UPDATE:
+// 1. In your Google Sheet, click Extensions > Apps Script (or open your existing script).
+// 2. Select ALL existing code (Ctrl+A) and DELETE it.
+// 3. Paste this entire updated code into the editor.
+// 4. Click "Deploy" > "Manage deployments" > Click the Pencil (Edit) icon.
+// 5. Version: Select "New version".
+// 6. Execute as: "Me (Fixyourmobiles10@gmail.com)".
+// 7. Who has access: "Anyone".
+// 8. Click "Deploy".
 // ============================================================================
+
+var SPREADSHEET_ID = '1B4nJBadfzafATMFL7bE_pD3T9k4KwcZBBL95ZzdL9Gg';
+
+function getSpreadsheet() {
+  try {
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (active && active.getId()) return active;
+  } catch (e) {}
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
 
 var REQUIRED_SHEETS = [
   'NETFLIX', 'NETFLIX-SOLD',
@@ -210,7 +220,7 @@ function formatCellDate(val) {
 
 // Handle GET requests (Returns data so website displays live Google Sheet data)
 function doGet(e) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet();
   var action = (e && e.parameter && e.parameter.action) || 'fetch_all';
 
   if (action === 'test_connection' || action === 'ping') {
@@ -262,43 +272,73 @@ function doGet(e) {
     if (sheet.getLastRow() < 4) return;
 
     var brandId = sName.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    var bVals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
-    for (var r = 0; r < bVals.length; r += 5) {
-      var num = bVals[r] ? bVals[r][0] : '';
-      var email = bVals[r] ? bVals[r][2] : '';
-      var validity = bVals[r] ? bVals[r][4] : '01 Month';
-      var password = (bVals[r + 1]) ? bVals[r + 1][2] : '';
-      if (!email && !num) continue;
+    var maxR = sheet.getLastRow();
+    var bVals = sheet.getRange(1, 1, maxR, Math.min(8, sheet.getLastColumn())).getValues();
 
-      var screens = [];
-      for (var s = 0; s < 5; s++) {
-        var col = s + 1;
-        var scrName = (bVals[r + 2] && bVals[r + 2][col]) ? String(bVals[r + 2][col]) : ('Screen-' + (s + 1));
-        var rawVal = bVals[r + 3] ? bVals[r + 3][col] : '';
-        var scrVal = formatCellDate(rawVal);
-        var isSold = scrVal && scrVal !== 'EMPTY' && scrVal !== '+' && scrVal.indexOf('+') === -1;
-        screens.push({
-          screenNumber: s + 1,
-          name: scrName,
-          status: isSold ? 'occupied' : 'empty',
-          pin: isSold ? '1234' : (scrVal.replace(/[^\\d]/g, '') || String((s + 1) * 1111)),
-          expiryDate: isSold ? scrVal : null,
-          deviceType: 'tv'
+    for (var r = 0; r < bVals.length; r++) {
+      var colB = String(bVals[r][1] || '').trim().toUpperCase();
+      var colC = String(bVals[r][2] || '').trim();
+      if (colB === 'ID' && colC) {
+        var email = colC;
+        var validity = '01 Month';
+        if (bVals[r][4]) validity = String(bVals[r][4]);
+        else if (r > 0 && bVals[r - 1][4]) validity = String(bVals[r - 1][4]);
+
+        var password = (r + 1 < bVals.length && String(bVals[r + 1][1] || '').trim().toUpperCase() === 'PASSWORD') ? String(bVals[r + 1][2] || '') : '';
+
+        var screenRowIdx = -1;
+        for (var sr = r; sr < Math.min(bVals.length, r + 6); sr++) {
+          var rowStr = bVals[sr].join(' ').toUpperCase();
+          if (rowStr.indexOf('SCREEN-1') !== -1 || rowStr.indexOf('SCREEN 1') !== -1) {
+            screenRowIdx = sr;
+            break;
+          }
+        }
+
+        var screens = [];
+        if (screenRowIdx !== -1 && screenRowIdx + 1 < bVals.length) {
+          var headerRow = bVals[screenRowIdx];
+          var valRow = bVals[screenRowIdx + 1];
+          for (var s = 0; s < 5; s++) {
+            var col = s + 1;
+            var scrName = headerRow[col] ? String(headerRow[col]) : ('Screen-' + (s + 1));
+            var rawVal = valRow[col] ? String(valRow[col]).trim() : '';
+            var isSold = rawVal && rawVal !== 'EMPTY' && rawVal !== '+' && rawVal.indexOf('+') === -1;
+            screens.push({
+              screenNumber: s + 1,
+              name: scrName,
+              status: isSold ? 'occupied' : 'empty',
+              pin: isSold ? '1234' : (rawVal.replace(/[^0-9]/g, '') || String((s + 1) * 1111)),
+              expiryDate: isSold ? rawVal : null,
+              deviceType: 'tv'
+            });
+          }
+        } else {
+          for (var defS = 1; defS <= 5; defS++) {
+            screens.push({
+              screenNumber: defS,
+              name: 'Screen-' + defS,
+              status: 'empty',
+              pin: String(defS * 1111),
+              expiryDate: null,
+              deviceType: 'tv'
+            });
+          }
+        }
+
+        inventory.push({
+          id: 'acc_' + brandId + '_' + (inventory.length + 1),
+          brandId: brandId,
+          brandName: sName,
+          email: email,
+          password: password,
+          validity: validity,
+          screensCount: screens.length,
+          screens: screens,
+          isLocked: true,
+          isSelected: false
         });
       }
-
-      inventory.push({
-        id: 'acc_' + brandId + '_' + (Math.floor(r / 5) + 1),
-        brandId: brandId,
-        brandName: sName,
-        email: email,
-        password: password,
-        validity: validity,
-        screensCount: screens.length,
-        screens: screens,
-        isLocked: true,
-        isSelected: false
-      });
     }
   });
 
@@ -317,7 +357,7 @@ function doGet(e) {
 // Handle POST requests (Updates Google Sheet from Website)
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  var success = lock.tryLock(20000); // 20s lock for high safety
+  var success = lock.tryLock(20000); // 20s lock for safety
   if (!success) {
     return ContentService.createTextOutput(JSON.stringify({
       status: 'error',
@@ -326,7 +366,7 @@ function doPost(e) {
   }
 
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getSpreadsheet();
     var data = JSON.parse(e.postData.contents);
     var action = data.action || 'ping';
 
@@ -485,7 +525,6 @@ function doPost(e) {
         }
       }
 
-      // Reset screen cell in Database sheet to EMPTY
       if (email) {
         updateDatabaseScreenSold(ss, brand, email, screenNum, 'EMPTY');
       }
@@ -520,7 +559,7 @@ function doPost(e) {
         var dbVals = dbSheet.getRange(1, 1, dbSheet.getLastRow(), 5).getValues();
         for (var dr = 0; dr < dbVals.length; dr++) {
           if (dbVals[dr][2] && String(dbVals[dr][2]).trim().toLowerCase() === String(targetEmail).trim().toLowerCase()) {
-            dbSheet.getRange(dr + 1, 1, 5, 8).clearContent().clearFormat();
+            dbSheet.getRange(dr + 1, 1, 6, 8).clearContent().clearFormat();
             break;
           }
         }
@@ -661,6 +700,22 @@ function ensureAllRequiredSheets(ss) {
 function getOrCreateDatabaseSheet(ss, sheetName) {
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
+    var sheets = ss.getSheets();
+    if (sheets.length > 0) {
+      var first = sheets[0];
+      var fName = first.getName();
+      if (fName === 'Sheet1' || fName === 'Sheet 1') {
+        first.setName(sheetName);
+        return first;
+      }
+      try {
+        var topVal = String(first.getRange(1, 1, 2, 3).getValues()).toUpperCase();
+        if (topVal.indexOf(sheetName) !== -1 && fName !== sheetName) {
+          first.setName(sheetName);
+          return first;
+        }
+      } catch (e) {}
+    }
     sheet = ss.insertSheet(sheetName);
   }
   if (sheet.getLastRow() < 1) {
@@ -693,10 +748,12 @@ function updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate) {
   var sheet = ss.getSheetByName(dbSheetName);
   if (!sheet) return;
   var lastRow = sheet.getLastRow();
-  if (lastRow < 3) return;
+  if (lastRow < 2) return;
+
   var values = sheet.getRange(1, 1, lastRow, 8).getValues();
   for (var r = 0; r < values.length; r++) {
-    if (values[r][2] && String(values[r][2]).trim().toLowerCase() === String(email).trim().toLowerCase()) {
+    var rowText = (String(values[r][1] || '') + ' ' + String(values[r][2] || '')).toLowerCase();
+    if (email && rowText.indexOf(String(email).trim().toLowerCase()) !== -1) {
       var sIdx = 1;
       if (typeof screenNum === 'number') {
         sIdx = screenNum;
@@ -704,12 +761,27 @@ function updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate) {
         var match = screenNum.match(/\\d+/);
         if (match) sIdx = parseInt(match[0], 10);
       }
-      if (sIdx < 1 || sIdx > 10) sIdx = 1;
-      var targetCol = sIdx + 1;
-      var cellVal = expiryDate || 'SOLD';
-      var targetRow = r + 4;
-      sheet.getRange(targetRow, targetCol).setValue(cellVal);
-      sheet.getRange(targetRow, targetCol).setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
+      if (sIdx < 1 || sIdx > 5) sIdx = 1;
+
+      var screenHeaderRow = -1;
+      for (var searchR = r; searchR < Math.min(values.length, r + 7); searchR++) {
+        var rowStr = values[searchR].join(' ').toUpperCase();
+        if (rowStr.indexOf('SCREEN-1') !== -1 || rowStr.indexOf('SCREEN 1') !== -1) {
+          screenHeaderRow = searchR + 1;
+          break;
+        }
+      }
+
+      if (screenHeaderRow !== -1) {
+        var targetRow = screenHeaderRow + 1;
+        var targetCol = sIdx + 1; // Col 2 = B (SCREEN-1)
+        var cellVal = expiryDate || 'SOLD';
+        if (cellVal === 'EMPTY') {
+          sheet.getRange(targetRow, targetCol).setValue('').setBackground('#ffffff').setFontColor('#000000');
+        } else {
+          sheet.getRange(targetRow, targetCol).setValue(cellVal).setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
+        }
+      }
       break;
     }
   }
@@ -718,10 +790,11 @@ function updateDatabaseScreenSold(ss, brand, email, screenNum, expiryDate) {
 function updateOrInsertAccountInDbSheet(sheet, account) {
   var lastRow = sheet.getLastRow();
   var foundRow = -1;
-  if (lastRow >= 3) {
+  if (lastRow >= 2) {
     var values = sheet.getRange(1, 1, lastRow, 5).getValues();
     for (var r = 0; r < values.length; r++) {
-      if (values[r][2] && String(values[r][2]).trim().toLowerCase() === String(account.email).trim().toLowerCase()) {
+      var rowText = (String(values[r][1] || '') + ' ' + String(values[r][2] || '')).toLowerCase();
+      if (account.email && rowText.indexOf(String(account.email).trim().toLowerCase()) !== -1) {
         foundRow = r + 1;
         break;
       }
@@ -729,36 +802,88 @@ function updateOrInsertAccountInDbSheet(sheet, account) {
   }
 
   if (foundRow !== -1) {
-    // Update existing account
-    sheet.getRange(foundRow, 5).setValue(account.validity || '01-MONTH');
-    sheet.getRange(foundRow + 1, 3).setValue(account.password || '');
-    var screens = account.screens || [];
-    for (var s = 0; s < Math.max(screens.length, 5); s++) {
-      var col = s + 2;
-      sheet.getRange(foundRow + 2, col).setValue('SCREEN-' + (s + 1));
-      var scr = screens[s];
-      var cellText = scr ? (scr.status === 'occupied' ? (scr.expiryDate || 'SOLD') : (scr.pin || 'EMPTY')) : '';
-      sheet.getRange(foundRow + 3, col).setValue(cellText);
+    // Update password in row directly beneath ID
+    if (account.password) {
+      sheet.getRange(foundRow + 1, 3).setValue(account.password);
+    }
+    // Update validity
+    if (account.validity) {
+      try {
+        sheet.getRange(foundRow, 5).setValue(account.validity);
+      } catch (e) {}
+    }
+
+    // Find screen header row
+    var valuesFull = sheet.getRange(foundRow, 1, Math.min(7, lastRow - foundRow + 1), 7).getValues();
+    var sRowRel = -1;
+    for (var vr = 0; vr < valuesFull.length; vr++) {
+      var sStr = valuesFull[vr].join(' ').toUpperCase();
+      if (sStr.indexOf('SCREEN-1') !== -1) {
+        sRowRel = vr;
+        break;
+      }
+    }
+
+    if (sRowRel !== -1) {
+      var valueRow = foundRow + sRowRel + 1;
+      var screens = account.screens || [];
+      for (var s = 0; s < Math.min(screens.length, 5); s++) {
+        var col = s + 2;
+        var scr = screens[s];
+        if (scr && scr.status === 'occupied') {
+          sheet.getRange(valueRow, col).setValue(scr.expiryDate || 'SOLD').setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
+        } else if (scr && scr.pin) {
+          sheet.getRange(valueRow, col).setValue(scr.pin).setBackground('#ffffff').setFontColor('#000000');
+        } else {
+          sheet.getRange(valueRow, col).setValue('').setBackground('#ffffff');
+        }
+      }
     }
   } else {
-    // Append new account block
-    var nextRow = Math.max(lastRow + 1, 2);
-    var accNum = String(Math.floor(nextRow / 5) + 1).padStart(2, '0');
-    sheet.getRange(nextRow, 1).setValue(accNum).setFontWeight('bold');
-    sheet.getRange(nextRow, 2).setValue('ID').setBackground('#2563eb').setFontColor('#ffffff').setFontWeight('bold');
-    sheet.getRange(nextRow, 3).setValue(account.email || '');
-    sheet.getRange(nextRow, 5, 1, 2).merge().setValue(account.validity || '01-MONTH').setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
+    var nextRow = Math.max(lastRow + 2, 2);
+    var accCount = 1;
+    if (lastRow >= 2) {
+      var allColA = sheet.getRange(1, 1, lastRow, 2).getValues();
+      allColA.forEach(function(row) {
+        if (String(row[1]).toUpperCase() === 'ID') accCount++;
+      });
+    }
+    var accNumStr = String(accCount).padStart(2, '0');
 
-    sheet.getRange(nextRow + 1, 2).setValue('PASSWORD').setBackground('#7c3aed').setFontColor('#ffffff').setFontWeight('bold');
-    sheet.getRange(nextRow + 1, 3).setValue(account.password || '');
+    sheet.getRange(nextRow, 5, 1, 2).merge().setValue(account.validity || '01-MONTH')
+      .setBackground('#16a34a').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+    nextRow++;
+
+    sheet.getRange(nextRow, 1).setValue(accNumStr).setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.getRange(nextRow, 2).setValue('ID').setBackground('#2563eb').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.getRange(nextRow, 3, 1, 4).merge().setValue(account.email || '').setFontWeight('bold');
+    nextRow++;
+
+    sheet.getRange(nextRow, 2).setValue('PASSWORD').setBackground('#7c3aed').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+    sheet.getRange(nextRow, 3, 1, 4).merge().setValue(account.password || '');
+    nextRow++;
+
+    nextRow++; // separator
+
+    for (var ns = 0; ns < 5; ns++) {
+      var nCol = ns + 2;
+      sheet.getRange(nextRow, nCol).setValue('SCREEN-' + (ns + 1))
+        .setBackground('#ea580c').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+    }
+    nextRow++;
 
     var newScreens = account.screens || [];
-    for (var ns = 0; ns < Math.max(newScreens.length, 5); ns++) {
-      var nCol = ns + 2;
-      sheet.getRange(nextRow + 2, nCol).setValue('SCREEN-' + (ns + 1)).setBackground('#ea580c').setFontColor('#ffffff').setFontWeight('bold');
-      var nScr = newScreens[ns];
-      var nCellText = nScr ? (nScr.status === 'occupied' ? (nScr.expiryDate || 'SOLD') : (nScr.pin || 'EMPTY')) : '';
-      sheet.getRange(nextRow + 3, nCol).setValue(nCellText);
+    for (var nvs = 0; nvs < 5; nvs++) {
+      var nvCol = nvs + 2;
+      var nscr = newScreens[nvs];
+      if (nscr && nscr.status === 'occupied') {
+        sheet.getRange(nextRow, nvCol).setValue(nscr.expiryDate || 'SOLD')
+          .setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold').setHorizontalAlignment('center');
+      } else if (nscr && nscr.pin) {
+        sheet.getRange(nextRow, nvCol).setValue(nscr.pin).setHorizontalAlignment('center');
+      } else {
+        sheet.getRange(nextRow, nvCol).setValue('').setHorizontalAlignment('center');
+      }
     }
   }
 }
@@ -766,7 +891,7 @@ function updateOrInsertAccountInDbSheet(sheet, account) {
 function syncInventoryAccountsToSheets(ss, inventory) {
   var byBrand = {};
   inventory.forEach(function(item) {
-    var b = getDbSheetName(item.brandId);
+    var b = getDbSheetName(item.brandName || item.brandId);
     if (!byBrand[b]) byBrand[b] = [];
     byBrand[b].push(item);
   });
@@ -774,33 +899,11 @@ function syncInventoryAccountsToSheets(ss, inventory) {
   for (var brandName in byBrand) {
     var sheet = getOrCreateDatabaseSheet(ss, brandName);
     var items = byBrand[brandName];
-    var curRow = 2;
-    sheet.clearContents();
-    sheet.getRange('A1:F1').merge().setValue(brandName);
-    sheet.getRange('A1').setBackground('#dc2626').setFontColor('#ffffff').setFontWeight('bold').setFontSize(14).setHorizontalAlignment('center');
-
-    items.forEach(function(item, idx) {
-      var numStr = String(idx + 1).padStart(2, '0');
-      sheet.getRange(curRow, 1).setValue(numStr).setFontWeight('bold');
-      sheet.getRange(curRow, 2).setValue('ID').setBackground('#2563eb').setFontColor('#ffffff').setFontWeight('bold');
-      sheet.getRange(curRow, 3).setValue(item.email || '');
-      sheet.getRange(curRow, 5, 1, 2).merge().setValue(item.validity || '01-MONTH').setBackground('#22c55e').setFontColor('#ffffff').setFontWeight('bold');
-
-      sheet.getRange(curRow + 1, 2).setValue('PASSWORD').setBackground('#7c3aed').setFontColor('#ffffff').setFontWeight('bold');
-      sheet.getRange(curRow + 1, 3).setValue(item.password || '');
-
-      var screens = item.screens || [];
-      for (var s = 0; s < Math.max(screens.length, 5); s++) {
-        var col = s + 2;
-        sheet.getRange(curRow + 2, col).setValue('SCREEN-' + (s + 1)).setBackground('#ea580c').setFontColor('#ffffff').setFontWeight('bold');
-        var scr = screens[s];
-        var cellText = scr ? (scr.status === 'occupied' ? (scr.expiryDate || 'SOLD') : (scr.pin || 'EMPTY')) : '';
-        sheet.getRange(curRow + 3, col).setValue(cellText);
-      }
-
-      curRow += 5;
+    items.forEach(function(item) {
+      updateOrInsertAccountInDbSheet(sheet, item);
     });
   }
+}
 `;
 
 /**
