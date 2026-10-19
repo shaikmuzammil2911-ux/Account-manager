@@ -22,6 +22,7 @@ import FormsManagementScreen from './screens/FormsManagementScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import WhatsAppMessagesScreen from './screens/WhatsAppMessagesScreen';
 import ShareBrandsScreen from './screens/ShareBrandsScreen';
+import RevenueManagementScreen from './screens/RevenueManagementScreen';
 
 export default function App() {
   // Authentication State
@@ -334,8 +335,8 @@ export default function App() {
 
       {/* Main Responsive Mobile Viewport */}
       <div className="mobile-app-viewport">
-        {/* Top Header (Dedicated screens like Forms Management, WhatsApp Messages & Share Brands render their own header) */}
-        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && currentScreen !== 'share-brands' && (
+        {/* Top Header (Dedicated screens like Forms Management, WhatsApp Messages, Share Brands & Revenue Management render their own header) */}
+        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && currentScreen !== 'share-brands' && currentScreen !== 'revenue-mgmt' && (
           <TopHeader
             isHome={currentScreen === 'home'}
             showBack={currentScreen !== 'home'}
@@ -540,6 +541,15 @@ export default function App() {
           />
         )}
 
+        {currentScreen === 'revenue-mgmt' && (
+          <RevenueManagementScreen
+            brands={brands}
+            onBack={handleBack}
+            showToast={showToast}
+            onOpenMenu={() => setShowMenuDrawer(true)}
+          />
+        )}
+
         {/* Fixed Bottom Navigation Bar */}
         <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
       </div>
@@ -553,6 +563,7 @@ export default function App() {
         onSelectCellsLinkup={() => navigateTo('cells-linkup')}
         onSelectWhatsAppMessages={() => navigateTo('whatsapp-messages')}
         onSelectShareBrands={() => navigateTo('share-brands')}
+        onSelectRevenueManagement={() => navigateTo('revenue-mgmt')}
         onSelectCreateForm={() => navigateTo('sale')}
         onSelectSettings={() => navigateTo('settings')}
         onLogout={handleLogout}

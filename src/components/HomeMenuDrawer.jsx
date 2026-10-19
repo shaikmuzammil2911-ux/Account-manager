@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare, Share2
+  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare, Share2, TrendingUp
 } from 'lucide-react';
 
 export default function HomeMenuDrawer({
@@ -12,6 +12,7 @@ export default function HomeMenuDrawer({
   onSelectCellsLinkup,
   onSelectWhatsAppMessages,
   onSelectShareBrands,
+  onSelectRevenueManagement,
   onSelectSettings,
   onLogout
 }) {
@@ -148,7 +149,27 @@ export default function HomeMenuDrawer({
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>
 
-          {/* Button 6: General Settings */}
+          {/* Button 6: Revenue Management (image copy 98.png & 99.png) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-orange"
+            onClick={() => {
+              onClose();
+              if (onSelectRevenueManagement) onSelectRevenueManagement();
+            }}
+            id="menu-btn-revenue-management"
+          >
+            <div className="menu-card-icon orange">
+              <TrendingUp size={22} color="#ea580c" strokeWidth={2.3} />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Revenue Management</span>
+              <span className="menu-card-desc">Sales profit, accounts count & OTT brand analytics</span>
+            </div>
+            <ChevronRight size={20} className="menu-card-arrow" />
+          </button>
+
+          {/* Button 7: General Settings */}
           {onSelectSettings && (
             <button
               type="button"

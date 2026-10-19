@@ -652,16 +652,18 @@ export default function ExpiryScreen({
                 </div>
               </div>
 
-              {/* Row 4: ACTIVATION, EXPIRY, and NOTIFY BUTTON */}
+              {/* Row 4: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px', alignItems: 'center' }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
                   <div style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
                   <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>{sub.activationDate}</div>
                 </div>
 
-                <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
-                  <div style={{ fontSize: '9px', color: '#dc2626', fontWeight: 800 }}>EXPIRY</div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#b91c1c' }}>{sub.expiryDate}</div>
+                <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px', textAlign: 'center', overflow: 'hidden' }}>
+                  <div style={{ fontSize: '9px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName || sub.device || 'TV / Mobile'}>
+                    {sub.deviceName || sub.device || 'TV / Mobile'}
+                  </div>
                 </div>
 
                 {/* Big Red Notify Button */}
