@@ -114,7 +114,7 @@ export function getExpiryStatus(expiryDateStr) {
   const settings = getColorCodingSettings();
 
   if (diff < 0) {
-    // Expired
+    // Expired: Red
     return {
       status: 'expired',
       label: 'Expired',
@@ -130,54 +130,38 @@ export function getExpiryStatus(expiryDateStr) {
   }
 
   if (diff === 0) {
-    // Expires Today (Red alert per specification)
+    // Expires Today: Orange alert with clear distinction
     return {
       status: 'today',
-      label: 'Expires Today',
-      color: '#dc2626',
-      bg: '#fef2f2',
-      border: '1.5px solid #dc2626',
-      badgeBg: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
-      badgeBorder: '1.5px solid #dc2626',
-      badgeColor: '#991b1b',
-      shadow: '0 2px 8px rgba(220, 38, 38, 0.35)',
+      label: 'Today',
+      color: '#ea580c',
+      bg: '#fff7ed',
+      border: '1.5px solid #ea580c',
+      badgeBg: 'linear-gradient(135deg, #ffedd5 0%, #fed7aa 100%)',
+      badgeBorder: '1.5px solid #ea580c',
+      badgeColor: '#9a3412',
+      shadow: '0 2px 8px rgba(234, 88, 12, 0.35)',
       daysRemaining: 0
     };
   }
 
-  if (diff <= (settings.redCriticalDays || 5)) {
-    // Expiry in 05 Days = Red
+  if (diff <= 2) {
+    // In 02 Days: Orange warning
     return {
-      status: 'critical',
-      label: `Expires in ${diff}d`,
-      color: '#dc2626',
-      bg: '#fef2f2',
-      border: '1.5px solid #ef4444',
-      badgeBg: 'linear-gradient(135deg, #fee2e2 0%, #fecaca 100%)',
-      badgeBorder: '1.5px solid #dc2626',
-      badgeColor: '#991b1b',
-      shadow: '0 2px 8px rgba(220, 38, 38, 0.28)',
+      status: 'in_02_days',
+      label: `In ${diff} ${diff === 1 ? 'Day' : 'Days'}`,
+      color: '#d97706',
+      bg: '#fffbeb',
+      border: '1.5px solid #f59e0b',
+      badgeBg: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)',
+      badgeBorder: '1.5px solid #d97706',
+      badgeColor: '#92400e',
+      shadow: '0 2px 8px rgba(217, 119, 6, 0.3)',
       daysRemaining: diff
     };
   }
 
-  if (diff <= (settings.orangeWarningDays || 10)) {
-    // Expiry in 10 Days = Orange / Amber
-    return {
-      status: 'upcoming',
-      label: `Expires in ${diff}d`,
-      color: '#ea580c',
-      bg: '#fff7ed',
-      border: '1.5px solid #f97316',
-      badgeBg: 'linear-gradient(135deg, #ffedd5 0%, #fed7aa 100%)',
-      badgeBorder: '1.5px solid #ea580c',
-      badgeColor: '#9a3412',
-      shadow: '0 2px 8px rgba(234, 88, 12, 0.3)',
-      daysRemaining: diff
-    };
-  }
-
-  // Active / New Sale = Green
+  // Active (> 2 days remaining): Green
   return {
     status: 'active',
     label: 'Active',

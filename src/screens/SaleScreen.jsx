@@ -214,7 +214,7 @@ export default function SaleScreen({
         screenNumber: screenNumber.trim() || '01',
         screenPin: showPin ? (screenPin.trim() || '1111') : '',
         amount: Number(amount) || 199,
-        deviceName: showDev ? (deviceName.trim() || 'Personal Device') : '',
+        deviceName: showDev ? deviceName.trim() : '',
         customerName: customerName.trim(),
         customerNumber: customerNumber.trim(),
         referenceName: referenceName.trim(),

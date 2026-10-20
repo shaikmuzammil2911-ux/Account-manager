@@ -10,7 +10,8 @@ export default function BrandsManagementScreen({
   showToast,
   isAddModalOpen,
   onOpenAdd,
-  onCloseAdd
+  onCloseAdd,
+  onBrandUpdated
 }) {
   const [brands, setBrands] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -297,8 +298,9 @@ export default function BrandsManagementScreen({
       };
 
       if (editingBrandId) {
-        await api.updateBrand(editingBrandId, brandPayload);
+        const updated = await api.updateBrand(editingBrandId, brandPayload);
         showToast(`Brand "${name}" updated successfully!`, 'success');
+        if (onBrandUpdated) onBrandUpdated(updated || { id: editingBrandId, ...brandPayload });
       } else {
         const created = await api.createBrand(brandPayload);
         showToast(`Brand "${name}" created successfully!`, 'success');
@@ -334,9 +336,10 @@ export default function BrandsManagementScreen({
       // Optimistic state update
       setBrands(prev => prev.map(item => item.id === brandId ? { ...item, [settingKey]: nextVal } : item));
 
-      await api.updateBrand(brandId, { [settingKey]: nextVal });
+      const updated = await api.updateBrand(brandId, { [settingKey]: nextVal });
       const settingLabel = settingKey === 'showScreenPin' ? 'Screen PIN' : 'Device Name';
       showToast(`${b.displayName || b.name}: ${settingLabel} turned ${nextVal ? 'ON' : 'OFF'}`, 'success');
+      if (onBrandUpdated) onBrandUpdated(updated || { ...b, [settingKey]: nextVal });
     } catch (err) {
       showToast('Failed to update brand setting', 'error');
       loadBrands();

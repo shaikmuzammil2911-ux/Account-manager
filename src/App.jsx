@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { api } from './api/client';
-import { exportExpiryToExcel } from './utils/excelExport';
+import { exportExpiryToExcel, exportInventoryToExcel } from './utils/excelExport';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
 import Toast from './components/Toast';
@@ -149,14 +149,9 @@ export default function App() {
         }
       }
 
-      // 3. Load brands
+      // 3. Load brands (Do not auto-default to Netflix; start with null / All Brands per user requirement)
       const brandsList = await api.getBrands(activeUser?.email);
       setBrands(brandsList);
-      if (brandsList && brandsList.length > 0) {
-        if (!selectedBrand) {
-          setSelectedBrand(brandsList[0]);
-        }
-      }
 
       // 4. Load stats
       const liveStats = await api.getStats();
@@ -372,6 +367,26 @@ export default function App() {
     }
   };
 
+  const handleExportInventoryToExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      showToast('Preparing Accounts Inventory Excel...', 'info');
+      const brandId = selectedBrand ? selectedBrand.id : 'all';
+      const brandName = selectedBrand ? (selectedBrand.displayName || selectedBrand.name) : 'All Brands';
+      const invList = await api.getInventory({ brandId });
+      if (!invList || invList.length === 0) {
+        showToast('No accounts found to export', 'info');
+        return;
+      }
+      const exportedFilename = exportInventoryToExcel(invList, brandName);
+      showToast(`Downloaded ${exportedFilename} successfully!`, 'success');
+    } catch (err) {
+      showToast('Failed to export Inventory Excel: ' + err.message, 'error');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   const handleSelectBrandAndOpen = (brand) => {
     setSelectedBrand(brand);
     navigateTo('data');
@@ -446,7 +461,39 @@ export default function App() {
             onOpenMenu={() => setShowMenuDrawer(true)}
             siteSettings={siteSettings}
             rightAction={
-              currentScreen === 'expiry' ? (
+              (currentScreen === 'data' || currentScreen === 'inventory') ? (
+                <button
+                  type="button"
+                  className="header-btn"
+                  onClick={handleExportInventoryToExcel}
+                  disabled={isExportingExcel}
+                  style={{
+                    height: '38px',
+                    padding: '0 10px',
+                    background: isExportingExcel ? '#f0fdf4' : '#ffffff',
+                    borderColor: '#16a34a',
+                    color: '#15803d',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    cursor: isExportingExcel ? 'wait' : 'pointer',
+                    borderRadius: '10px',
+                    boxShadow: '0 1px 3px rgba(22, 163, 74, 0.15)',
+                    whiteSpace: 'nowrap'
+                  }}
+                  title="Download Accounts & Screens Inventory as Excel (.xlsx)"
+                  id="inventory-header-excel-btn"
+                >
+                  {isExportingExcel ? (
+                    <RefreshCw size={15} className="animate-spin" />
+                  ) : (
+                    <FileSpreadsheet size={16} strokeWidth={2.4} color="#16a34a" />
+                  )}
+                  <span style={{ fontSize: '11.5px', fontWeight: 800 }}>
+                    {isExportingExcel ? 'Exporting...' : 'Excel'}
+                  </span>
+                </button>
+              ) : currentScreen === 'expiry' ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   {/* Download Excel Button - Immediately to the left of Calendar */}
                   <button
@@ -656,6 +703,12 @@ export default function App() {
               onBrandCreated={(newBrand) => {
                 loadInitial();
                 setSelectedBrand(newBrand);
+              }}
+              onBrandUpdated={(updatedBrand) => {
+                loadInitial();
+                if (selectedBrand?.id === updatedBrand?.id) {
+                  setSelectedBrand(updatedBrand);
+                }
               }}
               showToast={showToast}
               isAddModalOpen={brandsAddModalOpen}

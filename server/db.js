@@ -614,7 +614,7 @@ export const db = {
       activationDate: saleData.activationDate,
       expiryDate: saleData.expiryDate,
       amount: Number(saleData.amount) || brand.prices[saleData.validity] || 199,
-      deviceName: saleData.deviceName || 'Personal Device',
+      deviceName: saleData.deviceName || '',
       saleDate: saleData.activationDate,
       note: saleData.note || '',
       status: 'Active',
@@ -921,7 +921,7 @@ export const db = {
         String(sale.accountPassword || ''),
         String(sale.screenNumber || '01'),
         String(sale.screenPin || '1234'),
-        String(sale.deviceName || 'Personal Device'),
+        String(sale.deviceName || ''),
         String(sale.amount || '0')
       ];
 

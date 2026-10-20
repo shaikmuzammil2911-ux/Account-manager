@@ -52,27 +52,27 @@ export default function InventoryScreen({
       const isOtherSeller = seller && seller.toLowerCase() !== myEmail && seller.toLowerCase() !== 'fixyourmobiles10@gmail.com';
 
       setUserDetailsModal({
-        name: matched?.customerName || 'Bharath',
-        number: matched?.customerNumber || '9059542610',
+        name: matched?.customerName || (screen.status === 'occupied' ? 'Customer' : '-'),
+        number: matched?.customerNumber || '-',
         sold: isOtherSeller ? seller : (matched?.sellerName || ''),
-        plan: matched?.validity || item.validity || '06 Months',
-        activation: matched?.activationDate || matched?.saleDate || '27-Jul-2026',
-        expiry: screen.expiryDate || matched?.expiryDate || '12-Mar-2027',
-        amount: matched?.amount ? `₹ ${matched.amount}` : '₹ 799',
-        device: matched?.deviceName || (screen.deviceType ? (screen.deviceType === 'tv' ? 'Android TV' : screen.deviceType.toUpperCase()) : 'Android TV'),
+        plan: matched?.validity || item.validity || '-',
+        activation: matched?.activationDate || matched?.saleDate || '-',
+        expiry: screen.expiryDate || matched?.expiryDate || '-',
+        amount: matched?.amount ? `₹ ${matched.amount}` : '-',
+        device: matched?.deviceName || '',
         refName: matched?.referenceName || '',
         refNumber: matched?.referenceNumber || ''
       });
     } catch (err) {
       setUserDetailsModal({
-        name: 'Bharath',
-        number: '9059542610',
+        name: screen.status === 'occupied' ? 'Customer' : '-',
+        number: '-',
         sold: '',
-        plan: item.validity || '06 Months',
-        activation: '27-Jul-2026',
-        expiry: screen.expiryDate || '12-Mar-2027',
-        amount: '₹ 799',
-        device: 'Android TV',
+        plan: item.validity || '-',
+        activation: '-',
+        expiry: screen.expiryDate || '-',
+        amount: '-',
+        device: '',
         refName: '',
         refNumber: ''
       });
@@ -80,8 +80,13 @@ export default function InventoryScreen({
   };
 
   useEffect(() => {
-    setCurrentBrand(selectedBrand || null);
-  }, [selectedBrand]);
+    if (selectedBrand) {
+      const fresh = (brands || []).find(b => b.id === selectedBrand.id);
+      setCurrentBrand(fresh || selectedBrand);
+    } else {
+      setCurrentBrand(null);
+    }
+  }, [selectedBrand, brands]);
 
   // Top 4 Filter Controls (from image copy 10.png)
   const [filterSelectedOnly, setFilterSelectedOnly] = useState(false);
@@ -1486,32 +1491,30 @@ export default function InventoryScreen({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap'
                   }}>
-                    {userDetailsModal.device || 'Android TV'}
+                    {userDetailsModal.device || '-'}
                   </div>
                 </div>
               </div>
 
-              {/* Row 4 (Ref Details if present) */}
-              {(userDetailsModal.refName || userDetailsModal.refNumber) && (
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr 1fr',
-                  gap: '8px',
-                  background: '#f8fafc',
-                  border: '1.5px solid #cbd5e1',
-                  borderRadius: '10px',
-                  padding: '8px 10px'
-                }}>
-                  <div>
-                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Name</div>
-                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refName || '-'}</div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Number</div>
-                    <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refNumber || '-'}</div>
-                  </div>
+              {/* Row 4: Ref Details (Always shown per user requirement, empty/'-' if not provided) */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '8px',
+                background: '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                borderRadius: '10px',
+                padding: '8px 10px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Name</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refName || '-'}</div>
                 </div>
-              )}
+                <div>
+                  <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Number</div>
+                  <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refNumber || '-'}</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

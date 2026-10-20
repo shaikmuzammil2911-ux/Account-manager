@@ -53,6 +53,41 @@ export default function BrandSelectorModal({
 
         {/* 3-Column Brands Grid matching image copy 13.png */}
         <div className="ott-brands-grid-3col">
+          {/* All Brands Option */}
+          <button
+            type="button"
+            className="ott-brand-tile"
+            onClick={() => {
+              onSelect(null);
+              onClose();
+            }}
+            id="modal-brand-select-all"
+            style={{
+              borderColor: (!selectedBrandId || selectedBrandId === 'all') ? '#2563eb' : undefined,
+              background: (!selectedBrandId || selectedBrandId === 'all') ? '#eff6ff' : undefined
+            }}
+          >
+            <div style={{
+              width: '68px',
+              height: '68px',
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+              color: '#ffffff',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 4px 10px rgba(37,99,235,0.3)',
+              fontWeight: 900,
+              fontSize: '18px',
+              letterSpacing: '1px'
+            }}>
+              ALL
+            </div>
+            <span className="ott-brand-tile-name" style={{ fontWeight: 800 }}>
+              All Brands
+            </span>
+          </button>
+
           {allBrands.map((brand) => (
             <button
               key={brand.id}

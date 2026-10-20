@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { getDaysDiff, getExpiryStatus } from '../utils/dateUtils';
 import { exportExpiryToExcel } from '../utils/excelExport';
 import CopyButton from '../components/CopyButton';
+import BrandSelectorModal from '../components/BrandSelectorModal';
 
 export default function ExpiryScreen({
   brands = [],
@@ -25,28 +26,22 @@ export default function ExpiryScreen({
   // Top 4 categorizations: Account, Validity, Brand, Notified
   const [groupByAccount, setGroupByAccount] = useState(true); // Account-wise view active by default per Master Prompt
   const [filterValidity, setFilterValidity] = useState('all');
-  const [filterBrand, setFilterBrand] = useState(selectedBrand ? selectedBrand.id : 'all');
+  const [filterBrand, setFilterBrand] = useState(selectedBrand?.id || 'all');
   const [filterNotified, setFilterNotified] = useState('all'); // 'all', 'pending', 'notified'
   const [searchQuery, setSearchQuery] = useState('');
+  const [showBrandModal, setShowBrandModal] = useState(false);
 
   const [items, setItems] = useState([]);
   const [inventoryList, setInventoryList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Sync with selectedBrand prop if it changes
-  useEffect(() => {
-    if (selectedBrand) {
-      setFilterBrand(selectedBrand.id);
-    }
-  }, [selectedBrand]);
-
   const fetchExpiryList = async () => {
     try {
       setLoading(true);
       const [salesData, invData] = await Promise.all([
         api.getExpiry({
-          filter: 'ALL', // Fetch all sales and apply client-side urgency + top filters together
+          filter: 'ALL',
           brandId: 'all'
         }),
         api.getInventory({ brandId: 'all' })
@@ -69,7 +64,7 @@ export default function ExpiryScreen({
     setGroupByAccount(prev => {
       const next = !prev;
       if (showToast) {
-        showToast(next ? 'Account-wise view: Grouped by parent accounts' : 'Flat view: Individual subscription cards', 'info');
+        showToast(next ? 'Account-wise view: Grouped by parent accounts' : 'Flat view: Individual screen cards', 'info');
       }
       return next;
     });
@@ -81,22 +76,6 @@ export default function ExpiryScreen({
     const next = list[(idx + 1) % list.length];
     setFilterValidity(next);
     if (showToast) showToast(next === 'all' ? 'Validity: All Validities' : `Validity Filter: ${next}`, 'info');
-  };
-
-  const cycleBrand = () => {
-    const availableBrandIds = ['all', ...(brands || []).map(b => b.id)];
-    const uniqueBrandIds = Array.from(new Set(availableBrandIds));
-    const idx = uniqueBrandIds.indexOf(filterBrand);
-    const next = uniqueBrandIds[(idx + 1) % uniqueBrandIds.length];
-    setFilterBrand(next);
-    if (showToast) {
-      if (next === 'all') {
-        showToast('Brand: All OTT Brands', 'info');
-      } else {
-        const bObj = (brands || []).find(b => b.id === next);
-        showToast(`Brand Filter: ${bObj?.displayName || next}`, 'info');
-      }
-    }
   };
 
   const cycleNotified = () => {
@@ -118,10 +97,10 @@ export default function ExpiryScreen({
   const getBrandShortName = (brandId) => {
     const b = getBrandObj(brandId);
     if (b?.displayName) return b.displayName.split(' ')[0];
-    return (brandId || 'ALL').toUpperCase().slice(0, 7);
+    return (brandId || 'ALL').toUpperCase().slice(0, 8);
   };
 
-  // Render Highlighted Expiry Date Badge on Top Right
+  // Render Highlighted Expiry Date Badge on Top Right (Red for expired, Orange for today/2-days, Green for active)
   const renderHighlightedExpiryBadge = (sub) => {
     const statusObj = getExpiryStatus(sub.expiryDate);
 
@@ -150,31 +129,139 @@ export default function ExpiryScreen({
     );
   };
 
-  // Filter items through: Urgency filter (bottom 4) + Top 4 filters + Search + Date filter
-  const filteredItems = items.filter(sub => {
-    const diff = sub.daysRemaining !== undefined ? sub.daysRemaining : getDaysDiff(sub.expiryDate);
+  // =========================================================================
+  // 1. BUILD UNIFIED SCREEN RECORDS FROM INVENTORY ACCOUNTS + SALES RECORDS
+  // =========================================================================
+  const allScreens = [];
+  const processedSaleIds = new Set();
 
-    // 1. Bottom 4 Urgency Filter
-    if (filter === 'expired' && diff >= 0) return false;
-    if (filter === 'today' && diff !== 0) return false;
-    if (filter === 'in_02_days' && (diff <= 0 || diff > 2)) return false;
+  (inventoryList || []).forEach(inv => {
+    const brand = getBrandObj(inv.brandId);
+    const configuredScreens = inv.screens || [];
+
+    configuredScreens.forEach((screen, sIdx) => {
+      const screenNum = screen.screenNumber || (sIdx + 1);
+
+      // Find matching sale for this screen
+      let sale = null;
+      if (screen.saleId) {
+        sale = (items || []).find(s => s.id === screen.saleId);
+      }
+      if (!sale) {
+        sale = (items || []).find(s =>
+          (s.inventoryId === inv.id || s.accountEmail?.toLowerCase() === inv.email?.toLowerCase()) &&
+          (parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === screenNum || s.screenNumber === `Screen-${screenNum}` || s.screenNumber === `Screen ${screenNum}`)
+        );
+      }
+      if (sale && sale.id) {
+        processedSaleIds.add(sale.id);
+      }
+
+      const expiryDate = screen.expiryDate || sale?.expiryDate || '';
+      const diff = getDaysDiff(expiryDate);
+      const statusObj = getExpiryStatus(expiryDate);
+
+      allScreens.push({
+        id: sale?.id || `${inv.id}_s_${screenNum}`,
+        accountId: inv.id,
+        accountRecordNumber: inv.recordNumber,
+        accountEmail: inv.email,
+        accountPassword: inv.password,
+        brandId: inv.brandId,
+        brandName: inv.brandName || brand?.displayName || brand?.name || inv.brandId,
+        screenNumber: screenNum,
+        screenPin: screen.pin || sale?.screenPin || '',
+        status: screen.status || (sale ? 'occupied' : 'empty'),
+        customerName: sale?.customerName || (screen.status === 'occupied' ? 'Customer' : 'Vacant Screen'),
+        customerNumber: sale?.customerNumber || '',
+        validity: sale?.validity || inv.validity || '01 Month',
+        activationDate: sale?.activationDate || sale?.saleDate || '',
+        expiryDate: expiryDate,
+        daysRemaining: diff,
+        expiryStatus: statusObj.status,
+        deviceName: sale?.deviceName || '',
+        notificationSent: !!sale?.notificationSent,
+        lastNotifiedAt: sale?.lastNotifiedAt || null,
+        amount: sale?.amount || '',
+        sellerName: sale?.sellerName || '',
+        saleId: sale?.id || screen.saleId || null
+      });
+    });
+  });
+
+  // Include any extra sales that were not attached to an inventory account screen
+  (items || []).forEach((s, sIdx) => {
+    if (!processedSaleIds.has(s.id)) {
+      const diff = s.daysRemaining !== undefined ? s.daysRemaining : getDaysDiff(s.expiryDate);
+      const statusObj = getExpiryStatus(s.expiryDate);
+      const screenNum = parseInt(String(s.screenNumber).replace(/\D/g, '') || String(sIdx + 1), 10);
+      const brand = getBrandObj(s.brandId);
+
+      allScreens.push({
+        id: s.id,
+        accountId: s.inventoryId || `orphan_${s.accountEmail || 'acc'}`,
+        accountRecordNumber: null,
+        accountEmail: s.accountEmail || '',
+        accountPassword: s.accountPassword || '',
+        brandId: s.brandId || 'other',
+        brandName: s.brandName || brand?.displayName || s.brandId || 'OTT Service',
+        screenNumber: screenNum,
+        screenPin: s.screenPin || '',
+        status: 'occupied',
+        customerName: s.customerName || 'Customer',
+        customerNumber: s.customerNumber || '',
+        validity: s.validity || '01 Month',
+        activationDate: s.activationDate || s.saleDate || '',
+        expiryDate: s.expiryDate || '',
+        daysRemaining: diff,
+        expiryStatus: statusObj.status,
+        deviceName: s.deviceName || '',
+        notificationSent: !!s.notificationSent,
+        lastNotifiedAt: s.lastNotifiedAt || null,
+        amount: s.amount || '',
+        sellerName: s.sellerName || '',
+        saleId: s.id
+      });
+    }
+  });
+
+  // =========================================================================
+  // 2. BRAND-AWARE BASE RECORDS FOR ACCURATE COUNTERS & FILTERING
+  // =========================================================================
+  const baseScreenRecords = allScreens.filter(s => {
+    if (filterBrand !== 'all') {
+      const bId = (s.brandId || '').toLowerCase();
+      const bName = (s.brandName || '').toLowerCase();
+      const target = filterBrand.toLowerCase();
+      return bId === target || bName.includes(target);
+    }
+    return true;
+  });
+
+  // Summary counts calculated from underlying screen records
+  const totalScreensCount = baseScreenRecords.length;
+  const expiredCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining < 0).length;
+  const todayCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining === 0).length;
+  const inTwoDaysCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining > 0 && s.daysRemaining <= 2).length;
+  const activeCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining > 2).length;
+
+  // =========================================================================
+  // 3. COMBINED COMPOSABLE FILTERING
+  // =========================================================================
+  const filteredScreens = baseScreenRecords.filter(sub => {
+    const diff = sub.daysRemaining;
+
+    // 1. Urgency filter (bottom 4)
+    if (filter === 'expired' && (!sub.expiryDate || diff >= 0)) return false;
+    if (filter === 'today' && (!sub.expiryDate || diff !== 0)) return false;
+    if (filter === 'in_02_days' && (!sub.expiryDate || diff <= 0 || diff > 2)) return false;
 
     // 2. Validity filter
     if (filterValidity !== 'all' && sub.validity !== filterValidity) {
       return false;
     }
 
-    // 3. Brand filter
-    if (filterBrand !== 'all') {
-      const bId = (sub.brandId || '').toLowerCase();
-      const bName = (sub.brandName || '').toLowerCase();
-      const target = filterBrand.toLowerCase();
-      if (bId !== target && !bName.includes(target)) {
-        return false;
-      }
-    }
-
-    // 4. Notified filter
+    // 3. Notified filter
     if (filterNotified === 'pending' && sub.notificationSent) {
       return false;
     }
@@ -182,7 +269,7 @@ export default function ExpiryScreen({
       return false;
     }
 
-    // 5. Calendar Date filter
+    // 4. Calendar Date filter
     if (dateFilter) {
       const subExp = (sub.expiryDate || '').trim();
       if (subExp !== dateFilter.trim()) {
@@ -190,7 +277,7 @@ export default function ExpiryScreen({
       }
     }
 
-    // 6. Search query filter
+    // 5. Search query filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const match =
@@ -205,48 +292,32 @@ export default function ExpiryScreen({
     return true;
   });
 
-  // Calculate Account Summary metrics
-  const totalScreensCount = items.length;
-  const expiredCount = items.filter(s => getDaysDiff(s.expiryDate) < 0).length;
-  const todayCount = items.filter(s => getDaysDiff(s.expiryDate) === 0).length;
-  const inTwoDaysCount = items.filter(s => {
-    const d = getDaysDiff(s.expiryDate);
-    return d > 0 && d <= 2;
-  }).length;
-  const activeCount = items.filter(s => getDaysDiff(s.expiryDate) > 2).length;
-  const notifiedCount = items.filter(s => s.notificationSent).length;
-
-  // Account-Wise Screen Organization (Master Requirement Section 2)
+  // =========================================================================
+  // 4. ACCOUNT-WISE GROUPING LOGIC (Section 4 of Master Prompt)
+  // =========================================================================
   const accountGroups = [];
   if (groupByAccount) {
     const accMap = new Map();
 
-    filteredItems.forEach(sub => {
-      // Group key: Brand + Account Email (prevents accidental merging across different brands)
-      const brandKey = (sub.brandId || sub.brandName || 'other').toLowerCase().trim();
-      const emailKey = (sub.accountEmail || 'unassigned').toLowerCase().trim();
-      const groupKey = `${brandKey}__${emailKey}`;
-
-      if (!accMap.has(groupKey)) {
-        accMap.set(groupKey, {
-          groupKey,
+    filteredScreens.forEach(sub => {
+      const key = sub.accountId;
+      if (!accMap.has(key)) {
+        accMap.set(key, {
+          accountId: sub.accountId,
+          recordNumber: sub.accountRecordNumber,
           email: sub.accountEmail || 'Unassigned Account',
           password: sub.accountPassword || '',
           brandId: sub.brandId,
-          brandName: sub.brandName || sub.brandId,
-          items: []
+          brandName: sub.brandName,
+          screens: []
         });
       }
-      accMap.get(groupKey).items.push(sub);
+      accMap.get(key).screens.push(sub);
     });
 
-    // Sort items within each account by screen number
     accMap.forEach(group => {
-      group.items.sort((a, b) => {
-        const numA = parseInt(String(a.screenNumber || '').replace(/\D/g, '') || '0', 10);
-        const numB = parseInt(String(b.screenNumber || '').replace(/\D/g, '') || '0', 10);
-        return numA - numB;
-      });
+      // Sort screens within account by screenNumber
+      group.screens.sort((a, b) => (a.screenNumber || 0) - (b.screenNumber || 0));
       accountGroups.push(group);
     });
   }
@@ -257,7 +328,7 @@ export default function ExpiryScreen({
       setExporting(true);
       const bObj = getBrandObj(filterBrand);
       const brandName = bObj ? (bObj.displayName || bObj.name) : 'All Brands';
-      const filename = exportExpiryToExcel(filteredItems.length > 0 ? filteredItems : items, {
+      const filename = exportExpiryToExcel(filteredScreens.length > 0 ? filteredScreens : baseScreenRecords, {
         selectedBrandName: brandName
       });
       if (showToast) showToast(`Downloaded: ${filename}`, 'success');
@@ -270,6 +341,20 @@ export default function ExpiryScreen({
 
   return (
     <div className="screen-content" style={{ paddingBottom: '95px', paddingTop: '10px' }}>
+      {/* Brand Selector Modal for Single-Click OTT Selection */}
+      <BrandSelectorModal
+        isOpen={showBrandModal}
+        brands={brands}
+        selectedBrandId={filterBrand}
+        onSelect={(b) => {
+          setFilterBrand(b ? b.id : 'all');
+          if (showToast) {
+            showToast(b ? `Filtered by ${b.displayName || b.name}` : 'Showing All OTT Brands', 'info');
+          }
+        }}
+        onClose={() => setShowBrandModal(false)}
+      />
+
       {/* =================================================================== */}
       {/* ROW 1: TOP 4 BUTTONS: Account, Validity, Brand, Notified           */}
       {/* =================================================================== */}
@@ -322,7 +407,7 @@ export default function ExpiryScreen({
           </span>
         </button>
 
-        {/* 3. Brand Button */}
+        {/* 3. Brand Button (Click opens modal for manual single-click selection) */}
         <button
           type="button"
           className={`filter-pill-btn ${filterBrand !== 'all' ? 'pill-selected-active' : 'pill-selected-inactive'}`}
@@ -331,14 +416,14 @@ export default function ExpiryScreen({
             fontSize: '12px',
             fontWeight: 800,
             borderRadius: '10px',
-            background: filterBrand !== 'all' ? 'linear-gradient(135deg, #ea580c 0%, #f97316 100%)' : undefined,
+            background: filterBrand !== 'all' ? (getBrandObj(filterBrand)?.color || '#ea580c') : undefined,
             color: filterBrand !== 'all' ? '#ffffff' : undefined,
             borderColor: filterBrand !== 'all' ? '#c2410c' : undefined,
             boxShadow: filterBrand !== 'all' ? '0 2px 6px rgba(234, 88, 12, 0.35)' : 'none'
           }}
-          onClick={cycleBrand}
+          onClick={() => setShowBrandModal(true)}
           id="expiry-filter-brand"
-          title={filterBrand === 'all' ? 'Filter by Brand' : `Brand: ${filterBrand}`}
+          title={filterBrand === 'all' ? 'Click to select OTT Brand' : `Brand: ${filterBrand}`}
         >
           <Tv size={13} strokeWidth={2.4} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -448,14 +533,17 @@ export default function ExpiryScreen({
             placeholder="Search by customer, phone, email, brand..."
             style={{
               width: '100%',
-              padding: '8px 10px 8px 32px',
-              borderRadius: '10px',
+              height: '38px',
+              paddingLeft: '32px',
+              paddingRight: searchQuery ? '30px' : '10px',
               border: '1.5px solid #cbd5e1',
-              fontSize: '12px',
+              borderRadius: '10px',
+              fontSize: '12.5px',
               fontWeight: 600,
-              color: '#0f172a',
               background: '#ffffff',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+              color: '#0f172a',
+              outline: 'none',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
             }}
           />
           {searchQuery && (
@@ -476,7 +564,7 @@ export default function ExpiryScreen({
           )}
         </div>
 
-        {/* Excel Download Button (image copy 111.png) */}
+        {/* Excel Download Button */}
         <button
           type="button"
           className="glossy-btn glossy-btn-green"
@@ -502,7 +590,7 @@ export default function ExpiryScreen({
       </div>
 
       {/* =================================================================== */}
-      {/* ACCOUNT SUMMARY STRIP (Section 9 of Master Prompt)                 */}
+      {/* ACCOUNT SUMMARY STRIP (Section 8 of Master Prompt)                 */}
       {/* =================================================================== */}
       <div style={{
         display: 'grid',
@@ -584,33 +672,32 @@ export default function ExpiryScreen({
       )}
 
       {/* =================================================================== */}
-      {/* SUBSCRIPTION CONTENT: ACCOUNT-WISE VIEW VS INDIVIDUAL CARDS        */}
+      {/* SUBSCRIPTION CONTENT: ACCOUNT-WISE VIEW VS INDIVIDUAL SCREEN VIEW  */}
       {/* =================================================================== */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
           Loading subscriptions...
         </div>
-      ) : filteredItems.length === 0 ? (
+      ) : filteredScreens.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 16px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px' }}>No subscriptions match active filters.</p>
           <p style={{ fontSize: '12px', color: '#94a3b8' }}>Try resetting Brand, Validity, Notified, or Date filters.</p>
         </div>
       ) : groupByAccount ? (
         /* ----------------------------------------------------------------- */
-        /* ACCOUNT-WISE SCREEN ORGANIZATION (MASTER PROMPT REQUIREMENT 2)    */
+        /* ACCOUNT-WISE SCREEN ORGANIZATION (MASTER PROMPT SECTION 4)        */
         /* ----------------------------------------------------------------- */
         accountGroups.map((group, gIdx) => {
           const brandObj = getBrandObj(group.brandId);
           const brandDisplayName = brandObj?.displayName || group.brandName || 'OTT Service';
           const isNetflix = (group.brandId || '').toLowerCase() === 'netflix' || brandDisplayName.toLowerCase().includes('netflix');
 
-          // Count expired vs active in this specific account
-          const groupExpiredCount = group.items.filter(s => getDaysDiff(s.expiryDate) <= 0).length;
-          const groupActiveCount = group.items.length - groupExpiredCount;
+          // Count expired in this specific account group
+          const groupExpiredCount = group.screens.filter(s => s.daysRemaining < 0).length;
 
           return (
             <div
-              key={group.groupKey + gIdx}
+              key={group.accountId || gIdx}
               style={{
                 background: '#ffffff',
                 borderRadius: '16px',
@@ -655,7 +742,7 @@ export default function ExpiryScreen({
                       overflow: 'hidden',
                       whiteSpace: 'nowrap'
                     }}>
-                      Account {gIdx + 1} — {group.email}
+                      Account {group.recordNumber || gIdx + 1} — {group.email}
                     </div>
                     <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
                       Pass: {group.password || '••••••••'}
@@ -675,7 +762,7 @@ export default function ExpiryScreen({
                     fontWeight: 800,
                     whiteSpace: 'nowrap'
                   }}>
-                    {group.items.length} Screens
+                    {group.screens.length} Screens
                   </span>
                   {groupExpiredCount > 0 && (
                     <span style={{
@@ -694,9 +781,9 @@ export default function ExpiryScreen({
                 </div>
               </div>
 
-              {/* Screens List under this Account - EACH WITH INDEPENDENT STATUS & EXPIRY COLOR */}
+              {/* Screens List under this Account - Vertically Stacked Cards */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {group.items.map((sub, sIdx) => {
+                {group.screens.map((sub, sIdx) => {
                   const statusObj = getExpiryStatus(sub.expiryDate);
                   const showPin = brandObj ? (brandObj.showScreenPin !== false) : true;
                   const showDevice = brandObj ? (brandObj.showDeviceName !== false) : true;
@@ -713,7 +800,7 @@ export default function ExpiryScreen({
                       }}
                       id={`screen-card-${gIdx + 1}-${sIdx + 1}`}
                     >
-                      {/* Top Screen Header: Screen number badge, PIN, and HIGHLIGHTED INDEPENDENT Expiry Date */}
+                      {/* Top Screen Header: Screen number badge, PIN, and HIGHLIGHTED Expiry Date */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           <span style={{
@@ -725,7 +812,19 @@ export default function ExpiryScreen({
                             fontSize: '11.5px',
                             fontWeight: 900
                           }}>
-                            {sub.screenNumber ? `Screen-${sub.screenNumber}` : `Screen-${sIdx + 1}`}
+                            Screen-{String(sub.screenNumber || sIdx + 1).padStart(2, '0')}
+                          </span>
+
+                          <span style={{
+                            background: '#f3e8ff',
+                            border: '1px solid #e9d5ff',
+                            color: '#7e22ce',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            fontSize: '10.5px',
+                            fontWeight: 700
+                          }}>
+                            {sub.validity || '1M'}
                           </span>
 
                           {showPin && sub.screenPin && (
@@ -741,21 +840,9 @@ export default function ExpiryScreen({
                               PIN: {sub.screenPin}
                             </span>
                           )}
-
-                          <span style={{
-                            background: '#f3e8ff',
-                            border: '1px solid #e9d5ff',
-                            color: '#7e22ce',
-                            borderRadius: '6px',
-                            padding: '2px 6px',
-                            fontSize: '10.5px',
-                            fontWeight: 700
-                          }}>
-                            {sub.validity || '1M'}
-                          </span>
                         </div>
 
-                        {/* Top-Right Highlighted Expiry Date Badge (Calculated independently!) */}
+                        {/* Top-Right Highlighted Expiry Date Badge */}
                         {renderHighlightedExpiryBadge(sub)}
                       </div>
 
@@ -785,25 +872,25 @@ export default function ExpiryScreen({
                         </div>
                       </div>
 
-                      {/* Row 2: Activation Date, Device Name (image copy 100.png), and Notify Button */}
+                      {/* Row 2: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
                       <div style={{
                         display: 'grid',
-                        gridTemplateColumns: showDevice ? '1fr 1fr 1fr' : '1.2fr 1fr',
+                        gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.1fr' : '1.2fr 1fr',
                         gap: '6px',
                         alignItems: 'center'
                       }}>
                         <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
                           <div style={{ fontSize: '8.5px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
-                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>
+                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap' }}>
                             {sub.activationDate || '-'}
                           </div>
                         </div>
 
-                        {showDevice && (
+                        {showDevice && sub.deviceName && (
                           <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px', textAlign: 'center', overflow: 'hidden' }}>
                             <div style={{ fontSize: '8.5px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
-                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName || sub.device || 'TV / Mobile'}>
-                              {sub.deviceName || sub.device || 'TV / Mobile'}
+                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName}>
+                              {sub.deviceName}
                             </div>
                           </div>
                         )}
@@ -838,9 +925,9 @@ export default function ExpiryScreen({
         })
       ) : (
         /* ----------------------------------------------------------------- */
-        /* STANDARD FLAT CARDS VIEW (Matching image copy 110.png)            */
+        /* STANDARD FLAT CARDS VIEW (Matching image copy 118.png)            */
         /* ----------------------------------------------------------------- */
-        filteredItems.map((sub, sIdx) => {
+        filteredScreens.map((sub, sIdx) => {
           const isSecondCard = sIdx % 2 === 1;
           const statusObj = getExpiryStatus(sub.expiryDate);
           const brandObj = getBrandObj(sub.brandId);
@@ -859,12 +946,12 @@ export default function ExpiryScreen({
                 marginBottom: '16px',
                 boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)'
               }}
-              id={`expiry-card-${sub.recordNumber || sIdx + 1}`}
+              id={`expiry-card-${sIdx + 1}`}
             >
               {/* Card Header: Ribbon, Brand Badge, HIGHLIGHTED Expiry Date */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <div className={`ribbon-badge ${isSecondCard ? 'blue' : ''}`}>
-                  {sub.recordNumber || String(sIdx + 1).padStart(2, '0')}
+                  {String(sIdx + 1).padStart(2, '0')}
                 </div>
 
                 {/* Brand Badge */}
@@ -889,7 +976,7 @@ export default function ExpiryScreen({
                   )}
                 </div>
 
-                {/* Top Right Expiry Date - HIGHLIGHTED INDEPENDENT COLOR */}
+                {/* Top Right Expiry Date */}
                 {renderHighlightedExpiryBadge(sub)}
               </div>
 
@@ -899,7 +986,7 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>NAME</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                     <User size={13} color="#64748b" />
-                    <span>{sub.customerName}</span>
+                    <span>{sub.customerName || 'Customer'}</span>
                   </div>
                 </div>
 
@@ -908,7 +995,7 @@ export default function ExpiryScreen({
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Phone size={13} color="#64748b" />
-                      <span>{sub.customerNumber}</span>
+                      <span>{sub.customerNumber || '-'}</span>
                     </div>
                     {sub.customerNumber && (
                       <CopyButton text={sub.customerNumber} size={13} showLabelOnCopy={false} />
@@ -923,7 +1010,7 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>MAIL ID</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     <Mail size={13} color="#64748b" />
-                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{sub.accountEmail}</span>
+                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{sub.accountEmail || '-'}</span>
                   </div>
                 </div>
 
@@ -931,15 +1018,15 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>PASSWORD</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
                     <Lock size={13} color="#64748b" />
-                    <span>{sub.accountPassword}</span>
+                    <span>{sub.accountPassword || '-'}</span>
                   </div>
                 </div>
               </div>
 
-              {/* Row 3: VALIDITY, SCREEN, PIN (PIN respects brand.showScreenPin !== false) */}
+              {/* Row 3: VALIDITY, SCREEN, PIN */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: showPin ? '1.2fr 1fr 1fr' : '1.2fr 1fr',
+                gridTemplateColumns: (showPin && sub.screenPin) ? '1.2fr 1fr 1fr' : '1.2fr 1fr',
                 gap: '6px',
                 marginBottom: '8px'
               }}>
@@ -955,38 +1042,38 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '9.5px', color: '#6366f1', fontWeight: 800 }}>SCREEN</div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#4338ca' }}>
                     <Tv size={12} color="#6366f1" />
-                    <span>{sub.screenNumber}</span>
+                    <span>Screen-{String(sub.screenNumber).padStart(2, '0')}</span>
                   </div>
                 </div>
 
-                {showPin && (
+                {showPin && sub.screenPin && (
                   <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', padding: '4px 6px', textAlign: 'center' }}>
                     <div style={{ fontSize: '9.5px', color: '#d97706', fontWeight: 800 }}>PIN</div>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 700, color: '#b45309' }}>
                       <Key size={12} color="#d97706" />
-                      <span>{sub.screenPin || '-'}</span>
+                      <span>{sub.screenPin}</span>
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* Row 4: ACTIVATION, DEVICE (image copy 100.png replaces Expiry box), and NOTIFY BUTTON */}
+              {/* Row 4: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: showDevice ? '1fr 1fr 1fr' : '1.2fr 1fr',
+                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1fr' : '1.2fr 1fr',
                 gap: '6px',
                 alignItems: 'center'
               }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
                   <div style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>{sub.activationDate}</div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>{sub.activationDate || '-'}</div>
                 </div>
 
-                {showDevice && (
+                {showDevice && sub.deviceName && (
                   <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px', textAlign: 'center', overflow: 'hidden' }}>
                     <div style={{ fontSize: '9px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName || sub.device || 'TV / Mobile'}>
-                      {sub.deviceName || sub.device || 'TV / Mobile'}
+                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName}>
+                      {sub.deviceName}
                     </div>
                   </div>
                 )}
@@ -997,7 +1084,7 @@ export default function ExpiryScreen({
                   className={`glossy-btn ${sub.notificationSent ? 'glossy-btn-green' : 'glossy-btn-red'}`}
                   style={{ padding: '8px 4px', fontSize: '13px', height: '100%' }}
                   onClick={() => onOpenNotifyModal(sub)}
-                  id={`notify-btn-${sub.recordNumber || sIdx + 1}`}
+                  id={`notify-btn-${sIdx + 1}`}
                 >
                   {sub.notificationSent ? <Check size={14} strokeWidth={2.5} /> : <Bell size={15} />}
                   <span>{sub.notificationSent ? 'Notified' : 'Notify'}</span>

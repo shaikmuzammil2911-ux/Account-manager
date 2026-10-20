@@ -254,7 +254,7 @@ function doGet(e) {
           accountPassword: String(r[8] || ''),
           screenNumber: String(r[9] || 'Screen-1'),
           screenPin: String(r[10] || ''),
-          deviceName: String(r[11] || 'Personal Device'),
+          deviceName: String(r[11] || '').trim(),
           amount: Number(r[12]) || 0,
           customerName: String(r[7] || '').split('@')[0],
           status: 'Active'
@@ -1255,7 +1255,7 @@ export function buildSpreadsheetPayload(inventory = [], sales = [], brands = [])
       String(sale.accountPassword || ''),
       String(sale.screenNumber || '01'),
       String(sale.screenPin || '1234'),
-      String(sale.deviceName || 'Personal Device'),
+      String(sale.deviceName || ''),
       String(sale.amount || '0')
     ];
 
