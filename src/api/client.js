@@ -1,5 +1,6 @@
 import { getClientInitialData } from '../utils/initialData';
-import { parseDate, getDaysDiff } from '../utils/dateUtils';
+import { parseDate, getDaysDiff, calculateExpiryDate } from '../utils/dateUtils';
+import { supabase } from '../utils/supabaseClient';
 import {
   testGoogleSheetConnection,
   validateGoogleSheets,
@@ -466,6 +467,10 @@ export const api = {
     const effectiveRole = params.userRole || activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
     const effectiveUserId = params.userId || activeUser?.id;
 
+    // Collect sales across all available sources (Server, Supabase, LocalStorage)
+    const salesMap = new Map();
+
+    // 1. Fetch from backend API if reachable
     try {
       const query = new URLSearchParams();
       if (params.brandId) query.set('brandId', params.brandId);
@@ -479,14 +484,69 @@ export const api = {
       const res = await fetch(`/api/sales?${query.toString()}`);
       if (res.ok) {
         const serverSales = await res.json();
-        if (serverSales && Array.isArray(serverSales)) {
-          return serverSales;
+        if (Array.isArray(serverSales)) {
+          serverSales.forEach(s => {
+            if (s && s.id) salesMap.set(s.id, s);
+          });
         }
       }
     } catch (e) {}
 
+    // 2. Fetch directly from Supabase sales table
+    try {
+      let sbQuery = supabase.from('sales').select('*');
+      if (params.brandId && params.brandId !== 'all') {
+        const targetBrandId = params.brandId.includes('__shared__') ? params.brandId.split('__shared__')[0] : params.brandId;
+        sbQuery = sbQuery.or(`brand_id.eq.${params.brandId},brand_id.eq.${targetBrandId}`);
+      }
+      const { data: sbData, error: sbErr } = await sbQuery;
+      if (!sbErr && Array.isArray(sbData)) {
+        sbData.forEach(s => {
+          if (s && s.id) {
+            const mapped = {
+              id: s.id,
+              recordNumber: s.record_number,
+              customerName: s.customer_name,
+              customerNumber: s.customer_number,
+              referenceName: s.reference_name,
+              referenceNumber: s.reference_number,
+              brandId: s.brand_id,
+              brandName: s.brand_name,
+              sellerEmail: s.seller_email,
+              ownerEmail: s.owner_email,
+              accountEmail: s.account_email,
+              accountPassword: s.account_password,
+              validity: s.validity,
+              pricingPlan: s.pricing_plan,
+              screenNumber: s.screen_number,
+              screenPin: s.screen_pin,
+              deviceName: s.device_name,
+              activationDate: s.activation_date,
+              expiryDate: s.expiry_date,
+              amount: Number(s.amount) || 199,
+              note: s.note,
+              status: s.status,
+              notificationSent: s.notification_sent,
+              lastNotifiedAt: s.last_notified_at,
+              inventoryId: s.inventory_id,
+              saleDate: s.activation_date,
+              createdAt: s.created_at
+            };
+            salesMap.set(mapped.id, { ...(salesMap.get(mapped.id) || {}), ...mapped });
+          }
+        });
+      }
+    } catch (e) {}
+
+    // 3. Merge LocalStorage sales (ensures offline and 0ms saved sales are present)
     const local = getLocalData();
-    let sales = [...(local.sales || [])];
+    (local.sales || []).forEach(s => {
+      if (s && s.id) {
+        salesMap.set(s.id, { ...(salesMap.get(s.id) || {}), ...s });
+      }
+    });
+
+    let sales = Array.from(salesMap.values());
     const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
 
     if (!isAdmin) {
@@ -506,17 +566,34 @@ export const api = {
     if (params.date) {
       sales = sales.filter(s => s.saleDate === params.date || s.activationDate === params.date || s.expiryDate === params.date);
     }
+    if (params.startDate && params.endDate) {
+      const startT = parseDate(params.startDate).getTime();
+      const endT = parseDate(params.endDate).getTime();
+      sales = sales.filter(s => {
+        const actT = parseDate(s.activationDate || s.saleDate).getTime();
+        return actT >= startT && actT <= endT;
+      });
+    }
     if (params.search) {
       const q = params.search.toLowerCase();
       sales = sales.filter(s =>
         (s.customerName && s.customerName.toLowerCase().includes(q)) ||
         (s.customerNumber && s.customerNumber.includes(q)) ||
         (s.accountEmail && s.accountEmail.toLowerCase().includes(q)) ||
-        (s.brandName && s.brandName.toLowerCase().includes(q))
+        (s.brandName && s.brandName.toLowerCase().includes(q)) ||
+        (s.screenPin && s.screenPin.includes(q)) ||
+        (s.screenNumber && String(s.screenNumber).includes(q)) ||
+        (s.deviceName && s.deviceName.toLowerCase().includes(q))
       );
     }
 
-    sales.sort((a, b) => parseInt(b.recordNumber || '0') - parseInt(a.recordNumber || '0'));
+    sales.sort((a, b) => {
+      const dateA = parseDate(a.activationDate || a.saleDate).getTime();
+      const dateB = parseDate(b.activationDate || b.saleDate).getTime();
+      if (dateA !== dateB) return dateB - dateA;
+      return parseInt(b.recordNumber || '0') - parseInt(a.recordNumber || '0');
+    });
+
     return sales;
   },
 
@@ -524,6 +601,9 @@ export const api = {
     const local = getLocalData();
     const brand = local.brands.find(b => b.id === saleData.brandId) || local.brands[0];
     const nextRecordNum = String((local.sales || []).length + 1).padStart(2, '0');
+
+    // Calculate guaranteed accurate expiry date
+    const calculatedExpiry = saleData.expiryDate || calculateExpiryDate(saleData.activationDate, saleData.validity || '01 Month');
 
     // 1. Transactionally record the sale in local storage first (0ms latency, zero data loss!)
     let assignedAccount = null;
@@ -594,7 +674,10 @@ export const api = {
 
       assignedScreen.status = 'occupied';
       assignedScreen.saleId = saleId;
-      assignedScreen.expiryDate = saleData.expiryDate;
+      assignedScreen.expiryDate = calculatedExpiry;
+      assignedScreen.activationDate = saleData.activationDate;
+      assignedScreen.customerName = saleData.customerName;
+      assignedScreen.customerNumber = saleData.customerNumber;
       if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
       if (saleData.deviceName) assignedScreen.deviceType = saleData.deviceName;
       assignedAccount.updatedAt = Date.now();
@@ -617,7 +700,7 @@ export const api = {
       screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
       screenPin: saleData.screenPin || assignedScreen?.pin || '1234',
       activationDate: saleData.activationDate,
-      expiryDate: saleData.expiryDate,
+      expiryDate: calculatedExpiry,
       amount: Number(saleData.amount) || brand?.prices?.[saleData.validity] || 199,
       deviceName: saleData.deviceName || 'Personal TV',
       saleDate: saleData.activationDate,
@@ -632,23 +715,74 @@ export const api = {
     local.sales = [newSale, ...(local.sales || [])];
     saveLocalData(local);
 
-    // 2. REAL-TIME GOOGLE SHEETS SYNC: Instantly push this sale to Google Sheets!
+    // 2. Direct Supabase Persistence (Database Consistency & RLS)
+    try {
+      const supabaseSalePayload = {
+        id: saleId,
+        owner_email: newSale.sellerEmail,
+        seller_email: newSale.sellerEmail,
+        brand_id: newSale.brandId,
+        brand_name: newSale.brandName,
+        inventory_id: newSale.inventoryId,
+        record_number: newSale.recordNumber,
+        customer_name: newSale.customerName,
+        customer_number: newSale.customerNumber,
+        reference_name: newSale.referenceName,
+        reference_number: newSale.referenceNumber,
+        account_email: newSale.accountEmail,
+        account_password: newSale.accountPassword,
+        validity: newSale.validity,
+        pricing_plan: newSale.pricingPlan,
+        screen_number: newSale.screenNumber,
+        screen_pin: newSale.screenPin,
+        device_name: newSale.deviceName,
+        activation_date: newSale.activationDate,
+        expiry_date: newSale.expiryDate,
+        amount: newSale.amount,
+        note: newSale.note,
+        status: newSale.status,
+        notification_sent: false,
+        created_at: newSale.createdAt,
+        updated_at: new Date().toISOString()
+      };
+
+      const { error: sbErr } = await supabase.from('sales').upsert(supabaseSalePayload, { onConflict: 'id' });
+      if (sbErr) {
+        console.warn('[Supabase Sale Save Warning]:', sbErr.message);
+      }
+
+      // Update screen record in Supabase
+      if (assignedAccount?.id) {
+        const sNum = parseInt(String(newSale.screenNumber).replace(/\D/g, '') || '1', 10);
+        await supabase
+          .from('screens')
+          .update({
+            status: 'occupied',
+            sale_id: saleId,
+            expiry_date: calculatedExpiry,
+            updated_at: new Date().toISOString()
+          })
+          .match({ account_id: assignedAccount.id, screen_number: sNum });
+      }
+    } catch (sbEx) {
+      console.warn('[Supabase Direct Save Error]:', sbEx.message);
+    }
+
+    // 3. REAL-TIME GOOGLE SHEETS SYNC: Instantly push this sale to Google Sheets!
     this.getSheetsConfig().then(cfg => {
       syncSaleToGoogleSheet(cfg?.webhookUrl || '', newSale).then(res => {
-        if (res?.success) {
-          console.log('Google Sheet sale sync succeeded');
-        }
+        if (res?.success) console.log('Google Sheet sale sync succeeded');
       }).catch(err => {
         console.warn('Google Sheet sale background sync warning:', err.message);
       });
     }).catch(() => {});
 
-    // 3. Background sync to backend API
+    // 4. Background sync to backend API
     try {
       fetch('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(saleData)
+        body: JSON.stringify({ ...saleData, expiryDate: calculatedExpiry })
       }).catch(() => {});
     } catch (e) {}
 
@@ -686,6 +820,38 @@ export const api = {
       }
 
       saveLocalData(local);
+
+      // Direct Supabase Update
+      try {
+        const sbUpdatePayload = {
+          updated_at: new Date().toISOString()
+        };
+        if (updates.customerName !== undefined) sbUpdatePayload.customer_name = updates.customerName;
+        if (updates.customerNumber !== undefined) sbUpdatePayload.customer_number = updates.customerNumber;
+        if (updates.accountEmail !== undefined) sbUpdatePayload.account_email = updates.accountEmail;
+        if (updates.accountPassword !== undefined) sbUpdatePayload.account_password = updates.accountPassword;
+        if (updates.validity !== undefined) sbUpdatePayload.validity = updates.validity;
+        if (updates.screenNumber !== undefined) sbUpdatePayload.screen_number = updates.screenNumber;
+        if (updates.screenPin !== undefined) sbUpdatePayload.screen_pin = updates.screenPin;
+        if (updates.deviceName !== undefined) sbUpdatePayload.device_name = updates.deviceName;
+        if (updates.activationDate !== undefined) sbUpdatePayload.activation_date = updates.activationDate;
+        if (updates.expiryDate !== undefined) sbUpdatePayload.expiry_date = updates.expiryDate;
+        if (updates.amount !== undefined) sbUpdatePayload.amount = Number(updates.amount);
+        if (updates.note !== undefined) sbUpdatePayload.note = updates.note;
+        if (updates.status !== undefined) sbUpdatePayload.status = updates.status;
+
+        await supabase.from('sales').update(sbUpdatePayload).eq('id', id);
+
+        if (updated.inventoryId && updates.expiryDate) {
+          const sNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
+          await supabase.from('screens').update({
+            expiry_date: updates.expiryDate,
+            updated_at: new Date().toISOString()
+          }).match({ account_id: updated.inventoryId, screen_number: sNum });
+        }
+      } catch (e) {
+        console.warn('[Supabase Sale Update Warning]:', e.message);
+      }
 
       // Real-time sync sale update to Google Sheets
       this.getSheetsConfig().then(cfg => {
@@ -732,6 +898,22 @@ export const api = {
     }
 
     saveLocalData(local);
+
+    // Direct Supabase delete & screen free
+    try {
+      await supabase.from('sales').delete().eq('id', id);
+      if (sale.inventoryId) {
+        const sNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
+        await supabase.from('screens').update({
+          status: 'empty',
+          sale_id: null,
+          expiry_date: null,
+          updated_at: new Date().toISOString()
+        }).match({ account_id: sale.inventoryId, screen_number: sNum });
+      }
+    } catch (e) {
+      console.warn('[Supabase Sale Delete Warning]:', e.message);
+    }
 
     // Real-time sync sale deletion to Google Sheets
     this.getSheetsConfig().then(cfg => {

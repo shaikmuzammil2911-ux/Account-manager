@@ -80,3 +80,84 @@ export async function syncSiteSettingsToSupabase(settings) {
     console.warn('[Supabase Sync] Warning syncing site settings:', err.message);
   }
 }
+
+/**
+ * Safely sync sale record to Supabase
+ */
+export async function syncSaleToSupabase(sale) {
+  try {
+    const payload = {
+      id: sale.id,
+      owner_email: sale.sellerEmail || sale.ownerEmail || 'Fixyourmobiles10@gmail.com',
+      seller_email: sale.sellerEmail || 'Fixyourmobiles10@gmail.com',
+      brand_id: sale.brandId,
+      brand_name: sale.brandName,
+      inventory_id: sale.inventoryId || null,
+      record_number: sale.recordNumber || '01',
+      customer_name: sale.customerName || 'Customer',
+      customer_number: sale.customerNumber || '',
+      reference_name: sale.referenceName || '',
+      reference_number: sale.referenceNumber || '',
+      account_email: sale.accountEmail || '',
+      account_password: sale.accountPassword || '',
+      validity: sale.validity || '01 Month',
+      pricing_plan: sale.pricingPlan || 'General',
+      screen_number: sale.screenNumber || '01',
+      screen_pin: sale.screenPin || '1234',
+      device_name: sale.deviceName || 'Personal TV',
+      activation_date: sale.activationDate,
+      expiry_date: sale.expiryDate,
+      amount: Number(sale.amount) || 199,
+      note: sale.note || '',
+      status: sale.status || 'Active',
+      notification_sent: Boolean(sale.notificationSent),
+      updated_at: new Date().toISOString()
+    };
+
+    const { error } = await supabaseServer.from('sales').upsert(payload, { onConflict: 'id' });
+    if (error) {
+      console.warn('[Supabase Sync] Sale upsert warning:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Supabase Sync] Warning syncing sale to Supabase:', err.message);
+  }
+}
+
+/**
+ * Safely sync screen expiry & occupancy to Supabase
+ */
+export async function syncScreenToSupabase(accountId, screenNumber, screenData) {
+  try {
+    if (!accountId) return;
+    const sNum = parseInt(String(screenNumber).replace(/\D/g, '') || '1', 10);
+    const { error } = await supabaseServer
+      .from('screens')
+      .update({
+        status: screenData.status || 'occupied',
+        sale_id: screenData.saleId || null,
+        expiry_date: screenData.expiryDate || null,
+        updated_at: new Date().toISOString()
+      })
+      .match({ account_id: accountId, screen_number: sNum });
+
+    if (error) {
+      console.warn('[Supabase Sync] Screen update warning:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Supabase Sync] Warning updating screen:', err.message);
+  }
+}
+
+/**
+ * Safely delete sale from Supabase
+ */
+export async function deleteSaleFromSupabase(saleId) {
+  try {
+    const { error } = await supabaseServer.from('sales').delete().eq('id', saleId);
+    if (error) {
+      console.warn('[Supabase Sync] Sale delete warning:', error.message);
+    }
+  } catch (err) {
+    console.warn('[Supabase Sync] Warning deleting sale from Supabase:', err.message);
+  }
+}

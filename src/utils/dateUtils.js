@@ -43,22 +43,42 @@ export function parseDate(str) {
 export function calculateExpiryDate(activationDateStr, validityStr) {
   if (!isValidDateStr(activationDateStr)) return '';
   const startDate = parseDate(activationDateStr);
-  if (!startDate) return '';
-  const result = new Date(startDate);
+  if (!startDate || isNaN(startDate.getTime())) return '';
 
   let monthsToAdd = 1;
   if (validityStr) {
-    const match = validityStr.match(/(\d+)/);
+    const match = String(validityStr).match(/(\d+)/);
     if (match) {
       monthsToAdd = parseInt(match[1], 10);
     }
   }
 
-  // Consistent calendar addition: add N months
-  const targetMonth = result.getMonth() + monthsToAdd;
-  result.setMonth(targetMonth);
+  const originalDay = startDate.getDate();
+  const target = new Date(startDate.getFullYear(), startDate.getMonth() + monthsToAdd, 1);
+  const daysInTargetMonth = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  target.setDate(Math.min(originalDay, daysInTargetMonth));
 
-  return formatDate(result);
+  return formatDate(target);
+}
+
+/**
+ * WhatsApp-Style Timeline Date Separator Formatter
+ * Returns "Today — 20-Oct-2026", "Yesterday — 19-Oct-2026", or "18-Oct-2026"
+ */
+export function formatTimelineDateBadge(dateStr) {
+  if (!isValidDateStr(dateStr)) return 'Recent Activity';
+  const targetDate = parseDate(dateStr);
+  if (!targetDate || isNaN(targetDate.getTime())) return dateStr;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const target = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24));
+
+  const formatted = formatDate(targetDate);
+  if (diffDays === 0) return `Today — ${formatted}`;
+  if (diffDays === 1) return `Yesterday — ${formatted}`;
+  return formatted;
 }
 
 export function getDaysDiff(targetDateStr, refDate = new Date()) {

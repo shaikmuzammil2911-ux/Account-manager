@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { db } from './db.js';
+import { syncSaleToSupabase, syncScreenToSupabase, deleteSaleFromSupabase } from './supabase.js';
 
 import nodemailer from 'nodemailer';
 
@@ -540,6 +541,18 @@ app.post('/api/sales', (req, res) => {
       note: req.body.note || ''
     });
 
+    if (result && result.sale) {
+      // Async sync to Supabase
+      syncSaleToSupabase(result.sale).catch(e => console.warn('Supabase sale sync error:', e));
+      if (result.assignedAccount?.id) {
+        syncScreenToSupabase(result.assignedAccount.id, result.sale.screenNumber, {
+          status: 'occupied',
+          saleId: result.sale.id,
+          expiryDate: result.sale.expiryDate
+        }).catch(e => console.warn('Supabase screen sync error:', e));
+      }
+    }
+
     res.status(201).json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -550,6 +563,17 @@ app.put('/api/sales/:id', (req, res) => {
   try {
     const updated = db.updateSale(req.params.id, req.body);
     if (!updated) return res.status(404).json({ error: 'Sale not found' });
+
+    // Async sync update to Supabase
+    syncSaleToSupabase(updated).catch(e => console.warn('Supabase sale update error:', e));
+    if (updated.inventoryId) {
+      syncScreenToSupabase(updated.inventoryId, updated.screenNumber, {
+        status: updated.status === 'Cancelled' ? 'empty' : 'occupied',
+        saleId: updated.status === 'Cancelled' ? null : updated.id,
+        expiryDate: updated.expiryDate
+      }).catch(e => console.warn('Supabase screen update error:', e));
+    }
+
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -560,6 +584,8 @@ app.delete('/api/sales/:id', (req, res) => {
   try {
     const deleted = db.deleteSale(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Sale not found' });
+
+    deleteSaleFromSupabase(req.params.id).catch(e => console.warn('Supabase sale delete error:', e));
     res.json({ success: true, deleted });
   } catch (err) {
     res.status(500).json({ error: err.message });
