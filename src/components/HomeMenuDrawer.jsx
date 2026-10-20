@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare, Share2, TrendingUp
+  X, Tv, FileText, Link2, Settings, LogOut, ChevronRight, Sparkles, Layers, MessageSquare, Share2, TrendingUp, Palette
 } from 'lucide-react';
 
 export default function HomeMenuDrawer({
@@ -13,6 +13,7 @@ export default function HomeMenuDrawer({
   onSelectWhatsAppMessages,
   onSelectShareBrands,
   onSelectRevenueManagement,
+  onSelectColorCodings,
   onSelectSettings,
   onLogout
 }) {
@@ -165,6 +166,26 @@ export default function HomeMenuDrawer({
             <div className="menu-card-text">
               <span className="menu-card-title">Revenue Management</span>
               <span className="menu-card-desc">Sales profit, accounts count & OTT brand analytics</span>
+            </div>
+            <ChevronRight size={20} className="menu-card-arrow" />
+          </button>
+
+          {/* Button 7: Color Codings (image copy 105.png & 106.png) */}
+          <button
+            type="button"
+            className="menu-action-card menu-card-neutral"
+            onClick={() => {
+              onClose();
+              if (onSelectColorCodings) onSelectColorCodings();
+            }}
+            id="menu-btn-color-codings"
+          >
+            <div className="menu-card-icon blue">
+              <Palette size={22} color="#2563eb" strokeWidth={2.3} />
+            </div>
+            <div className="menu-card-text">
+              <span className="menu-card-title">Color Codings</span>
+              <span className="menu-card-desc">Customize Green (20d), Orange (10d), Red (5d) thresholds</span>
             </div>
             <ChevronRight size={20} className="menu-card-arrow" />
           </button>

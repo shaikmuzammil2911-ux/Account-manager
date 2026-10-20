@@ -199,6 +199,8 @@ export default function SaleScreen({
 
     try {
       setIsSubmitting(true);
+      const showPin = currentBrand?.showScreenPin !== false;
+      const showDev = currentBrand?.showDeviceName !== false;
 
       const salePayload = {
         brandId,
@@ -210,9 +212,9 @@ export default function SaleScreen({
         accountEmail: accountEmail.trim(),
         accountPassword: accountPassword.trim(),
         screenNumber: screenNumber.trim() || '01',
-        screenPin: screenPin.trim() || '1111',
+        screenPin: showPin ? (screenPin.trim() || '1111') : '',
         amount: Number(amount) || 199,
-        deviceName: deviceName.trim() || 'Personal Device',
+        deviceName: showDev ? (deviceName.trim() || 'Personal Device') : '',
         customerName: customerName.trim(),
         customerNumber: customerNumber.trim(),
         referenceName: referenceName.trim(),
@@ -228,8 +230,8 @@ export default function SaleScreen({
         accountEmail: accountEmail.trim(),
         accountPassword: accountPassword.trim(),
         screenNumber: screenNumber.trim() || '01',
-        screenPin: screenPin.trim() || '1111',
-        deviceName: deviceName.trim(),
+        screenPin: showPin ? (screenPin.trim() || '1111') : '',
+        deviceName: showDev ? deviceName.trim() : '',
         validity,
         expiryDate,
         amount
@@ -708,72 +710,242 @@ export default function SaleScreen({
           </div>
         </div>
 
-        {/* Row 4: Screen No & Screen Pin */}
-        <div className="sale-row-2-compact">
-          <div>
-            <div className="sale-label-compact">Screen No</div>
-            <input
-              type="text"
-              className="sale-input-compact"
-              value={screenNumber}
-              onChange={e => setScreenNumber(e.target.value)}
-              placeholder=""
-              id="sale-screen-number"
-              style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
-            />
-          </div>
+        {/* Dynamic Rows for Screen No, Screen Pin, Amount, Device Name based on brand settings */}
+        {(() => {
+          const showPin = currentBrand?.showScreenPin !== false;
+          const showDev = currentBrand?.showDeviceName !== false;
 
-          <div>
-            <div className="sale-label-compact">Screen Pin</div>
-            <input
-              type="text"
-              className="sale-input-compact"
-              value={screenPin}
-              onChange={e => setScreenPin(e.target.value)}
-              placeholder=""
-              id="sale-screen-pin"
-              style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
-            />
-          </div>
-        </div>
+          if (showPin && showDev) {
+            return (
+              <>
+                <div className="sale-row-2-compact">
+                  <div>
+                    <div className="sale-label-compact">Screen No</div>
+                    <input
+                      type="text"
+                      className="sale-input-compact"
+                      value={screenNumber}
+                      onChange={e => setScreenNumber(e.target.value)}
+                      placeholder=""
+                      id="sale-screen-number"
+                      style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
+                    />
+                  </div>
 
-        {/* Row 5: Amount & Device Name */}
-        <div className="sale-row-2-compact">
-          <div>
-            <div className="sale-label-compact">Amount</div>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-              <span style={{
-                position: 'absolute',
-                left: '10px',
-                fontSize: '15px',
-                fontWeight: 900,
-                color: '#16a34a',
-                pointerEvents: 'none'
-              }}>₹</span>
-              <input
-                type="number"
-                className="sale-input-compact"
-                value={amount}
-                onChange={e => setAmount(e.target.value)}
-                placeholder="0"
-                id="sale-amount"
-                style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
-              />
-            </div>
-          </div>
+                  <div>
+                    <div className="sale-label-compact">Screen Pin</div>
+                    <input
+                      type="text"
+                      className="sale-input-compact"
+                      value={screenPin}
+                      onChange={e => setScreenPin(e.target.value)}
+                      placeholder=""
+                      id="sale-screen-pin"
+                      style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
+                    />
+                  </div>
+                </div>
 
-          <div>
-            <div className="sale-label-compact">Device Name</div>
-            <input
-              type="text"
-              className="sale-input-compact"
-              value={deviceName}
-              onChange={e => setDeviceName(e.target.value)}
-              placeholder=""
-              id="sale-device-name"
-            />
-          </div>
-        </div>
+                <div className="sale-row-2-compact">
+                  <div>
+                    <div className="sale-label-compact">Amount</div>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <span style={{
+                        position: 'absolute',
+                        left: '10px',
+                        fontSize: '15px',
+                        fontWeight: 900,
+                        color: '#16a34a',
+                        pointerEvents: 'none'
+                      }}>₹</span>
+                      <input
+                        type="number"
+                        className="sale-input-compact"
+                        value={amount}
+                        onChange={e => setAmount(e.target.value)}
+                        placeholder="0"
+                        id="sale-amount"
+                        style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="sale-label-compact">Device Name</div>
+                    <input
+                      type="text"
+                      className="sale-input-compact"
+                      value={deviceName}
+                      onChange={e => setDeviceName(e.target.value)}
+                      placeholder=""
+                      id="sale-device-name"
+                    />
+                  </div>
+                </div>
+              </>
+            );
+          }
+
+          if (!showPin && !showDev) {
+            return (
+              <div className="sale-row-2-compact">
+                <div>
+                  <div className="sale-label-compact">Screen No</div>
+                  <input
+                    type="text"
+                    className="sale-input-compact"
+                    value={screenNumber}
+                    onChange={e => setScreenNumber(e.target.value)}
+                    placeholder=""
+                    id="sale-screen-number"
+                    style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
+                  />
+                </div>
+
+                <div>
+                  <div className="sale-label-compact">Amount</div>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: '10px',
+                      fontSize: '15px',
+                      fontWeight: 900,
+                      color: '#16a34a',
+                      pointerEvents: 'none'
+                    }}>₹</span>
+                    <input
+                      type="number"
+                      className="sale-input-compact"
+                      value={amount}
+                      onChange={e => setAmount(e.target.value)}
+                      placeholder="0"
+                      id="sale-amount"
+                      style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          if (showPin && !showDev) {
+            return (
+              <>
+                <div className="sale-row-2-compact">
+                  <div>
+                    <div className="sale-label-compact">Screen No</div>
+                    <input
+                      type="text"
+                      className="sale-input-compact"
+                      value={screenNumber}
+                      onChange={e => setScreenNumber(e.target.value)}
+                      placeholder=""
+                      id="sale-screen-number"
+                      style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
+                    />
+                  </div>
+
+                  <div>
+                    <div className="sale-label-compact">Screen Pin</div>
+                    <input
+                      type="text"
+                      className="sale-input-compact"
+                      value={screenPin}
+                      onChange={e => setScreenPin(e.target.value)}
+                      placeholder=""
+                      id="sale-screen-pin"
+                      style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
+                    />
+                  </div>
+                </div>
+
+                <div className="sale-row-2-compact">
+                  <div>
+                    <div className="sale-label-compact">Amount</div>
+                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                      <span style={{
+                        position: 'absolute',
+                        left: '10px',
+                        fontSize: '15px',
+                        fontWeight: 900,
+                        color: '#16a34a',
+                        pointerEvents: 'none'
+                      }}>₹</span>
+                      <input
+                        type="number"
+                        className="sale-input-compact"
+                        value={amount}
+                        onChange={e => setAmount(e.target.value)}
+                        placeholder="0"
+                        id="sale-amount"
+                        style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
+                      />
+                    </div>
+                  </div>
+                  <div />
+                </div>
+              </>
+            );
+          }
+
+          // showDev && !showPin
+          return (
+            <>
+              <div className="sale-row-2-compact">
+                <div>
+                  <div className="sale-label-compact">Screen No</div>
+                  <input
+                    type="text"
+                    className="sale-input-compact"
+                    value={screenNumber}
+                    onChange={e => setScreenNumber(e.target.value)}
+                    placeholder=""
+                    id="sale-screen-number"
+                    style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
+                  />
+                </div>
+
+                <div>
+                  <div className="sale-label-compact">Device Name</div>
+                  <input
+                    type="text"
+                    className="sale-input-compact"
+                    value={deviceName}
+                    onChange={e => setDeviceName(e.target.value)}
+                    placeholder=""
+                    id="sale-device-name"
+                  />
+                </div>
+              </div>
+
+              <div className="sale-row-2-compact">
+                <div>
+                  <div className="sale-label-compact">Amount</div>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: '10px',
+                      fontSize: '15px',
+                      fontWeight: 900,
+                      color: '#16a34a',
+                      pointerEvents: 'none'
+                    }}>₹</span>
+                    <input
+                      type="number"
+                      className="sale-input-compact"
+                      value={amount}
+                      onChange={e => setAmount(e.target.value)}
+                      placeholder="0"
+                      id="sale-amount"
+                      style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
+                    />
+                  </div>
+                </div>
+                <div />
+              </div>
+            </>
+          );
+        })()}
 
         {/* Customer Details Divider */}
         <div className="customer-divider-compact">

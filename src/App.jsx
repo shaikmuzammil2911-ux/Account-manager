@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Calendar } from 'lucide-react';
+import { Plus, Calendar, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { api } from './api/client';
+import { exportExpiryToExcel } from './utils/excelExport';
 import TopHeader from './components/TopHeader';
 import BottomNav from './components/BottomNav';
 import Toast from './components/Toast';
@@ -8,6 +9,7 @@ import BrandSelectorModal from './components/BrandSelectorModal';
 import NotifyModal from './components/NotifyModal';
 import DatePickerModal from './components/DatePickerModal';
 import HomeMenuDrawer from './components/HomeMenuDrawer';
+import ColorCodingsModal from './components/ColorCodingsModal';
 
 import LoginScreen from './screens/LoginScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -50,6 +52,8 @@ export default function App() {
   const [brandsAddModalOpen, setBrandsAddModalOpen] = useState(false);
   const [expiryDateFilter, setExpiryDateFilter] = useState('');
   const [showExpiryDatePicker, setShowExpiryDatePicker] = useState(false);
+  const [showColorCodings, setShowColorCodings] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
 
   // Direct Password Reset link handler (from email ?reset=true&email=...&otp=...)
   const [directResetParams] = useState(() => {
@@ -275,6 +279,31 @@ export default function App() {
     }
   };
 
+  const handleExportAllToExcel = async () => {
+    try {
+      setIsExportingExcel(true);
+      showToast('Preparing Excel workbook...', 'info');
+
+      // Fetch all subscription & sales records across all brands & accounts
+      const allSales = await api.getExpiry({ filter: 'ALL', brandId: 'all' });
+      if (!allSales || allSales.length === 0) {
+        showToast('No subscription records found to export', 'info');
+        return;
+      }
+
+      const exportedFilename = exportExpiryToExcel(allSales, {
+        filenamePrefix: 'Subscription_Expiry_Report',
+        selectedBrandName: selectedBrand ? (selectedBrand.displayName || selectedBrand.name) : 'All Brands'
+      });
+
+      showToast(`Downloaded ${exportedFilename} successfully!`, 'success');
+    } catch (err) {
+      showToast('Failed to export Excel report: ' + err.message, 'error');
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
   const handleSelectBrandAndOpen = (brand) => {
     setSelectedBrand(brand);
     navigateTo('data');
@@ -320,7 +349,7 @@ export default function App() {
       case 'forms-mgmt':
         return 'Forms';
       case 'expiry':
-        return 'Expiry Alerts';
+        return selectedBrand ? (selectedBrand.displayName || selectedBrand.name || 'All Brands') : 'All Brands';
       case 'settings':
         return 'Settings';
       default:
@@ -342,31 +371,68 @@ export default function App() {
             showBack={currentScreen !== 'home'}
             onBack={handleBack}
             title={getHeaderTitle()}
-            selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' ? selectedBrand : null}
+            selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' && currentScreen !== 'expiry' ? selectedBrand : null}
             onBrandClick={() => setShowBrandSelector(true)}
             onOpenMenu={() => setShowMenuDrawer(true)}
             rightAction={
               currentScreen === 'expiry' ? (
-                <button
-                  type="button"
-                  className="header-btn"
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    background: expiryDateFilter ? '#eff6ff' : '#ffffff',
-                    borderColor: expiryDateFilter ? '#2563eb' : '#cbd5e1',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    boxShadow: expiryDateFilter ? '0 2px 6px rgba(37, 99, 235, 0.25)' : 'none'
-                  }}
-                  onClick={() => setShowExpiryDatePicker(true)}
-                  title={expiryDateFilter ? `Expiry Filter: ${expiryDateFilter}. Click to change` : 'Filter Expiry by Calendar'}
-                  id="expiry-header-calendar-btn"
-                >
-                  <Calendar size={19} color={expiryDateFilter ? '#2563eb' : '#475569'} strokeWidth={2.3} />
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {/* Download Excel Button - Immediately to the left of Calendar */}
+                  <button
+                    type="button"
+                    className="header-btn"
+                    onClick={handleExportAllToExcel}
+                    disabled={isExportingExcel}
+                    style={{
+                      height: '38px',
+                      padding: '0 8px',
+                      background: isExportingExcel ? '#f0fdf4' : '#ffffff',
+                      borderColor: '#16a34a',
+                      color: '#15803d',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      cursor: isExportingExcel ? 'wait' : 'pointer',
+                      borderRadius: '10px',
+                      boxShadow: '0 1px 3px rgba(22, 163, 74, 0.15)',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Download All Subscriptions Expiry Report (.xlsx)"
+                    id="expiry-header-excel-btn"
+                  >
+                    {isExportingExcel ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <FileSpreadsheet size={16} strokeWidth={2.4} color="#16a34a" />
+                    )}
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>
+                      {isExportingExcel ? 'Exporting...' : 'Excel'}
+                    </span>
+                  </button>
+
+                  {/* Calendar Button */}
+                  <button
+                    type="button"
+                    className="header-btn"
+                    style={{
+                      width: '38px',
+                      height: '38px',
+                      background: expiryDateFilter ? '#eff6ff' : '#ffffff',
+                      borderColor: expiryDateFilter ? '#2563eb' : '#cbd5e1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      borderRadius: '10px',
+                      boxShadow: expiryDateFilter ? '0 2px 6px rgba(37, 99, 235, 0.25)' : 'none'
+                    }}
+                    onClick={() => setShowExpiryDatePicker(true)}
+                    title={expiryDateFilter ? `Expiry Filter: ${expiryDateFilter}. Click to change` : 'Filter Expiry by Calendar'}
+                    id="expiry-header-calendar-btn"
+                  >
+                    <Calendar size={18} color={expiryDateFilter ? '#2563eb' : '#475569'} strokeWidth={2.3} />
+                  </button>
+                </div>
               ) : currentScreen === 'recent-sales' && selectedBrand ? (
                 <button
                   type="button"
@@ -565,6 +631,7 @@ export default function App() {
         onSelectShareBrands={() => navigateTo('share-brands')}
         onSelectRevenueManagement={() => navigateTo('revenue-mgmt')}
         onSelectCreateForm={() => navigateTo('sale')}
+        onSelectColorCodings={() => setShowColorCodings(true)}
         onSelectSettings={() => navigateTo('settings')}
         onLogout={handleLogout}
       />
@@ -597,6 +664,15 @@ export default function App() {
             showToast(`Filtering subscriptions expiring on ${date}`, 'success');
           }}
           onClose={() => setShowExpiryDatePicker(false)}
+        />
+      )}
+
+      {/* Color Codings Modal */}
+      {showColorCodings && (
+        <ColorCodingsModal
+          isOpen={showColorCodings}
+          onClose={() => setShowColorCodings(false)}
+          showToast={showToast}
         />
       )}
     </div>

@@ -347,6 +347,31 @@ export const api = {
         id
       };
       local.inventory[idx] = updated;
+
+      // Cascade updates to matching sales records so Expiry and Recent Sales are 100% accurate!
+      if (local.sales && Array.isArray(local.sales)) {
+        local.sales = local.sales.map(sale => {
+          const isLinked = (sale.inventoryId && sale.inventoryId === id) ||
+            (sale.accountEmail && existing.email && String(sale.accountEmail).trim().toLowerCase() === String(existing.email).trim().toLowerCase());
+
+          if (!isLinked) return sale;
+
+          const sNum = parseInt(String(sale.screenNumber || '').replace(/\D/g, '') || '1', 10);
+          const updatedScreen = mergedScreens ? mergedScreens.find(s => s.screenNumber === sNum) : null;
+
+          return {
+            ...sale,
+            accountEmail: updated.email || sale.accountEmail,
+            accountPassword: updated.password || sale.accountPassword,
+            screenPin: updatedScreen?.pin !== undefined ? updatedScreen.pin : sale.screenPin,
+            expiryDate: (updatedScreen && updatedScreen.expiryDate) ? updatedScreen.expiryDate : sale.expiryDate,
+            deviceName: (updatedScreen && updatedScreen.deviceType) ? (updatedScreen.deviceType === 'tv' ? 'Android TV' : updatedScreen.deviceType.toUpperCase()) : sale.deviceName,
+            validity: updated.validity || sale.validity,
+            updatedAt: new Date().toISOString()
+          };
+        });
+      }
+
       saveLocalData(local);
 
       // Real-time sync account to Google Sheet

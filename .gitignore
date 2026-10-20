@@ -5,3 +5,5 @@ dist-ssr
 .vscode
 .idea
 .DS_Store
+image copy *.png
+image*.png

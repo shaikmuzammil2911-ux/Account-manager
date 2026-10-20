@@ -86,9 +86,37 @@ export default function TopHeader({
             </span>
           </button>
         ) : (
-          <h1 style={{ fontSize: '19px', fontWeight: 900, color: '#0f172a', margin: 0 }}>
-            {title || 'OTT Management'}
-          </h1>
+          <button
+            type="button"
+            onClick={title === 'All Brands' && onBrandClick ? onBrandClick : undefined}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              cursor: title === 'All Brands' && onBrandClick ? 'pointer' : 'default',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              padding: '2px 6px',
+              borderRadius: '8px'
+            }}
+            title={title === 'All Brands' ? 'Click to filter by specific brand' : ''}
+          >
+            {title === 'All Brands' && (
+              <span
+                style={{
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#2563eb',
+                  display: 'inline-block'
+                }}
+              />
+            )}
+            <span style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.2px' }}>
+              {title || 'OTT Management'}
+            </span>
+          </button>
         )}
       </div>
 

@@ -30,6 +30,8 @@ export default function BrandsManagementScreen({
   const [brandColor, setBrandColor] = useState('#3b82f6');
   const [screensCount, setScreensCount] = useState(5);
   const [maxScreenOptions, setMaxScreenOptions] = useState(10);
+  const [showScreenPin, setShowScreenPin] = useState(true);
+  const [showDeviceName, setShowDeviceName] = useState(true);
 
   // Active pricing plan tab in modal (e.g. 'general', 'with_ads', etc.)
   const [activePlanTab, setActivePlanTab] = useState('general');
@@ -74,6 +76,8 @@ export default function BrandsManagementScreen({
     setLogoPreview('');
     setBrandColor('#3b82f6');
     setScreensCount(5);
+    setShowScreenPin(true);
+    setShowDeviceName(true);
     setActivePlanTab('general');
     setPricingPlans(defaultPricingPlans);
     setShowNewPlanInput(false);
@@ -94,6 +98,8 @@ export default function BrandsManagementScreen({
     setLogoPreview(brand.logo || '');
     setBrandColor(brand.color || '#3b82f6');
     setScreensCount(brand.screensCount || 5);
+    setShowScreenPin(brand.showScreenPin !== false);
+    setShowDeviceName(brand.showDeviceName !== false);
     setActivePlanTab('general');
     setShowNewPlanInput(false);
     setNewPlanName('');
@@ -283,6 +289,8 @@ export default function BrandsManagementScreen({
         bgDark: '#0f172a',
         badgeColor: brandColor,
         screensCount: Number(screensCount) || 5,
+        showScreenPin: showScreenPin !== false,
+        showDeviceName: showDeviceName !== false,
         plans: generalPlans.length > 0 ? generalPlans : ['01 Month'],
         prices: Object.keys(generalPrices).length > 0 ? generalPrices : { '01 Month': 199 },
         pricingPlans: formattedPricingPlans
@@ -313,6 +321,25 @@ export default function BrandsManagementScreen({
       loadBrands();
     } catch (err) {
       showToast('Failed to delete brand', 'error');
+    }
+  };
+
+  const handleToggleBrandSetting = async (brandId, settingKey) => {
+    try {
+      const b = brands.find(item => item.id === brandId);
+      if (!b) return;
+      const currentVal = b[settingKey] !== false;
+      const nextVal = !currentVal;
+
+      // Optimistic state update
+      setBrands(prev => prev.map(item => item.id === brandId ? { ...item, [settingKey]: nextVal } : item));
+
+      await api.updateBrand(brandId, { [settingKey]: nextVal });
+      const settingLabel = settingKey === 'showScreenPin' ? 'Screen PIN' : 'Device Name';
+      showToast(`${b.displayName || b.name}: ${settingLabel} turned ${nextVal ? 'ON' : 'OFF'}`, 'success');
+    } catch (err) {
+      showToast('Failed to update brand setting', 'error');
+      loadBrands();
     }
   };
 
@@ -419,9 +446,32 @@ export default function BrandsManagementScreen({
                         )}
                         {hasAdFree && (
                           <span style={{ fontSize: '10px', background: '#f3e8ff', color: '#7e22ce', padding: '1px 6px', borderRadius: '6px', fontWeight: 700 }}>
-                            Ad-Free
+                            Ad Free
                           </span>
                         )}
+                        {/* Screen Pin & Device Name Status Badges */}
+                        <span style={{
+                          fontSize: '10px',
+                          background: brand.showScreenPin !== false ? '#dcfce7' : '#f1f5f9',
+                          color: brand.showScreenPin !== false ? '#15803d' : '#64748b',
+                          border: `1px solid ${brand.showScreenPin !== false ? '#86efac' : '#cbd5e1'}`,
+                          padding: '1px 6px',
+                          borderRadius: '6px',
+                          fontWeight: 800
+                        }}>
+                          PIN: {brand.showScreenPin !== false ? 'ON' : 'OFF'}
+                        </span>
+                        <span style={{
+                          fontSize: '10px',
+                          background: brand.showDeviceName !== false ? '#e0f2fe' : '#f1f5f9',
+                          color: brand.showDeviceName !== false ? '#0369a1' : '#64748b',
+                          border: `1px solid ${brand.showDeviceName !== false ? '#7dd3fc' : '#cbd5e1'}`,
+                          padding: '1px 6px',
+                          borderRadius: '6px',
+                          fontWeight: 800
+                        }}>
+                          Device: {brand.showDeviceName !== false ? 'ON' : 'OFF'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -485,6 +535,80 @@ export default function BrandsManagementScreen({
                       {plan}: <strong style={{ color: '#16a34a' }}>₹{price}</strong>
                     </span>
                   ))}
+                </div>
+
+                {/* Display Settings: Screen PIN & Device Name Independent Toggles (image copy 114.png) */}
+                <div style={{
+                  marginTop: '10px',
+                  padding: '9px 12px',
+                  background: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                  borderRadius: '10px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  flexWrap: 'wrap',
+                  gap: '10px'
+                }}>
+                  {/* Screen PIN Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      Screen PIN:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleBrandSetting(brand.id, 'showScreenPin');
+                      }}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        border: 'none',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        background: brand.showScreenPin !== false ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#94a3b8',
+                        color: '#ffffff',
+                        boxShadow: brand.showScreenPin !== false ? '0 2px 6px rgba(22, 163, 74, 0.35)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={`Click to turn Screen PIN ${brand.showScreenPin !== false ? 'OFF' : 'ON'}`}
+                      id={`brand-${brand.id}-pin-toggle`}
+                    >
+                      {brand.showScreenPin !== false ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Device Name Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      Device Name:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleBrandSetting(brand.id, 'showDeviceName');
+                      }}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        border: 'none',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        background: brand.showDeviceName !== false ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : '#94a3b8',
+                        color: '#ffffff',
+                        boxShadow: brand.showDeviceName !== false ? '0 2px 6px rgba(37, 99, 235, 0.35)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={`Click to turn Device Name ${brand.showDeviceName !== false ? 'OFF' : 'ON'}`}
+                      id={`brand-${brand.id}-device-toggle`}
+                    >
+                      {brand.showDeviceName !== false ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -699,6 +823,68 @@ export default function BrandsManagementScreen({
                       {brandColor.toUpperCase()}
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* Screen Pin & Device Name Toggles (image copy 108.png & 109.png) */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '1fr 1fr',
+                gap: '10px',
+                background: '#f8fafc',
+                padding: '10px 12px',
+                borderRadius: '12px',
+                border: '1.5px solid #e2e8f0',
+                marginTop: '2px'
+              }}>
+                {/* Screen Pin Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Screen Pin</div>
+                    <div style={{ fontSize: '10.5px', color: '#64748b' }}>Require PIN on card</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowScreenPin(!showScreenPin)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      border: 'none',
+                      fontWeight: 900,
+                      fontSize: '11.5px',
+                      cursor: 'pointer',
+                      background: showScreenPin ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#e2e8f0',
+                      color: showScreenPin ? '#ffffff' : '#64748b',
+                      boxShadow: showScreenPin ? '0 2px 6px rgba(22, 163, 74, 0.3)' : 'none'
+                    }}
+                  >
+                    {showScreenPin ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Device Name Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Device Name</div>
+                    <div style={{ fontSize: '10.5px', color: '#64748b' }}>Show Device field</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDeviceName(!showDeviceName)}
+                    style={{
+                      padding: '5px 12px',
+                      borderRadius: '20px',
+                      border: 'none',
+                      fontWeight: 900,
+                      fontSize: '11.5px',
+                      cursor: 'pointer',
+                      background: showDeviceName ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#e2e8f0',
+                      color: showDeviceName ? '#ffffff' : '#64748b',
+                      boxShadow: showDeviceName ? '0 2px 6px rgba(22, 163, 74, 0.3)' : 'none'
+                    }}
+                  >
+                    {showDeviceName ? 'ON' : 'OFF'}
+                  </button>
                 </div>
               </div>
 

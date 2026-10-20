@@ -7,6 +7,8 @@ import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import DatePickerModal from '../components/DatePickerModal';
+import { getExpiryStatus } from '../utils/dateUtils';
+import { exportInventoryToExcel } from '../utils/excelExport';
 
 export default function InventoryScreen({
   brands = [],
@@ -673,48 +675,50 @@ export default function InventoryScreen({
                 </div>
               </div>
 
-              {/* Screen PINs row (Clean display without copy buttons per requirement) */}
-              <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
-                {(item.screens || []).map((screen, sIdx) => (
-                  <div
-                    key={sIdx}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      background: '#e2e8f0',
-                      padding: '5px 2px',
-                      borderRadius: '8px',
-                      border: '1.5px solid #94a3b8',
-                      minHeight: '26px'
-                    }}
-                  >
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        maxLength={6}
-                        value={editState.pins?.[sIdx] ?? screen.pin}
-                        onChange={(e) => {
-                          const newPins = [...(editState.pins || [])];
-                          newPins[sIdx] = e.target.value;
-                          setEditingCards(prev => ({
-                            ...prev,
-                            [item.id]: { ...prev[item.id], pins: newPins }
-                          }));
-                        }}
-                        style={{ width: '100%', fontSize: '12px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
-                      />
-                    ) : (
-                      <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.4px' }}>
-                        {screen.pin || '1234'}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
+              {/* Screen PINs row (only if brand allows Screen PIN) */}
+              {currentBrand?.showScreenPin !== false && (
+                <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
+                  {(item.screens || []).map((screen, sIdx) => (
+                    <div
+                      key={sIdx}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#e2e8f0',
+                        padding: '5px 2px',
+                        borderRadius: '8px',
+                        border: '1.5px solid #94a3b8',
+                        minHeight: '26px'
+                      }}
+                    >
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          maxLength={6}
+                          value={editState.pins?.[sIdx] ?? screen.pin}
+                          onChange={(e) => {
+                            const newPins = [...(editState.pins || [])];
+                            newPins[sIdx] = e.target.value;
+                            setEditingCards(prev => ({
+                              ...prev,
+                              [item.id]: { ...prev[item.id], pins: newPins }
+                            }));
+                          }}
+                          style={{ width: '100%', fontSize: '12px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.4px' }}>
+                          {screen.pin || '1234'}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-              {/* Screen Buttons row (Screen name on top, Device icon BELOW per requirement) */}
-              <div className="screens-grid-row">
+              {/* Screen Buttons row (Screen name on top, Device icon BELOW if enabled) */}
+              <div className="screens-grid-row" style={{ marginTop: currentBrand?.showScreenPin === false ? '10px' : '0' }}>
                 {(item.screens || []).map((screen, sIdx) => {
                   const devType = isEditing
                     ? (editState.deviceTypes?.[sIdx] || screen.deviceType || 'tv')
@@ -724,7 +728,7 @@ export default function InventoryScreen({
                     <div
                       key={sIdx}
                       onClick={(e) => {
-                        if (isEditing) {
+                        if (isEditing && currentBrand?.showDeviceName !== false) {
                           handleCycleDeviceType(item.id, sIdx, e);
                         }
                       }}
@@ -740,31 +744,33 @@ export default function InventoryScreen({
                         alignItems: 'center',
                         justifyContent: 'center',
                         gap: '2px',
-                        cursor: isEditing ? 'pointer' : 'default',
+                        cursor: (isEditing && currentBrand?.showDeviceName !== false) ? 'pointer' : 'default',
                         userSelect: 'none',
                         lineHeight: 1
                       }}
-                      title={isEditing ? `Click to cycle device type (Current: ${devType.toUpperCase()})` : `Device: ${devType.toUpperCase()}`}
+                      title={(isEditing && currentBrand?.showDeviceName !== false) ? `Click to cycle device type (Current: ${devType.toUpperCase()})` : `Screen ${sIdx + 1}`}
                     >
                       <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
                         Screen-{sIdx + 1}
                       </span>
-                      <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: isEditing ? '2px 4px' : '0',
-                        borderRadius: '4px',
-                        background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
-                      }}>
-                        {devType === 'mobile' ? (
-                          <Smartphone size={16} strokeWidth={2.5} />
-                        ) : devType === 'laptop' ? (
-                          <Laptop size={16} strokeWidth={2.5} />
-                        ) : (
-                          <Tv size={16} strokeWidth={2.5} />
-                        )}
-                      </div>
+                      {currentBrand?.showDeviceName !== false && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: isEditing ? '2px 4px' : '0',
+                          borderRadius: '4px',
+                          background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
+                        }}>
+                          {devType === 'mobile' ? (
+                            <Smartphone size={16} strokeWidth={2.5} />
+                          ) : devType === 'laptop' ? (
+                            <Laptop size={16} strokeWidth={2.5} />
+                          ) : (
+                            <Tv size={16} strokeWidth={2.5} />
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -779,7 +785,10 @@ export default function InventoryScreen({
                   const isEmpty = isEditing
                     ? (!currentExpDate || !String(currentExpDate).trim())
                     : (screen.status === 'empty');
-                  const isExpiringSoon = currentExpDate && (currentExpDate.includes('Jun') || currentExpDate.includes('May'));
+
+                  const statusObj = getExpiryStatus(currentExpDate);
+                  const isExpiredOrCritical = statusObj.status === 'expired' || statusObj.status === 'today' || statusObj.status === 'critical';
+                  const isUpcoming = statusObj.status === 'upcoming';
 
                   return (
                     <div
@@ -821,16 +830,16 @@ export default function InventoryScreen({
                         fontSize: isEmpty ? '18px' : '9.5px',
                         fontWeight: 900,
                         cursor: 'pointer',
-                        background: isEmpty ? '#f8fafc' : (isExpiringSoon ? '#b91c1c' : '#15803d'),
+                        background: isEmpty ? '#f8fafc' : (isExpiredOrCritical ? '#dc2626' : (isUpcoming ? '#ea580c' : '#15803d')),
                         color: isEmpty ? '#475569' : '#ffffff',
-                        border: isEmpty ? '2px dashed #64748b' : (isExpiringSoon ? '2px solid #991b1b' : '2px solid #166534'),
+                        border: isEmpty ? '2px dashed #64748b' : (isExpiredOrCritical ? '2px solid #b91c1c' : (isUpcoming ? '2px solid #c2410c' : '2px solid #166534')),
                         boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.14)',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
                         lineHeight: 1
                       }}
-                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'} (Click to view customer details)`)}
+                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'} (${statusObj.label})`)}
                     >
                       {isEmpty ? '+' : (currentExpDate || 'Active')}
                     </div>
@@ -1220,19 +1229,44 @@ export default function InventoryScreen({
         <DatePickerModal
           isOpen={true}
           initialDate={screenDateModal.currentDate || ''}
-          onSelect={(selectedDate) => {
+          onSelect={async (selectedDate) => {
             const { itemId, screenIndex } = screenDateModal;
-            setEditingCards(prev => {
-              const currentEdit = prev[itemId] || {};
-              const currentDates = [...(currentEdit.dates || [])];
-              currentDates[screenIndex] = selectedDate;
-              return {
-                ...prev,
-                [itemId]: { ...currentEdit, dates: currentDates }
-              };
-            });
-            setScreenDateModal(null);
-            showToast(`Screen ${screenIndex + 1} expiry set to ${selectedDate} (Click Save)`, 'info');
+            if (editingCards[itemId]) {
+              setEditingCards(prev => {
+                const currentEdit = prev[itemId] || {};
+                const currentDates = [...(currentEdit.dates || [])];
+                currentDates[screenIndex] = selectedDate;
+                return {
+                  ...prev,
+                  [itemId]: { ...currentEdit, dates: currentDates }
+                };
+              });
+              setScreenDateModal(null);
+              showToast(`Screen ${screenIndex + 1} expiry set to ${selectedDate} (Click Save)`, 'info');
+            } else {
+              // Direct immediate save to local DB and Google Sheets!
+              try {
+                const targetItem = items.find(i => i.id === itemId);
+                if (targetItem) {
+                  const updatedScreens = (targetItem.screens || []).map((s, idx) => {
+                    if (idx === screenIndex) {
+                      return {
+                        ...s,
+                        expiryDate: selectedDate,
+                        status: selectedDate ? 'occupied' : 'empty'
+                      };
+                    }
+                    return s;
+                  });
+                  const res = await api.updateInventory(itemId, { screens: updatedScreens });
+                  setItems(prev => prev.map(i => i.id === itemId ? res : i));
+                  showToast(`Screen ${screenIndex + 1} expiry updated to ${selectedDate} & saved!`, 'success');
+                }
+              } catch (err) {
+                showToast('Failed to save date: ' + err.message, 'error');
+              }
+              setScreenDateModal(null);
+            }
           }}
           onClose={() => setScreenDateModal(null)}
         />

@@ -8,6 +8,8 @@
       "bgDark": "#000000",
       "badgeColor": "#e50914",
       "screensCount": 5,
+      "showScreenPin": false,
+      "showDeviceName": true,
       "plans": [
         "01 Month",
         "03 Months",
@@ -29,6 +31,8 @@
       "bgDark": "#0f172a",
       "badgeColor": "#0284c7",
       "screensCount": 5,
+      "showScreenPin": true,
+      "showDeviceName": false,
       "plans": [
         "01 Month",
         "03 Months",
@@ -50,6 +54,8 @@
       "bgDark": "#030b2e",
       "badgeColor": "#1d4ed8",
       "screensCount": 4,
+      "showScreenPin": true,
+      "showDeviceName": true,
       "plans": [
         "01 Month",
         "03 Months",
@@ -69,6 +75,8 @@
       "bgDark": "#2e1065",
       "badgeColor": "#9333ea",
       "screensCount": 4,
+      "showScreenPin": true,
+      "showDeviceName": true,
       "plans": [
         "01 Month",
         "06 Months",
@@ -88,6 +96,8 @@
       "bgDark": "#431407",
       "badgeColor": "#ea580c",
       "screensCount": 3,
+      "showScreenPin": true,
+      "showDeviceName": false,
       "plans": [
         "01 Month",
         "03 Months",
@@ -107,6 +117,8 @@
       "bgDark": "#171717",
       "badgeColor": "#dc2626",
       "screensCount": 5,
+      "showScreenPin": false,
+      "showDeviceName": true,
       "plans": [
         "01 Month",
         "03 Months",
@@ -126,6 +138,8 @@
       "bgDark": "#052e16",
       "badgeColor": "#16a34a",
       "screensCount": 6,
+      "showScreenPin": false,
+      "showDeviceName": false,
       "plans": [
         "01 Month",
         "03 Months",
@@ -145,6 +159,8 @@
       "bgDark": "#09090b",
       "badgeColor": "#475569",
       "screensCount": 6,
+      "showScreenPin": true,
+      "showDeviceName": true,
       "plans": [
         "01 Month",
         "03 Months",
@@ -164,6 +180,8 @@
       "bgDark": "#4c0519",
       "badgeColor": "#be123c",
       "screensCount": 4,
+      "showScreenPin": true,
+      "showDeviceName": false,
       "plans": [
         "01 Month",
         "03 Months",
@@ -183,6 +201,8 @@
       "bgDark": "#431407",
       "badgeColor": "#ea580c",
       "screensCount": 4,
+      "showScreenPin": false,
+      "showDeviceName": false,
       "plans": [
         "01 Month",
         "03 Months",
