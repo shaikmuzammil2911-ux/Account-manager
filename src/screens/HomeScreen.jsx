@@ -13,8 +13,11 @@ export default function HomeScreen({
   onNavigate,
   stats,
   brands = [],
-  onSyncSheets
+  onSyncSheets,
+  currentUser,
+  userPermissions = {}
 }) {
+  const isAdmin = currentUser?.role === 'admin';
   const [activeDate, setActiveDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [allSales, setAllSales] = useState([]);
@@ -610,64 +613,70 @@ export default function HomeScreen({
         {/* 5. Main 3 Action Navigation Cards (Matching Section 7 & image copy 113.png) */}
         <div className="home-menu-grid">
           {/* A. SALE (Orange) */}
-          <div
-            className="home-menu-card glossy-btn-orange"
-            onClick={() => onNavigate('sale')}
-            id="home-btn-sale"
-            role="button"
-            tabIndex={0}
-          >
-            <div className="home-menu-left">
-              <div className="home-menu-icon">
-                <ShoppingCart size={24} color="#ffffff" strokeWidth={2.5} />
+          {(isAdmin || userPermissions.sales !== false) && (
+            <div
+              className="home-menu-card glossy-btn-orange"
+              onClick={() => onNavigate('sale')}
+              id="home-btn-sale"
+              role="button"
+              tabIndex={0}
+            >
+              <div className="home-menu-left">
+                <div className="home-menu-icon">
+                  <ShoppingCart size={24} color="#ffffff" strokeWidth={2.5} />
+                </div>
+                <div className="home-menu-titles">
+                  <span className="home-menu-main-title">Sale</span>
+                  <span className="home-menu-subtitle">Pick brand, screen & sell account</span>
+                </div>
               </div>
-              <div className="home-menu-titles">
-                <span className="home-menu-main-title">Sale</span>
-                <span className="home-menu-subtitle">Pick brand, screen & sell account</span>
-              </div>
+              <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
             </div>
-            <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
-          </div>
+          )}
 
           {/* B. DATA (Green) */}
-          <div
-            className="home-menu-card glossy-btn-green"
-            onClick={() => onNavigate('data')}
-            id="home-btn-data"
-            role="button"
-            tabIndex={0}
-          >
-            <div className="home-menu-left">
-              <div className="home-menu-icon">
-                <Database size={24} color="#ffffff" strokeWidth={2.5} />
+          {(isAdmin || userPermissions.account_management !== false) && (
+            <div
+              className="home-menu-card glossy-btn-green"
+              onClick={() => onNavigate('data')}
+              id="home-btn-data"
+              role="button"
+              tabIndex={0}
+            >
+              <div className="home-menu-left">
+                <div className="home-menu-icon">
+                  <Database size={24} color="#ffffff" strokeWidth={2.5} />
+                </div>
+                <div className="home-menu-titles">
+                  <span className="home-menu-main-title">Data</span>
+                  <span className="home-menu-subtitle">Manage accounts & 1–10 screens</span>
+                </div>
               </div>
-              <div className="home-menu-titles">
-                <span className="home-menu-main-title">Data</span>
-                <span className="home-menu-subtitle">Manage accounts & 1–10 screens</span>
-              </div>
+              <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
             </div>
-            <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
-          </div>
+          )}
 
           {/* C. RECENT SALES (Blue) */}
-          <div
-            className="home-menu-card glossy-btn-blue"
-            onClick={() => onNavigate('recent-sales')}
-            id="home-btn-recent-sales"
-            role="button"
-            tabIndex={0}
-          >
-            <div className="home-menu-left">
-              <div className="home-menu-icon">
-                <History size={24} color="#ffffff" strokeWidth={2.5} />
+          {(isAdmin || userPermissions.recent_sales !== false) && (
+            <div
+              className="home-menu-card glossy-btn-blue"
+              onClick={() => onNavigate('recent-sales')}
+              id="home-btn-recent-sales"
+              role="button"
+              tabIndex={0}
+            >
+              <div className="home-menu-left">
+                <div className="home-menu-icon">
+                  <History size={24} color="#ffffff" strokeWidth={2.5} />
+                </div>
+                <div className="home-menu-titles">
+                  <span className="home-menu-main-title">Recent Sale's</span>
+                  <span className="home-menu-subtitle">Brand-wise customer history & PINs</span>
+                </div>
               </div>
-              <div className="home-menu-titles">
-                <span className="home-menu-main-title">Recent Sale's</span>
-                <span className="home-menu-subtitle">Brand-wise customer history & PINs</span>
-              </div>
+              <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
             </div>
-            <ChevronRight size={24} color="#ffffff" strokeWidth={2.5} />
-          </div>
+          )}
         </div>
 
       </div>

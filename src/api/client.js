@@ -13,6 +13,7 @@ import {
   syncAllToGoogleSheet,
   fetchLiveSpreadsheetData
 } from '../utils/googleSheets';
+import { uploadToCloudinary } from '../utils/cloudinary';
 
 const STORAGE_KEY = 'accounts_manager_app_data_v5';
 const WEBHOOK_STORAGE_KEY = 'accounts_manager_google_sheet_webhook_v1';
@@ -1663,5 +1664,216 @@ export const api = {
     local.sharedBrands = (local.sharedBrands || []).filter(s => s.id !== id);
     saveLocalData(local);
     return true;
+  },
+
+  // --- MULTI-USER ADMIN PANEL & PERMISSIONS ---
+  async getUsers() {
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const users = await res.json();
+        const local = getLocalData();
+        local.users = users;
+        saveLocalData(local);
+        return users;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return local.users || [
+      {
+        id: 'admin_1',
+        fullName: 'Super Admin',
+        name: 'Super Admin',
+        email: 'Fixyourmobiles10@gmail.com',
+        mobileNumber: '9876543210',
+        role: 'admin',
+        accountStatus: 'active',
+        createdAt: '2026-10-16'
+      }
+    ];
+  },
+
+  async createUser(userData) {
+    try {
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(userData)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create user');
+      }
+      const local = getLocalData();
+      if (!local.users) local.users = [];
+      local.users.push(data.user);
+      saveLocalData(local);
+      return data.user;
+    } catch (e) {
+      if (e.message && !e.message.includes('Failed to fetch')) {
+        throw e;
+      }
+      // Offline fallback
+      const local = getLocalData();
+      if (!local.users) local.users = [];
+      const normEmail = (userData.email || '').trim().toLowerCase();
+      if (local.users.some(u => (u.email || '').toLowerCase() === normEmail)) {
+        throw new Error(`A user with email "${normEmail}" already exists`);
+      }
+      const newUser = {
+        id: `user_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        fullName: userData.fullName,
+        name: userData.fullName,
+        email: normEmail,
+        mobileNumber: userData.mobileNumber,
+        password: userData.password,
+        role: userData.role || 'user',
+        accountStatus: 'active',
+        createdAt: new Date().toISOString().slice(0, 10)
+      };
+      local.users.push(newUser);
+      saveLocalData(local);
+      return newUser;
+    }
+  },
+
+  async updateUser(id, updates) {
+    try {
+      const res = await fetch(`/api/admin/users/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to update user');
+      const local = getLocalData();
+      local.users = (local.users || []).map(u => u.id === id ? { ...u, ...data.user } : u);
+      saveLocalData(local);
+      return data.user;
+    } catch (e) {
+      if (e.message && !e.message.includes('Failed to fetch')) throw e;
+      const local = getLocalData();
+      local.users = (local.users || []).map(u => u.id === id ? { ...u, ...updates } : u);
+      saveLocalData(local);
+      return local.users.find(u => u.id === id);
+    }
+  },
+
+  async resetUserPassword(id, newPassword) {
+    try {
+      const res = await fetch(`/api/admin/users/${id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+      return data;
+    } catch (e) {
+      if (e.message && !e.message.includes('Failed to fetch')) throw e;
+      const local = getLocalData();
+      const user = (local.users || []).find(u => u.id === id);
+      if (user) {
+        user.password = newPassword;
+        saveLocalData(local);
+      }
+      return { success: true, message: 'Password reset successfully!' };
+    }
+  },
+
+  async getUserPermissions(userId) {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/permissions`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return (local.userPermissions && local.userPermissions[userId]) || {
+      home_dashboard: true,
+      brands: true,
+      account_management: true,
+      screen_management: true,
+      sales: true,
+      recent_sales: true,
+      expiry_management: true,
+      notifications: true,
+      reports_excel: true,
+      revenue_management: false,
+      cells_linkup: false,
+      google_sheets_sync: false
+    };
+  },
+
+  async updateUserPermissions(userId, permissions) {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/permissions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions })
+      });
+      const data = await res.json();
+      if (res.ok && data.permissions) {
+        const local = getLocalData();
+        if (!local.userPermissions) local.userPermissions = {};
+        local.userPermissions[userId] = data.permissions;
+        saveLocalData(local);
+        return data.permissions;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.userPermissions) local.userPermissions = {};
+    local.userPermissions[userId] = { ...(local.userPermissions[userId] || {}), ...permissions };
+    saveLocalData(local);
+    return local.userPermissions[userId];
+  },
+
+  // --- SITE SETTINGS & BRANDING ---
+  async getSiteSettings() {
+    try {
+      const res = await fetch('/api/site-settings');
+      if (res.ok) {
+        const settings = await res.json();
+        const local = getLocalData();
+        local.siteSettings = settings;
+        saveLocalData(local);
+        return settings;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return local.siteSettings || {
+      businessName: 'OTT SELLERS',
+      subtitle: 'Management System',
+      logoUrl: '',
+      primaryColor: '#2563eb',
+      accentColor: '#0284c7',
+      headerBg: '#0f172a',
+      headingsText: 'Multi-Brand OTT Subscriptions'
+    };
+  },
+
+  async updateSiteSettings(newSettings) {
+    try {
+      const res = await fetch('/api/site-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSettings)
+      });
+      const data = await res.json();
+      if (res.ok && data.settings) {
+        const local = getLocalData();
+        local.siteSettings = data.settings;
+        saveLocalData(local);
+        return data.settings;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    local.siteSettings = { ...(local.siteSettings || {}), ...newSettings };
+    saveLocalData(local);
+    return local.siteSettings;
+  },
+
+  async uploadLogoToCloudinary(file) {
+    return await uploadToCloudinary(file);
   }
 };

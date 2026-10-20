@@ -25,6 +25,8 @@ import SettingsScreen from './screens/SettingsScreen';
 import WhatsAppMessagesScreen from './screens/WhatsAppMessagesScreen';
 import ShareBrandsScreen from './screens/ShareBrandsScreen';
 import RevenueManagementScreen from './screens/RevenueManagementScreen';
+import AdminPanelScreen from './screens/AdminPanelScreen';
+import AccessRestricted from './components/AccessRestricted';
 
 export default function App() {
   // Authentication State
@@ -34,6 +36,38 @@ export default function App() {
       return saved ? JSON.parse(saved) : null;
     } catch (e) {
       return null;
+    }
+  });
+
+  // User Feature Permissions State
+  const [userPermissions, setUserPermissions] = useState(() => {
+    try {
+      const saved = localStorage.getItem('accounts_manager_permissions');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  // Website Branding & Theme Settings State
+  const [siteSettings, setSiteSettings] = useState(() => {
+    try {
+      const saved = localStorage.getItem('accounts_manager_site_settings');
+      return saved ? JSON.parse(saved) : {
+        businessName: 'OTT SELLERS',
+        subtitle: 'Management System',
+        logoUrl: '',
+        primaryColor: '#2563eb',
+        accentColor: '#0284c7'
+      };
+    } catch (e) {
+      return {
+        businessName: 'OTT SELLERS',
+        subtitle: 'Management System',
+        logoUrl: '',
+        primaryColor: '#2563eb',
+        accentColor: '#0284c7'
+      };
     }
   });
 
@@ -88,15 +122,43 @@ export default function App() {
   };
 
   // Initial load
-  const loadInitial = async () => {
+  const loadInitial = async (forcedUser) => {
     try {
-      const brandsList = await api.getBrands(currentUser?.email);
+      const activeUser = forcedUser || currentUser;
+
+      // 1. Load website branding & dynamic site settings
+      const settings = await api.getSiteSettings();
+      if (settings) {
+        setSiteSettings(settings);
+        try {
+          localStorage.setItem('accounts_manager_site_settings', JSON.stringify(settings));
+          if (settings.primaryColor && typeof document !== 'undefined') {
+            document.documentElement.style.setProperty('--primary-color', settings.primaryColor);
+          }
+        } catch (e) {}
+      }
+
+      // 2. Load user permissions
+      if (activeUser?.id) {
+        const perms = await api.getUserPermissions(activeUser.id);
+        if (perms) {
+          setUserPermissions(perms);
+          try {
+            localStorage.setItem('accounts_manager_permissions', JSON.stringify(perms));
+          } catch (e) {}
+        }
+      }
+
+      // 3. Load brands
+      const brandsList = await api.getBrands(activeUser?.email);
       setBrands(brandsList);
       if (brandsList && brandsList.length > 0) {
         if (!selectedBrand) {
           setSelectedBrand(brandsList[0]);
         }
       }
+
+      // 4. Load stats
       const liveStats = await api.getStats();
       setStats(liveStats);
 
@@ -109,6 +171,12 @@ export default function App() {
     } catch (err) {
       console.error('Initial load error:', err);
     }
+  };
+
+  const isAllowed = (featureKey) => {
+    if (!currentUser) return false;
+    if (currentUser.role === 'admin') return true;
+    return userPermissions[featureKey] !== false;
   };
 
   const syncWithGoogleSheets = async (silent = false) => {
@@ -334,6 +402,8 @@ export default function App() {
     switch (currentScreen) {
       case 'home':
         return '';
+      case 'admin-panel':
+        return 'Admin Panel';
       case 'sale':
       case 'create-form':
         return 'Sale';
@@ -353,7 +423,7 @@ export default function App() {
       case 'settings':
         return 'Settings';
       default:
-        return 'OTT Sellers';
+        return siteSettings.businessName || 'OTT Sellers';
     }
   };
 
@@ -364,8 +434,8 @@ export default function App() {
 
       {/* Main Responsive Mobile Viewport */}
       <div className="mobile-app-viewport">
-        {/* Top Header (Dedicated screens like Forms Management, WhatsApp Messages, Share Brands & Revenue Management render their own header) */}
-        {currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && currentScreen !== 'share-brands' && currentScreen !== 'revenue-mgmt' && (
+        {/* Top Header (Dedicated screens like Admin Panel, Forms Management, WhatsApp Messages, Share Brands & Revenue Management render their own header) */}
+        {currentScreen !== 'admin-panel' && currentScreen !== 'forms-mgmt' && currentScreen !== 'whatsapp-messages' && currentScreen !== 'share-brands' && currentScreen !== 'revenue-mgmt' && (
           <TopHeader
             isHome={currentScreen === 'home'}
             showBack={currentScreen !== 'home'}
@@ -374,6 +444,7 @@ export default function App() {
             selectedBrand={currentScreen !== 'home' && currentScreen !== 'settings' && currentScreen !== 'cells-linkup' && currentScreen !== 'brands-mgmt' && currentScreen !== 'expiry' ? selectedBrand : null}
             onBrandClick={() => setShowBrandSelector(true)}
             onOpenMenu={() => setShowMenuDrawer(true)}
+            siteSettings={siteSettings}
             rightAction={
               currentScreen === 'expiry' ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -481,106 +552,164 @@ export default function App() {
         )}
 
         {/* Screen Routing */}
+        {currentScreen === 'admin-panel' && (
+          currentUser?.role === 'admin' ? (
+            <AdminPanelScreen
+              currentUser={currentUser}
+              onBack={handleBack}
+              showToast={showToast}
+              brands={brands}
+              onOpenBrandManager={() => navigateTo('brands-mgmt')}
+              onBrandingUpdated={(newSettings) => {
+                setSiteSettings(newSettings);
+                if (newSettings.primaryColor && typeof document !== 'undefined') {
+                  document.documentElement.style.setProperty('--primary-color', newSettings.primaryColor);
+                }
+              }}
+            />
+          ) : (
+            <AccessRestricted featureName="Admin Panel" onGoHome={() => navigateTo('home')} />
+          )
+        )}
+
         {currentScreen === 'home' && (
-          <HomeScreen
-            stats={stats}
-            brands={brands}
-            onNavigate={navigateTo}
-            onSyncSheets={() => syncWithGoogleSheets(false)}
-          />
+          isAllowed('home_dashboard') ? (
+            <HomeScreen
+              stats={stats}
+              brands={brands}
+              onNavigate={navigateTo}
+              onSyncSheets={() => syncWithGoogleSheets(false)}
+              currentUser={currentUser}
+              userPermissions={userPermissions}
+            />
+          ) : (
+            <AccessRestricted featureName="Home Dashboard" onGoHome={() => navigateTo('data')} />
+          )
         )}
 
         {(currentScreen === 'sale' || currentScreen === 'create-form') && (
-          <SaleScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            onSelectBrand={setSelectedBrand}
-            prefillData={screenParams.prefill}
-            onSaleSuccess={handleSaleSuccess}
-            showToast={showToast}
-          />
+          isAllowed('sales') ? (
+            <SaleScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              onSelectBrand={setSelectedBrand}
+              prefillData={screenParams.prefill}
+              onSaleSuccess={handleSaleSuccess}
+              showToast={showToast}
+            />
+          ) : (
+            <AccessRestricted featureName="Sales & Checkout" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {(currentScreen === 'data' || currentScreen === 'inventory') && (
-          <InventoryScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            onSelectBrand={setSelectedBrand}
-            onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
-            showToast={showToast}
-          />
+          isAllowed('account_management') ? (
+            <InventoryScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              onSelectBrand={setSelectedBrand}
+              onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
+              showToast={showToast}
+            />
+          ) : (
+            <AccessRestricted featureName="Accounts & Inventory (Data)" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'recent-sales' && (
-          <RecentSalesScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            onSelectBrand={setSelectedBrand}
-            onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
-            showToast={showToast}
-            isAddSaleOpen={recentSalesAddModalOpen}
-            onOpenAddSale={() => setRecentSalesAddModalOpen(true)}
-            onCloseAddSale={() => setRecentSalesAddModalOpen(false)}
-            currentUser={currentUser}
-            onSaleAdded={async () => {
-              const updatedStats = await api.getStats();
-              setStats(updatedStats);
-            }}
-          />
+          isAllowed('recent_sales') ? (
+            <RecentSalesScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              onSelectBrand={setSelectedBrand}
+              onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
+              showToast={showToast}
+              isAddSaleOpen={recentSalesAddModalOpen}
+              onOpenAddSale={() => setRecentSalesAddModalOpen(true)}
+              onCloseAddSale={() => setRecentSalesAddModalOpen(false)}
+              currentUser={currentUser}
+              onSaleAdded={async () => {
+                const updatedStats = await api.getStats();
+                setStats(updatedStats);
+              }}
+            />
+          ) : (
+            <AccessRestricted featureName="Recent Sales" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'cells-linkup' && (
-          <CellsLinkupScreen
-            showToast={showToast}
-            onBack={handleBack}
-          />
+          isAllowed('cells_linkup') ? (
+            <CellsLinkupScreen
+              showToast={showToast}
+              onBack={handleBack}
+            />
+          ) : (
+            <AccessRestricted featureName="Cells Linking" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'brands-mgmt' && (
-          <BrandsManagementScreen
-            onBack={handleBack}
-            onBrandCreated={(newBrand) => {
-              loadInitial();
-              setSelectedBrand(newBrand);
-            }}
-            showToast={showToast}
-            isAddModalOpen={brandsAddModalOpen}
-            onOpenAdd={() => setBrandsAddModalOpen(true)}
-            onCloseAdd={() => setBrandsAddModalOpen(false)}
-          />
+          isAllowed('brands') ? (
+            <BrandsManagementScreen
+              onBack={handleBack}
+              onBrandCreated={(newBrand) => {
+                loadInitial();
+                setSelectedBrand(newBrand);
+              }}
+              showToast={showToast}
+              isAddModalOpen={brandsAddModalOpen}
+              onOpenAdd={() => setBrandsAddModalOpen(true)}
+              onCloseAdd={() => setBrandsAddModalOpen(false)}
+            />
+          ) : (
+            <AccessRestricted featureName="Brands Management" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'forms-mgmt' && (
-          <FormsManagementScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            onSelectBrand={setSelectedBrand}
-            onNavigateToSale={handleSaleSuccess}
-            onBack={handleBack}
-            showToast={showToast}
-          />
+          isAllowed('cells_linkup') ? (
+            <FormsManagementScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              onSelectBrand={setSelectedBrand}
+              onNavigateToSale={handleSaleSuccess}
+              onBack={handleBack}
+              showToast={showToast}
+            />
+          ) : (
+            <AccessRestricted featureName="Forms Management" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'expiry' && (
-          <ExpiryScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            initialFilter={screenParams.filter || 'ALL'}
-            onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
-            showToast={showToast}
-            dateFilter={expiryDateFilter}
-            onOpenDatePicker={() => setShowExpiryDatePicker(true)}
-            onClearDateFilter={() => setExpiryDateFilter('')}
-          />
+          isAllowed('expiry_management') ? (
+            <ExpiryScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              initialFilter={screenParams.filter || 'ALL'}
+              onOpenNotifyModal={(sale) => setNotifySaleItem(sale)}
+              showToast={showToast}
+              dateFilter={expiryDateFilter}
+              onOpenDatePicker={() => setShowExpiryDatePicker(true)}
+              onClearDateFilter={() => setExpiryDateFilter('')}
+            />
+          ) : (
+            <AccessRestricted featureName="Expiry Management" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'brands' && (
-          <BrandsScreen
-            brands={brands}
-            selectedBrand={selectedBrand}
-            onSelectBrand={handleSelectBrandAndOpen}
-            onNavigate={navigateTo}
-          />
+          isAllowed('brands') ? (
+            <BrandsScreen
+              brands={brands}
+              selectedBrand={selectedBrand}
+              onSelectBrand={handleSelectBrandAndOpen}
+              onNavigate={navigateTo}
+            />
+          ) : (
+            <AccessRestricted featureName="Brands View" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'settings' && (
@@ -591,10 +720,14 @@ export default function App() {
         )}
 
         {currentScreen === 'whatsapp-messages' && (
-          <WhatsAppMessagesScreen
-            onBack={handleBack}
-            showToast={showToast}
-          />
+          isAllowed('notifications') ? (
+            <WhatsAppMessagesScreen
+              onBack={handleBack}
+              showToast={showToast}
+            />
+          ) : (
+            <AccessRestricted featureName="WhatsApp Notifications" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
         {currentScreen === 'share-brands' && (
@@ -608,22 +741,31 @@ export default function App() {
         )}
 
         {currentScreen === 'revenue-mgmt' && (
-          <RevenueManagementScreen
-            brands={brands}
-            onBack={handleBack}
-            showToast={showToast}
-            onOpenMenu={() => setShowMenuDrawer(true)}
-          />
+          isAllowed('revenue_management') ? (
+            <RevenueManagementScreen
+              brands={brands}
+              onBack={handleBack}
+              showToast={showToast}
+              onOpenMenu={() => setShowMenuDrawer(true)}
+            />
+          ) : (
+            <AccessRestricted featureName="Revenue Management" onGoHome={() => navigateTo('home')} />
+          )
         )}
 
-        {/* Fixed Bottom Navigation Bar */}
-        <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
+        {/* Fixed Bottom Navigation Bar (Hidden when inside Admin Panel) */}
+        {currentScreen !== 'admin-panel' && (
+          <BottomNav activeTab={activeTab} onSelectTab={handleBottomTab} />
+        )}
       </div>
 
       {/* Hamburger Home Menu Drawer: Brands, Forms, Cells Linking, Custom WhatsApp, Share Brands, Create Form, Settings, Logout */}
       <HomeMenuDrawer
         isOpen={showMenuDrawer}
         onClose={() => setShowMenuDrawer(false)}
+        currentUser={currentUser}
+        userPermissions={userPermissions}
+        onSelectAdminPanel={() => navigateTo('admin-panel')}
         onSelectBrands={() => navigateTo('brands-mgmt')}
         onSelectForms={() => navigateTo('forms-mgmt')}
         onSelectCellsLinkup={() => navigateTo('cells-linkup')}

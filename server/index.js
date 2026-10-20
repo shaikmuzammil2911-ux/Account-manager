@@ -55,6 +55,82 @@ app.post('/api/auth/login', (req, res) => {
   }
 });
 
+// --- ADMIN & MULTI-USER API ROUTES ---
+app.get('/api/admin/users', (req, res) => {
+  try {
+    const users = db.getAllUsers();
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users', (req, res) => {
+  try {
+    const { fullName, mobileNumber, email, password, role } = req.body;
+    const newUser = db.createUser({ fullName, mobileNumber, email, password, role });
+    res.status(201).json({ success: true, user: newUser });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/users/:id', (req, res) => {
+  try {
+    const updatedUser = db.updateUserProfile(req.params.id, req.body);
+    res.json({ success: true, user: updatedUser });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users/:id/reset-password', (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    const result = db.adminResetPassword(req.params.id, newPassword);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/users/:id/permissions', (req, res) => {
+  try {
+    const permissions = db.getUserPermissions(req.params.id);
+    res.json(permissions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/users/:id/permissions', (req, res) => {
+  try {
+    const updatedPermissions = db.updateUserPermissions(req.params.id, req.body.permissions || req.body);
+    res.json({ success: true, permissions: updatedPermissions });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- SITE SETTINGS & BRANDING ROUTES ---
+app.get('/api/site-settings', (req, res) => {
+  try {
+    const settings = db.getSiteSettings();
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/site-settings', (req, res) => {
+  try {
+    const updated = db.updateSiteSettings(req.body);
+    res.json({ success: true, settings: updated });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
     const { email } = req.body;

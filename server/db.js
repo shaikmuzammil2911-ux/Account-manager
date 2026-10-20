@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getInitialData } from './initialData.js';
+import { syncProfileToSupabase, syncPermissionsToSupabase, syncSiteSettingsToSupabase } from './supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1105,7 +1106,27 @@ export const db = {
     }
   },
 
-  // --- USERS & AUTHENTICATION ---
+  // --- USERS & AUTHENTICATION (MULTI-USER & ROLE MANAGEMENT) ---
+  getAllUsers() {
+    const data = readDb();
+    if (!data.users) data.users = [];
+    // Ensure default admin exists
+    this.getUserByEmail('Fixyourmobiles10@gmail.com');
+
+    // Return safe user objects (never expose plaintext passwords)
+    return data.users.map(u => ({
+      id: u.id,
+      name: u.name || u.fullName || 'User',
+      fullName: u.fullName || u.name || 'User',
+      email: u.email,
+      mobileNumber: u.mobileNumber || u.mobile || '',
+      role: u.role || 'user',
+      accountStatus: u.accountStatus || 'active',
+      createdAt: u.createdAt || new Date().toISOString().slice(0, 10),
+      updatedAt: u.updatedAt || null
+    }));
+  },
+
   getUserByEmail(email) {
     const data = readDb();
     if (!data.users) data.users = [];
@@ -1115,9 +1136,12 @@ export const db = {
       user = {
         id: 'admin_1',
         email: 'Fixyourmobiles10@gmail.com',
+        fullName: 'Super Admin',
+        name: 'Super Admin',
+        mobileNumber: '9876543210',
         password: 'Password@123',
-        name: 'Admin',
         role: 'admin',
+        accountStatus: 'active',
         createdAt: '2026-10-16'
       };
       data.users.push(user);
@@ -1126,11 +1150,237 @@ export const db = {
     return user;
   },
 
+  getUserById(id) {
+    const data = readDb();
+    if (!data.users) return null;
+    const user = data.users.find(u => u.id === id);
+    if (!user) return null;
+    const { password: _, ...safeUser } = user;
+    return safeUser;
+  },
+
+  createUser({ fullName, mobileNumber, email, password, role = 'user' }) {
+    if (!fullName || !fullName.trim()) {
+      throw new Error('Full Name is required');
+    }
+    if (!email || !email.trim()) {
+      throw new Error('Email Address is required');
+    }
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const normEmail = email.trim().toLowerCase();
+    if (!emailRegex.test(normEmail)) {
+      throw new Error('Invalid email address format');
+    }
+
+    if (!mobileNumber || !mobileNumber.trim()) {
+      throw new Error('Mobile Number is required');
+    }
+    const cleanMobile = mobileNumber.replace(/[^0-9+]/g, '');
+    if (cleanMobile.length < 10) {
+      throw new Error('Mobile number must be at least 10 digits');
+    }
+
+    if (!password || password.length < 6) {
+      throw new Error('Password must be at least 6 characters');
+    }
+
+    const data = readDb();
+    if (!data.users) data.users = [];
+
+    // Duplicate checks
+    const existingEmail = data.users.find(u => (u.email || '').trim().toLowerCase() === normEmail);
+    if (existingEmail) {
+      throw new Error(`A user with email "${normEmail}" already exists`);
+    }
+
+    const existingMobile = data.users.find(u => (u.mobileNumber || u.mobile || '').replace(/[^0-9]/g, '') === cleanMobile.replace(/[^0-9]/g, ''));
+    if (existingMobile) {
+      throw new Error(`A user with mobile number "${mobileNumber}" already exists`);
+    }
+
+    const newUser = {
+      id: `user_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      fullName: fullName.trim(),
+      name: fullName.trim(),
+      email: normEmail,
+      mobileNumber: mobileNumber.trim(),
+      password, // In real Supabase auth, handled by Supabase Auth service
+      role: role === 'admin' ? 'admin' : 'user',
+      accountStatus: 'active',
+      createdAt: new Date().toISOString().slice(0, 10),
+      updatedAt: new Date().toISOString().slice(0, 10)
+    };
+
+    data.users.push(newUser);
+
+    // Initialize user feature permissions
+    if (!data.userPermissions) data.userPermissions = {};
+    data.userPermissions[newUser.id] = {
+      home_dashboard: true,
+      brands: true,
+      account_management: true,
+      screen_management: true,
+      sales: true,
+      recent_sales: true,
+      expiry_management: true,
+      notifications: true,
+      reports_excel: true,
+      revenue_management: false,
+      cells_linkup: false,
+      google_sheets_sync: false
+    };
+
+    writeDb(data);
+
+    // Asynchronously sync profile and permissions to Supabase
+    syncProfileToSupabase(newUser).catch(() => {});
+    syncPermissionsToSupabase(newUser.id, data.userPermissions[newUser.id]).catch(() => {});
+
+    const { password: _, ...safeUser } = newUser;
+    return safeUser;
+  },
+
+  updateUserProfile(id, updates = {}) {
+    const data = readDb();
+    if (!data.users) data.users = [];
+    const index = data.users.findIndex(u => u.id === id);
+    if (index === -1) {
+      throw new Error(`User not found with ID ${id}`);
+    }
+
+    const user = data.users[index];
+
+    if (updates.fullName) {
+      user.fullName = updates.fullName.trim();
+      user.name = updates.fullName.trim();
+    }
+    if (updates.mobileNumber) {
+      user.mobileNumber = updates.mobileNumber.trim();
+    }
+    if (updates.accountStatus) {
+      user.accountStatus = updates.accountStatus; // 'active' | 'suspended' | 'inactive'
+    }
+    if (updates.role && (updates.role === 'admin' || updates.role === 'user')) {
+      // Prevent demoting last admin
+      user.role = updates.role;
+    }
+
+    user.updatedAt = new Date().toISOString().slice(0, 10);
+    writeDb(data);
+
+    // Sync to Supabase
+    syncProfileToSupabase(user).catch(() => {});
+
+    const { password: _, ...safeUser } = user;
+    return safeUser;
+  },
+
+  adminResetPassword(id, newPassword) {
+    if (!newPassword || newPassword.length < 6) {
+      throw new Error('New password must be at least 6 characters');
+    }
+    const data = readDb();
+    if (!data.users) data.users = [];
+    const user = data.users.find(u => u.id === id);
+    if (!user) {
+      throw new Error(`User not found with ID ${id}`);
+    }
+
+    user.password = newPassword;
+    user.updatedAt = new Date().toISOString().slice(0, 10);
+    writeDb(data);
+    return { success: true, message: 'Password reset successfully!' };
+  },
+
+  getUserPermissions(userId) {
+    const data = readDb();
+    if (!data.userPermissions) data.userPermissions = {};
+
+    const defaultPerms = {
+      home_dashboard: true,
+      brands: true,
+      account_management: true,
+      screen_management: true,
+      sales: true,
+      recent_sales: true,
+      expiry_management: true,
+      notifications: true,
+      reports_excel: true,
+      revenue_management: false,
+      cells_linkup: false,
+      google_sheets_sync: false
+    };
+
+    // If user is super admin, all features are always ON
+    const user = (data.users || []).find(u => u.id === userId);
+    if (user && user.role === 'admin') {
+      const allOn = {};
+      Object.keys(defaultPerms).forEach(k => { allOn[k] = true; });
+      return allOn;
+    }
+
+    const userPerms = data.userPermissions[userId] || {};
+    return { ...defaultPerms, ...userPerms };
+  },
+
+  updateUserPermissions(userId, permissions) {
+    const data = readDb();
+    if (!data.userPermissions) data.userPermissions = {};
+    const existing = this.getUserPermissions(userId);
+    const updated = { ...existing, ...permissions };
+    data.userPermissions[userId] = updated;
+    writeDb(data);
+
+    // Sync to Supabase
+    syncPermissionsToSupabase(userId, updated).catch(() => {});
+    return updated;
+  },
+
+  // --- WEBSITE BRANDING & SITE SETTINGS ---
+  getSiteSettings() {
+    const data = readDb();
+    if (!data.siteSettings) {
+      data.siteSettings = {
+        businessName: 'OTT SELLERS',
+        subtitle: 'Management System',
+        logoUrl: '',
+        primaryColor: '#2563eb',
+        accentColor: '#0284c7',
+        headerBg: '#0f172a',
+        headingsText: 'Multi-Brand OTT Subscriptions',
+        updatedAt: new Date().toISOString()
+      };
+      writeDb(data);
+    }
+    return data.siteSettings;
+  },
+
+  updateSiteSettings(newSettings = {}) {
+    const data = readDb();
+    const current = this.getSiteSettings();
+    const updated = {
+      ...current,
+      ...newSettings,
+      updatedAt: new Date().toISOString()
+    };
+    data.siteSettings = updated;
+    writeDb(data);
+
+    // Sync to Supabase
+    syncSiteSettingsToSupabase(updated).catch(() => {});
+    return updated;
+  },
+
   validateUser(email, password) {
     const user = this.getUserByEmail(email);
     if (!user) return null;
     if (user.password === password) {
+      if (user.accountStatus === 'suspended') {
+        throw new Error('Your account has been suspended by the administrator.');
+      }
       const { password: _, ...safeUser } = user;
+      // Attach feature permissions
+      safeUser.permissions = this.getUserPermissions(user.id);
       return safeUser;
     }
     return null;
@@ -1169,9 +1419,11 @@ export const db = {
       user = {
         id: `user_${Date.now()}`,
         email: email.trim(),
-        password: newPassword,
+        fullName: 'User',
         name: 'User',
-        role: 'admin',
+        password: newPassword,
+        role: 'user',
+        accountStatus: 'active',
         createdAt: new Date().toISOString().slice(0, 10)
       };
       data.users.push(user);

@@ -9,8 +9,13 @@ export default function TopHeader({
   onOpenMenu,
   selectedBrand,
   onBrandClick,
-  rightAction
+  rightAction,
+  siteSettings
 }) {
+  const businessName = siteSettings?.businessName || 'OTT SELLERS';
+  const subtitle = siteSettings?.subtitle || 'Management System';
+  const logoUrl = siteSettings?.logoUrl;
+
   return (
     <header className="app-header">
       {/* Left Action Button (Back or Spacer) */}
@@ -34,27 +39,41 @@ export default function TopHeader({
       <div className="header-title-container">
         {isHome ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <div
-              style={{
-                width: '32px',
-                height: '32px',
-                borderRadius: '8px',
-                background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
-                color: '#ffffff',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 2px 6px rgba(30, 64, 175, 0.35)'
-              }}
-            >
-              <Sparkles size={18} />
-            </div>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={businessName}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  objectFit: 'contain',
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.1)'
+                }}
+              />
+            ) : (
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: 'linear-gradient(135deg, #1e40af 0%, #3b82f6 100%)',
+                  color: '#ffffff',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 2px 6px rgba(30, 64, 175, 0.35)'
+                }}
+              >
+                <Sparkles size={18} />
+              </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '18px', fontWeight: 900, color: '#0f172a', letterSpacing: '-0.3px', lineHeight: 1.1 }}>
-                OTT SELLERS
+                {businessName}
               </span>
               <span style={{ fontSize: '11px', fontWeight: 700, color: '#64748b', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
-                Management System
+                {subtitle}
               </span>
             </div>
           </div>

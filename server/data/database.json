@@ -804,6 +804,18 @@
       "name": "Admin",
       "role": "admin",
       "createdAt": "2026-10-16"
+    },
+    {
+      "id": "user_1792478229781_u7op",
+      "fullName": "Partner Seller Updated",
+      "name": "Partner Seller Updated",
+      "email": "partner_1792478229778@gmail.com",
+      "mobileNumber": "9988776600",
+      "password": "NewPassword@321",
+      "role": "user",
+      "accountStatus": "active",
+      "createdAt": "2026-10-20",
+      "updatedAt": "2026-10-20"
     }
   ],
   "groups": [
@@ -869,5 +881,32 @@
       "otp": "542525",
       "expiresAt": 1792216912899
     }
-  ]
+  ],
+  "sharedBrands": [],
+  "userPermissions": {
+    "user_1792478229781_u7op": {
+      "home_dashboard": true,
+      "brands": true,
+      "account_management": true,
+      "screen_management": true,
+      "sales": true,
+      "recent_sales": true,
+      "expiry_management": true,
+      "notifications": true,
+      "reports_excel": false,
+      "revenue_management": true,
+      "cells_linkup": false,
+      "google_sheets_sync": false
+    }
+  },
+  "siteSettings": {
+    "businessName": "OTT SELLERS PRO",
+    "subtitle": "Management System",
+    "logoUrl": "",
+    "primaryColor": "#1d4ed8",
+    "accentColor": "#0284c7",
+    "headerBg": "#0f172a",
+    "headingsText": "Multi-Brand OTT Subscriptions",
+    "updatedAt": "2026-10-20T06:37:09.835Z"
+  }
 }
