@@ -82,40 +82,53 @@ function saveLocalData(data) {
   }
 }
 
+function getActiveUser() {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem('accounts_manager_user') : null;
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 export const api = {
   // BRANDS
   async getBrands(userEmail) {
-    const local = getLocalData();
+    const activeUser = getActiveUser();
+    const effectiveEmail = userEmail || activeUser?.email;
+    const effectiveRole = activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
+    const effectiveUserId = activeUser?.id;
+
     try {
-      const emailParam = userEmail ? `?userEmail=${encodeURIComponent(userEmail)}` : '';
-      const res = await fetch(`/api/brands${emailParam}`);
+      const q = new URLSearchParams();
+      if (effectiveEmail) q.set('userEmail', effectiveEmail);
+      if (effectiveRole) q.set('userRole', effectiveRole);
+      if (effectiveUserId) q.set('userId', effectiveUserId);
+
+      const res = await fetch(`/api/brands?${q.toString()}`);
       if (res.ok) {
         const serverBrands = await res.json();
-        if (serverBrands && Array.isArray(serverBrands) && serverBrands.length > 0) {
-          // Merge safely: Never overwrite user-added brands or customized pricing plans with stale server defaults
-          const localBrands = local.brands || [];
-          const serverBrandMap = new Map(serverBrands.map(b => [b.id, b]));
-          const customBrands = localBrands.filter(b => !serverBrandMap.has(b.id));
-
-          const merged = serverBrands.map(sb => {
-            const lb = localBrands.find(b => b.id === sb.id);
-            if (lb && lb.updatedAt && (!sb.updatedAt || lb.updatedAt > sb.updatedAt)) {
-              return { ...sb, ...lb };
-            }
-            return lb ? { ...sb, ...lb } : sb;
-          });
-
-          local.brands = [...merged, ...customBrands];
-          saveLocalData(local);
+        if (serverBrands && Array.isArray(serverBrands)) {
+          return serverBrands;
         }
       }
     } catch (e) {
       // offline fallback
     }
 
+    const local = getLocalData();
     let brands = [...(local.brands || [])];
-    if (userEmail && local.sharedBrands) {
-      const norm = userEmail.trim().toLowerCase();
+    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+
+    if (!isAdmin) {
+      brands = brands.filter(b => {
+        const owner = (b.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && b.userId === effectiveUserId);
+      });
+    }
+
+    if (effectiveEmail && local.sharedBrands) {
+      const norm = effectiveEmail.trim().toLowerCase();
       local.sharedBrands.forEach(share => {
         if (share.status !== 'revoked' && share.receiverEmail?.toLowerCase() === norm) {
           (share.brandIds || []).forEach(bId => {
@@ -145,7 +158,11 @@ export const api = {
 
   // INVENTORY (DATA SECTION)
   async getInventory(params = {}) {
-    const local = getLocalData();
+    const activeUser = getActiveUser();
+    const effectiveEmail = params.userEmail || activeUser?.email;
+    const effectiveRole = params.userRole || activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
+    const effectiveUserId = params.userId || activeUser?.id;
+
     try {
       const query = new URLSearchParams();
       if (params.brandId) query.set('brandId', params.brandId);
@@ -153,44 +170,31 @@ export const api = {
       if (params.emptyOnly) query.set('emptyOnly', 'true');
       if (params.validity) query.set('validity', params.validity);
       if (params.sortOrder) query.set('sortOrder', params.sortOrder);
+      if (effectiveEmail) query.set('userEmail', effectiveEmail);
+      if (effectiveRole) query.set('userRole', effectiveRole);
+      if (effectiveUserId) query.set('userId', effectiveUserId);
 
       const res = await fetch(`/api/inventory?${query.toString()}`);
       if (res.ok) {
         const serverItems = await res.json();
         if (serverItems && Array.isArray(serverItems)) {
-          // Merge safely: preserve user edits, customized credentials, and occupied sales screens
-          const localItems = local.inventory || [];
-          const merged = serverItems.map(si => {
-            const li = localItems.find(i => i.id === si.id || (i.email && si.email && i.email.toLowerCase() === si.email.toLowerCase()));
-            if (li) {
-              const hasSoldScreens = (li.screens || []).some(s => s.status === 'occupied');
-              if (hasSoldScreens || li.updatedAt || li.isLocked === false) {
-                return { ...si, ...li };
-              }
-            }
-            return si;
-          });
-
-          const serverIds = new Set(serverItems.map(i => i.id));
-          const extraLocal = localItems.filter(i => !serverIds.has(i.id) && (!params.brandId || params.brandId === 'all' || i.brandId === params.brandId));
-
-          if (!params.brandId || params.brandId === 'all') {
-            local.inventory = [...merged, ...extraLocal];
-          } else {
-            local.inventory = [
-              ...(local.inventory || []).filter(i => i.brandId !== params.brandId),
-              ...merged,
-              ...extraLocal
-            ];
-          }
-          saveLocalData(local);
+          return serverItems;
         }
       }
     } catch (e) {
       // network error
     }
 
+    const local = getLocalData();
     let items = (local.inventory || []).filter(i => !i.isDeleted);
+    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+
+    if (!isAdmin) {
+      items = items.filter(item => {
+        const owner = (item.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && item.userId === effectiveUserId);
+      });
+    }
 
     if (params.brandId && params.brandId !== 'all') {
       items = items.filter(i => i.brandId === params.brandId);
@@ -242,12 +246,19 @@ export const api = {
   },
 
   async createInventory(data) {
+    const activeUser = getActiveUser();
+    const payload = {
+      ...data,
+      ownerEmail: data.ownerEmail || activeUser?.email || 'fixyourmobiles10@gmail.com',
+      userId: data.userId || activeUser?.id || ''
+    };
+
     let newItem = null;
     try {
       const res = await fetch('/api/inventory', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         newItem = await res.json();
@@ -295,6 +306,9 @@ export const api = {
         validity: data.validity || '01 Month',
         planVariant: data.planVariant || 'General',
         notes: data.notes || '',
+        ownerEmail: payload.ownerEmail,
+        userId: payload.userId,
+        sellerDetails: data.sellerDetails || null,
         isLocked: data.isLocked ?? true,
         isSelected: data.isSelected ?? false,
         isDeleted: false,
@@ -447,7 +461,10 @@ export const api = {
 
   // SALES
   async getSales(params = {}) {
-    const local = getLocalData();
+    const activeUser = getActiveUser();
+    const effectiveEmail = params.sellerEmail || params.userEmail || activeUser?.email;
+    const effectiveRole = params.userRole || activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
+    const effectiveUserId = params.userId || activeUser?.id;
 
     try {
       const query = new URLSearchParams();
@@ -455,32 +472,27 @@ export const api = {
       if (params.validity) query.set('validity', params.validity);
       if (params.date) query.set('date', params.date);
       if (params.search) query.set('search', params.search);
-      if (params.sellerEmail) query.set('sellerEmail', params.sellerEmail);
+      if (effectiveEmail) query.set('sellerEmail', effectiveEmail);
+      if (effectiveRole) query.set('userRole', effectiveRole);
+      if (effectiveUserId) query.set('userId', effectiveUserId);
 
       const res = await fetch(`/api/sales?${query.toString()}`);
       if (res.ok) {
         const serverSales = await res.json();
         if (serverSales && Array.isArray(serverSales)) {
-          // Merge safely: union server sales with local sales by ID, never delete user sales!
-          const localSales = local.sales || [];
-          const serverMap = new Map(serverSales.map(s => [s.id, s]));
-          const uniqueLocal = localSales.filter(s => !serverMap.has(s.id));
-          local.sales = [...serverSales, ...uniqueLocal];
-          saveLocalData(local);
+          return serverSales;
         }
       }
     } catch (e) {}
 
+    const local = getLocalData();
     let sales = [...(local.sales || [])];
+    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
 
-    if (params.sellerEmail) {
-      const norm = params.sellerEmail.trim().toLowerCase();
+    if (!isAdmin) {
       sales = sales.filter(s => {
-        const sEmail = (s.sellerEmail || '').trim().toLowerCase();
-        if (!sEmail) {
-          return norm === 'fixyourmobiles10@gmail.com' || norm === 'admin';
-        }
-        return sEmail === norm;
+        const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
+        return (sEmail && sEmail === effectiveEmail?.toLowerCase()) || (effectiveUserId && s.userId === effectiveUserId);
       });
     }
 
@@ -737,20 +749,51 @@ export const api = {
 
   // EXPIRY & STATS
   async getStats() {
+    const activeUser = getActiveUser();
+    const effectiveEmail = activeUser?.email;
+    const effectiveRole = activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
+    const effectiveUserId = activeUser?.id;
+
     try {
-      const res = await fetch('/api/stats');
+      const q = new URLSearchParams();
+      if (effectiveEmail) q.set('userEmail', effectiveEmail);
+      if (effectiveRole) q.set('userRole', effectiveRole);
+      if (effectiveUserId) q.set('userId', effectiveUserId);
+
+      const res = await fetch(`/api/stats?${q.toString()}`);
       if (res.ok) {
         return await res.json();
       }
     } catch (e) {}
 
     const local = getLocalData();
+    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+
+    let sales = [...(local.sales || [])];
+    let inventory = [...(local.inventory || [])].filter(i => !i.isDeleted);
+    let brands = [...(local.brands || [])];
+
+    if (!isAdmin) {
+      sales = sales.filter(s => {
+        const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
+        return (sEmail && sEmail === effectiveEmail?.toLowerCase()) || (effectiveUserId && s.userId === effectiveUserId);
+      });
+      inventory = inventory.filter(i => {
+        const owner = (i.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && i.userId === effectiveUserId);
+      });
+      brands = brands.filter(b => {
+        const owner = (b.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && b.userId === effectiveUserId);
+      });
+    }
+
     const now = new Date();
     let expiredCount = 0;
     let todayCount = 0;
     let inTwoDaysCount = 0;
 
-    (local.sales || []).forEach(s => {
+    sales.forEach(s => {
       const diff = getDaysDiff(s.expiryDate, now);
       if (diff < 0) expiredCount++;
       else if (diff === 0) todayCount++;
@@ -759,19 +802,20 @@ export const api = {
 
     let totalScreens = 0;
     let emptyScreens = 0;
-    (local.inventory || []).filter(i => !i.isDeleted).forEach(inv => {
+    inventory.forEach(inv => {
       (inv.screens || []).forEach(sc => {
         totalScreens++;
         if (sc.status === 'empty') emptyScreens++;
       });
     });
 
-    const totalRevenue = (local.sales || []).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    const totalRevenue = sales.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
     return {
-      totalSales: (local.sales || []).length,
+      totalBrands: brands.length,
+      totalSales: sales.length,
       totalRevenue,
-      totalAccounts: (local.inventory || []).filter(i => !i.isDeleted).length,
+      totalAccounts: inventory.length,
       totalScreens,
       emptyScreens,
       occupiedScreens: totalScreens - emptyScreens,
@@ -782,19 +826,29 @@ export const api = {
   },
 
   async getExpiry(params = {}) {
+    const activeUser = getActiveUser();
+    const effectiveEmail = params.userEmail || activeUser?.email;
+    const effectiveRole = params.userRole || activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
+    const effectiveUserId = params.userId || activeUser?.id;
+
     try {
       const query = new URLSearchParams();
       if (params.filter) query.set('filter', params.filter);
       if (params.brandId) query.set('brandId', params.brandId);
+      if (effectiveEmail) query.set('userEmail', effectiveEmail);
+      if (effectiveRole) query.set('userRole', effectiveRole);
+      if (effectiveUserId) query.set('userId', effectiveUserId);
+
       const res = await fetch(`/api/expiry?${query.toString()}`);
       if (res.ok) return await res.json();
     } catch (e) {}
 
-    const local = getLocalData();
-    let sales = [...(local.sales || [])];
-    if (params.brandId && params.brandId !== 'all') {
-      sales = sales.filter(s => s.brandId === params.brandId);
-    }
+    const sales = await this.getSales({
+      brandId: params.brandId,
+      userEmail: effectiveEmail,
+      userRole: effectiveRole,
+      userId: effectiveUserId
+    });
 
     const categorized = sales.map(s => {
       const diff = getDaysDiff(s.expiryDate);

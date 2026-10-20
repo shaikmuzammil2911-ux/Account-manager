@@ -104,6 +104,28 @@ function readDb() {
     modified = true;
   }
 
+  // Ensure legacy records have an owner so they never leak into newly created business users' workspaces
+  const ADMIN_OWNER = 'Fixyourmobiles10@gmail.com';
+  (data.brands || []).forEach(b => {
+    if (!b.ownerEmail) {
+      b.ownerEmail = ADMIN_OWNER;
+      modified = true;
+    }
+  });
+  (data.inventory || []).forEach(inv => {
+    if (!inv.ownerEmail) {
+      inv.ownerEmail = ADMIN_OWNER;
+      modified = true;
+    }
+  });
+  (data.sales || []).forEach(s => {
+    if (!s.sellerEmail && !s.ownerEmail) {
+      s.sellerEmail = ADMIN_OWNER;
+      s.ownerEmail = ADMIN_OWNER;
+      modified = true;
+    }
+  });
+
   if (modified) {
     try {
       writeDb(data);
@@ -153,19 +175,29 @@ function dateDiffInDays(targetDate, referenceDate = new Date()) {
 }
 
 export const db = {
-  getBrands(userEmail) {
+  getBrands(userEmail, userRole, userId) {
     const data = readDb();
     let baseBrands = [...(data.brands || [])];
     const shares = data.sharedBrands || [];
 
+    const normalizedUser = (userEmail || '').trim().toLowerCase();
+    const isAdmin = userRole === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!userEmail && !userRole);
+
+    if (!isAdmin) {
+      // Normal business user: strictly isolate brands to records created by this user
+      baseBrands = baseBrands.filter(b => {
+        const owner = (b.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === normalizedUser) || (userId && b.userId === userId);
+      });
+    }
+
     if (userEmail) {
-      const normalizedUser = userEmail.trim().toLowerCase();
       shares.forEach(share => {
         if (share.status !== 'revoked') {
           const isReceiver = share.receiverEmail && share.receiverEmail.trim().toLowerCase() === normalizedUser;
           if (isReceiver) {
             (share.brandIds || []).forEach(bId => {
-              const base = baseBrands.find(b => b.id === bId);
+              const base = (data.brands || []).find(b => b.id === bId);
               if (base) {
                 const sharedId = `${base.id}__shared__${share.id}`;
                 if (!baseBrands.some(b => b.id === sharedId)) {
@@ -215,6 +247,8 @@ export const db = {
     const newBrand = {
       ...brandData,
       id,
+      ownerEmail: (brandData.ownerEmail || brandData.userEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      userId: brandData.userId || '',
       updatedAt: Date.now()
     };
     const existingIdx = data.brands.findIndex(b => b.id === id);
@@ -251,9 +285,20 @@ export const db = {
     return true;
   },
 
-  getInventory({ brandId, selectedOnly, emptyOnly, validity, sortOrder } = {}) {
+  getInventory({ brandId, selectedOnly, emptyOnly, validity, sortOrder, userEmail, userRole, userId } = {}) {
     const data = readDb();
     let items = (data.inventory || []).filter(item => !item.isDeleted);
+
+    const normalizedUser = (userEmail || '').trim().toLowerCase();
+    const isAdmin = userRole === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!userEmail && !userRole);
+
+    if (!isAdmin) {
+      // Normal business user: strictly isolate accounts to records created by this user
+      items = items.filter(item => {
+        const owner = (item.ownerEmail || '').trim().toLowerCase();
+        return (owner && owner === normalizedUser) || (userId && item.userId === userId);
+      });
+    }
 
     if (brandId && brandId !== 'all') {
       const targetBrandId = brandId.includes('__shared__') ? brandId.split('__shared__')[0] : brandId;
@@ -358,6 +403,9 @@ export const db = {
       validity: itemData.validity || '01 Month',
       planVariant: itemData.planVariant || 'General',
       notes: itemData.notes || '',
+      ownerEmail: (itemData.ownerEmail || itemData.userEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      userId: itemData.userId || '',
+      sellerDetails: itemData.sellerDetails || null,
       isLocked: itemData.isLocked ?? true,
       isSelected: itemData.isSelected ?? false,
       isDeleted: false,
@@ -458,18 +506,17 @@ export const db = {
     return true;
   },
 
-  getSales({ sellerEmail, brandId, date, validity, search } = {}) {
+  getSales({ sellerEmail, brandId, date, validity, search, userRole, userId } = {}) {
     const data = readDb();
     let sales = [...(data.sales || [])];
 
-    if (sellerEmail) {
-      const norm = sellerEmail.trim().toLowerCase();
+    const normalizedUser = (sellerEmail || '').trim().toLowerCase();
+    const isAdmin = userRole === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!sellerEmail && !userRole);
+
+    if (!isAdmin) {
       sales = sales.filter(s => {
-        const sEmail = (s.sellerEmail || '').trim().toLowerCase();
-        if (!sEmail) {
-          return norm === 'fixyourmobiles10@gmail.com' || norm === 'admin';
-        }
-        return sEmail === norm;
+        const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
+        return (sEmail && sEmail === normalizedUser) || (userId && s.userId === userId);
       });
     }
 
@@ -603,7 +650,9 @@ export const db = {
       referenceNumber: saleData.referenceNumber || '',
       brandId: saleData.brandId,
       brandName: saleData.brandName || brand.displayName,
-      sellerEmail: (saleData.sellerEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      sellerEmail: (saleData.sellerEmail || saleData.ownerEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      ownerEmail: (saleData.ownerEmail || saleData.sellerEmail || '').trim().toLowerCase() || 'fixyourmobiles10@gmail.com',
+      userId: saleData.userId || '',
       isSharedSale: Boolean((saleData.brandId || '').includes('__shared__')),
       accountEmail: saleData.accountEmail || assignedAccount?.email || '',
       accountPassword: saleData.accountPassword || assignedAccount?.password || '',
@@ -689,14 +738,9 @@ export const db = {
     return deletedSale;
   },
 
-  getExpiryList({ filter = 'ALL', brandId = 'all' } = {}) {
-    const data = readDb();
+  getExpiryList({ filter = 'ALL', brandId = 'all', userEmail, userRole, userId } = {}) {
     const now = new Date();
-    let sales = [...(data.sales || [])];
-
-    if (brandId && brandId !== 'all') {
-      sales = sales.filter(s => s.brandId === brandId);
-    }
+    let sales = this.getSales({ sellerEmail: userEmail, userRole, userId, brandId });
 
     const categorized = sales.map(s => {
       const expDate = parseDateString(s.expiryDate);
@@ -766,28 +810,32 @@ export const db = {
     };
   },
 
-  getStats() {
-    const data = readDb();
-    const expiryList = this.getExpiryList({ filter: 'ALL' });
+  getStats({ userEmail, userRole, userId } = {}) {
+    const expiryList = this.getExpiryList({ filter: 'ALL', userEmail, userRole, userId });
     const expiredCount = expiryList.filter(s => s.daysRemaining < 0).length;
     const todayCount = expiryList.filter(s => s.daysRemaining === 0).length;
     const inTwoDaysCount = expiryList.filter(s => s.daysRemaining > 0 && s.daysRemaining <= 2).length;
 
+    const inventory = this.getInventory({ userEmail, userRole, userId });
+    const sales = this.getSales({ sellerEmail: userEmail, userRole, userId });
+    const brands = this.getBrands(userEmail, userRole, userId);
+
     let totalScreens = 0;
     let emptyScreens = 0;
-    (data.inventory || []).forEach(inv => {
+    inventory.forEach(inv => {
       (inv.screens || []).forEach(sc => {
         totalScreens++;
         if (sc.status === 'empty') emptyScreens++;
       });
     });
 
-    const totalRevenue = (data.sales || []).reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    const totalRevenue = sales.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
     return {
-      totalSales: (data.sales || []).length,
+      totalBrands: brands.length,
+      totalSales: sales.length,
       totalRevenue,
-      totalAccounts: (data.inventory || []).length,
+      totalAccounts: inventory.length,
       totalScreens,
       emptyScreens,
       occupiedScreens: totalScreens - emptyScreens,

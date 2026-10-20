@@ -211,8 +211,8 @@ app.post('/api/auth/reset-password', (req, res) => {
 // Brands
 app.get('/api/brands', (req, res) => {
   try {
-    const { userEmail } = req.query;
-    const brands = db.getBrands(userEmail);
+    const { userEmail, userRole, userId } = req.query;
+    const brands = db.getBrands(userEmail, userRole, userId);
     res.json(brands);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -382,13 +382,16 @@ app.post('/api/cells/mapping', (req, res) => {
 // Inventory
 app.get('/api/inventory', (req, res) => {
   try {
-    const { brandId, selectedOnly, emptyOnly, validity, sortOrder } = req.query;
+    const { brandId, selectedOnly, emptyOnly, validity, sortOrder, userEmail, userRole, userId } = req.query;
     const items = db.getInventory({
       brandId,
       selectedOnly: selectedOnly === 'true',
       emptyOnly: emptyOnly === 'true',
       validity,
-      sortOrder
+      sortOrder,
+      userEmail,
+      userRole,
+      userId
     });
     res.json(items);
   } catch (err) {
@@ -447,8 +450,16 @@ app.post('/api/inventory/:id/select', (req, res) => {
 // Sales
 app.get('/api/sales', (req, res) => {
   try {
-    const { brandId, date, validity, search, sellerEmail } = req.query;
-    const sales = db.getSales({ brandId, date, validity, search, sellerEmail });
+    const { brandId, date, validity, search, sellerEmail, userEmail, userRole, userId } = req.query;
+    const sales = db.getSales({
+      brandId,
+      date,
+      validity,
+      search,
+      sellerEmail: sellerEmail || userEmail,
+      userRole,
+      userId
+    });
     res.json(sales);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -558,8 +569,8 @@ app.delete('/api/sales/:id', (req, res) => {
 // Expiry
 app.get('/api/expiry', (req, res) => {
   try {
-    const { filter = 'ALL', brandId = 'all' } = req.query;
-    const list = db.getExpiryList({ filter, brandId });
+    const { filter = 'ALL', brandId = 'all', userEmail, userRole, userId } = req.query;
+    const list = db.getExpiryList({ filter, brandId, userEmail, userRole, userId });
     res.json(list);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -580,7 +591,8 @@ app.post('/api/notify/:id', (req, res) => {
 // Stats
 app.get('/api/stats', (req, res) => {
   try {
-    const stats = db.getStats();
+    const { userEmail, userRole, userId } = req.query;
+    const stats = db.getStats({ userEmail, userRole, userId });
     res.json(stats);
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw, Star
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
@@ -100,6 +100,119 @@ export default function InventoryScreen({
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+
+  // Seller Details Modal State
+  const [sellerModalItem, setSellerModalItem] = useState(null);
+  const [sellerFormData, setSellerFormData] = useState({
+    purchaseDate: '',
+    sellerName: '',
+    sellerNumber: '',
+    referenceDate: '',
+    reference: '',
+    link: '',
+    card: '',
+    expiry: '',
+    cvv: '',
+    amount: '',
+    notes: ''
+  });
+  const [sellerSaving, setSellerSaving] = useState(false);
+  const [sellerError, setSellerError] = useState('');
+
+  const handleOpenSellerDetails = (item) => {
+    setSellerModalItem(item);
+    const existing = item.sellerDetails || {};
+    setSellerFormData({
+      purchaseDate: existing.purchaseDate || '',
+      sellerName: existing.sellerName || '',
+      sellerNumber: existing.sellerNumber || '',
+      referenceDate: existing.referenceDate || '',
+      reference: existing.reference || '',
+      link: existing.link || '',
+      card: existing.card || '',
+      expiry: existing.expiry || '',
+      cvv: '', // CVV is masked and never stored persistently for security
+      amount: existing.amount || '',
+      notes: existing.notes || ''
+    });
+    setSellerError('');
+  };
+
+  const handleSaveSellerDetails = async () => {
+    if (!sellerModalItem) return;
+
+    // Validation: Require at least one identifying field
+    if (
+      !sellerFormData.sellerName?.trim() &&
+      !sellerFormData.purchaseDate &&
+      !sellerFormData.sellerNumber?.trim() &&
+      !sellerFormData.card?.trim() &&
+      !sellerFormData.reference?.trim()
+    ) {
+      setSellerError('Please fill at least Seller Name, Purchase Date, or Reference.');
+      return;
+    }
+
+    try {
+      setSellerSaving(true);
+      setSellerError('');
+
+      // Prepare payload - DO NOT store actual CVV values to ensure PCI-DSS security compliance
+      const cleanSellerDetails = {
+        purchaseDate: sellerFormData.purchaseDate || '',
+        sellerName: sellerFormData.sellerName?.trim() || '',
+        sellerNumber: sellerFormData.sellerNumber?.trim() || '',
+        referenceDate: sellerFormData.referenceDate || '',
+        reference: sellerFormData.reference?.trim() || '',
+        link: sellerFormData.link?.trim() || '',
+        card: sellerFormData.card?.trim() || '',
+        expiry: sellerFormData.expiry?.trim() || '',
+        amount: sellerFormData.amount ? Number(sellerFormData.amount) || sellerFormData.amount : '',
+        notes: sellerFormData.notes?.trim() || '',
+        updatedAt: new Date().toISOString()
+      };
+
+      await api.updateInventory(sellerModalItem.id, {
+        sellerDetails: cleanSellerDetails
+      });
+
+      // Update state locally
+      setItems(prev =>
+        prev.map(it => (it.id === sellerModalItem.id ? { ...it, sellerDetails: cleanSellerDetails } : it))
+      );
+
+      showToast(`Seller details saved for Account #${sellerModalItem.recordNumber || ''}`, 'success');
+      setSellerModalItem(null);
+    } catch (err) {
+      setSellerError(err.message || 'Failed to save seller details');
+      showToast('Error saving seller details', 'error');
+    } finally {
+      setSellerSaving(false);
+    }
+  };
+
+  const handleClearSellerDetails = async () => {
+    if (!sellerModalItem) return;
+    if (!window.confirm('Are you sure you want to remove seller details for this account?')) return;
+
+    try {
+      setSellerSaving(true);
+      await api.updateInventory(sellerModalItem.id, {
+        sellerDetails: null
+      });
+
+      setItems(prev =>
+        prev.map(it => (it.id === sellerModalItem.id ? { ...it, sellerDetails: null } : it))
+      );
+
+      showToast(`Seller details removed for Account #${sellerModalItem.recordNumber || ''}`, 'info');
+      setSellerModalItem(null);
+    } catch (err) {
+      setSellerError('Failed to clear details');
+    } finally {
+      setSellerSaving(false);
+    }
+  };
 
   // New account modal state
   const [newEmail, setNewEmail] = useState('');
@@ -852,32 +965,76 @@ export default function InventoryScreen({
                 })}
               </div>
 
-              {/* Bottom 02 Action Buttons (Exact matching image copy 20.png) */}
+              {/* Bottom Action Buttons: [ Edit (Unlock) ] [ ⭐ ] [ Save ] */}
               <div style={{
-                display: 'grid',
-                gridTemplateColumns: isEditing ? '1fr 1fr auto' : '1fr 1fr',
-                gap: '10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
                 marginTop: '12px'
               }}>
                 {/* 1. Edit (Unlock) */}
                 <button
                   type="button"
                   className={`glossy-btn ${isEditing ? 'glossy-btn-orange' : 'glossy-btn-blue'}`}
-                  style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '10px 8px',
+                    fontSize: '13px',
+                    borderRadius: '10px',
+                    justifyContent: 'center'
+                  }}
                   onClick={() => handleToggleLock(item)}
                 >
-                  {isEditing ? <Unlock size={16} /> : <Lock size={16} />}
-                  <span>{isEditing ? 'Lock' : 'Edit (UnLock)'}</span>
+                  {isEditing ? <Unlock size={15} /> : <Lock size={15} />}
+                  <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {isEditing ? 'Lock' : 'Edit (UnLock)'}
+                  </span>
                 </button>
 
-                {/* 2. Save */}
+                {/* 2. Star Button (Seller Details) */}
+                <button
+                  type="button"
+                  onClick={() => handleOpenSellerDetails(item)}
+                  style={{
+                    width: '42px',
+                    height: '40px',
+                    minWidth: '42px',
+                    borderRadius: '10px',
+                    background: item.sellerDetails ? '#fefce8' : '#ffffff',
+                    border: item.sellerDetails ? '1.5px solid #eab308' : '1.5px solid #cbd5e1',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    transition: 'all 0.15s ease',
+                    padding: 0
+                  }}
+                  title={item.sellerDetails ? `Seller Details: ${item.sellerDetails.sellerName || 'Saved'}` : 'Add Seller Details'}
+                >
+                  <Star
+                    size={18}
+                    color="#eab308"
+                    fill={item.sellerDetails ? '#eab308' : '#fde047'}
+                  />
+                </button>
+
+                {/* 3. Save */}
                 <button
                   type="button"
                   className="glossy-btn glossy-btn-green"
-                  style={{ padding: '10px 12px', fontSize: '14px', borderRadius: '10px' }}
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    padding: '10px 8px',
+                    fontSize: '13px',
+                    borderRadius: '10px',
+                    justifyContent: 'center'
+                  }}
                   onClick={() => handleSaveCard(item)}
                 >
-                  <Save size={16} />
+                  <Save size={15} />
                   <span>Save</span>
                 </button>
 
@@ -886,11 +1043,20 @@ export default function InventoryScreen({
                   <button
                     type="button"
                     className="glossy-btn glossy-btn-red"
-                    style={{ padding: '10px 12px', fontSize: '13px', borderRadius: '10px' }}
+                    style={{
+                      width: '40px',
+                      height: '40px',
+                      minWidth: '40px',
+                      padding: 0,
+                      borderRadius: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
                     onClick={() => setDeleteConfirmItem(item)}
                     title="Delete account"
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={15} />
                   </button>
                 )}
               </div>
@@ -1514,6 +1680,450 @@ export default function InventoryScreen({
                   <div style={{ fontSize: '10.5px', fontWeight: 800, color: '#64748b' }}>Ref Number</div>
                   <div style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{userDetailsModal.refNumber || '-'}</div>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* SELLER DETAILS MODAL POPUP (Image Copy 127 Requirement)  */}
+      {/* ======================================================== */}
+      {sellerModalItem && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 12000,
+            background: 'rgba(15, 23, 42, 0.72)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !sellerSaving) {
+              setSellerModalItem(null);
+            }
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '16px',
+              maxWidth: '540px',
+              width: '100%',
+              maxHeight: '92vh',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              overflow: 'hidden',
+              animation: 'modalSlideUp 0.2s ease-out'
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '14px 18px',
+                borderBottom: '1px solid #e2e8f0',
+                background: '#f8fafc'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div
+                  style={{
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: '#fef9c3',
+                    border: '1.5px solid #facc15',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: '#ca8a04'
+                  }}
+                >
+                  <Star size={18} fill="#ca8a04" />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                    Seller Details
+                  </h3>
+                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>
+                    Account #{sellerModalItem.recordNumber || '01'} &bull; {currentBrand?.displayName || 'OTT'}
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSellerModalItem(null)}
+                disabled={sellerSaving}
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  background: '#ffffff',
+                  color: '#64748b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Scrollable Form Body */}
+            <div style={{ padding: '16px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              {sellerError && (
+                <div
+                  style={{
+                    background: '#fef2f2',
+                    border: '1px solid #fecaca',
+                    borderRadius: '8px',
+                    padding: '8px 12px',
+                    fontSize: '12px',
+                    color: '#b91c1c',
+                    fontWeight: 600
+                  }}
+                >
+                  {sellerError}
+                </div>
+              )}
+
+              {/* A. Purchase Information */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#2563eb' }}>&bull;</span> A. Purchase Information
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Purchase Date
+                    </label>
+                    <input
+                      type="date"
+                      value={sellerFormData.purchaseDate}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, purchaseDate: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Seller Name
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Rahul OTT"
+                      value={sellerFormData.sellerName}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, sellerName: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Phone Number
+                    </label>
+                    <input
+                      type="tel"
+                      placeholder="e.g. 9876543210"
+                      value={sellerFormData.sellerNumber}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, sellerNumber: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* B. Reference Information */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#0284c7' }}>&bull;</span> B. Reference Information
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Date
+                    </label>
+                    <input
+                      type="date"
+                      value={sellerFormData.referenceDate}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, referenceDate: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Reference
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Telegram / Friend"
+                      value={sellerFormData.reference}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, reference: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Link
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://t.me/..."
+                      value={sellerFormData.link}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, link: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* C. Payment / Card Information */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#059669' }}>&bull;</span> C. Payment / Card Information
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Card
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. HDFC 4242"
+                      value={sellerFormData.card}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, card: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Expiry
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="MM/YY"
+                      maxLength={5}
+                      value={sellerFormData.expiry}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, expiry: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      CVV (Secure)
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="***"
+                      maxLength={4}
+                      value={sellerFormData.cvv}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, cvv: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box',
+                        letterSpacing: '2px'
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                      Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      placeholder="₹ Amount"
+                      value={sellerFormData.amount}
+                      onChange={(e) => setSellerFormData({ ...sellerFormData, amount: e.target.value })}
+                      style={{
+                        width: '100%',
+                        padding: '7px 10px',
+                        fontSize: '12px',
+                        border: '1.5px solid #cbd5e1',
+                        borderRadius: '8px',
+                        background: '#ffffff',
+                        boxSizing: 'border-box'
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* D. Additional Information */}
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#7c3aed' }}>&bull;</span> D. Additional Information
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    Note Box
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Enter seller contact details, replacement policies, or account notes..."
+                    value={sellerFormData.notes}
+                    onChange={(e) => setSellerFormData({ ...sellerFormData, notes: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '8px 10px',
+                      fontSize: '12px',
+                      border: '1.5px solid #cbd5e1',
+                      borderRadius: '8px',
+                      background: '#ffffff',
+                      boxSizing: 'border-box',
+                      fontFamily: 'inherit',
+                      resize: 'vertical'
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Actions: [ Clear (if exists) ] [ Cancel ] [ Save Details ] */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '12px 18px',
+                borderTop: '1px solid #e2e8f0',
+                background: '#f8fafc',
+                gap: '8px'
+              }}
+            >
+              <div>
+                {sellerModalItem.sellerDetails && (
+                  <button
+                    type="button"
+                    onClick={handleClearSellerDetails}
+                    disabled={sellerSaving}
+                    style={{
+                      padding: '8px 12px',
+                      fontSize: '12px',
+                      fontWeight: 700,
+                      color: '#dc2626',
+                      background: '#fee2e2',
+                      border: '1px solid #fecaca',
+                      borderRadius: '8px',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Clear Details
+                  </button>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setSellerModalItem(null)}
+                  disabled={sellerSaving}
+                  style={{
+                    padding: '8px 16px',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    color: '#475569',
+                    background: '#ffffff',
+                    border: '1.5px solid #cbd5e1',
+                    borderRadius: '8px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveSellerDetails}
+                  disabled={sellerSaving}
+                  className="glossy-btn glossy-btn-blue"
+                  style={{
+                    padding: '8px 18px',
+                    fontSize: '13px',
+                    fontWeight: 800,
+                    borderRadius: '8px'
+                  }}
+                >
+                  {sellerSaving ? 'Saving...' : 'Save Details'}
+                </button>
               </div>
             </div>
           </div>
