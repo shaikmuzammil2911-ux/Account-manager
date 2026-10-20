@@ -795,9 +795,11 @@ export const api = {
 
     sales.forEach(s => {
       const diff = getDaysDiff(s.expiryDate, now);
-      if (diff < 0) expiredCount++;
-      else if (diff === 0) todayCount++;
-      else if (diff <= 2) inTwoDaysCount++;
+      if (diff !== null && typeof diff === 'number' && !isNaN(diff)) {
+        if (diff < 0) expiredCount++;
+        else if (diff === 0) todayCount++;
+        else if (diff <= 2) inTwoDaysCount++;
+      }
     });
 
     let totalScreens = 0;
@@ -853,16 +855,18 @@ export const api = {
     const categorized = sales.map(s => {
       const diff = getDaysDiff(s.expiryDate);
       let expiryStatus = 'Active';
-      if (diff < 0) expiryStatus = 'Expired';
+      if (diff === null || typeof diff !== 'number' || isNaN(diff)) expiryStatus = 'No Date';
+      else if (diff < 0) expiryStatus = 'Expired';
       else if (diff === 0) expiryStatus = 'Today';
       else if (diff <= 2) expiryStatus = 'in_02_days';
 
       return { ...s, expiryStatus, daysRemaining: diff };
     });
 
-    if (params.filter === 'in_02_days') return categorized.filter(s => s.daysRemaining > 0 && s.daysRemaining <= 2);
+    if (params.filter === 'current') return categorized.filter(s => s.daysRemaining !== null && s.daysRemaining >= 0);
+    if (params.filter === 'past' || params.filter === 'expired') return categorized.filter(s => s.daysRemaining !== null && s.daysRemaining < 0);
+    if (params.filter === 'in_02_days') return categorized.filter(s => s.daysRemaining !== null && s.daysRemaining > 0 && s.daysRemaining <= 2);
     if (params.filter === 'today') return categorized.filter(s => s.daysRemaining === 0);
-    if (params.filter === 'expired') return categorized.filter(s => s.daysRemaining < 0);
     return categorized;
   },
 

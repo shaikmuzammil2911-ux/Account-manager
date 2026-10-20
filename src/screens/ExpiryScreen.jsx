@@ -5,7 +5,7 @@ import {
   FileSpreadsheet, Download, RefreshCw, Smartphone, Laptop
 } from 'lucide-react';
 import { api } from '../api/client';
-import { getDaysDiff, getExpiryStatus } from '../utils/dateUtils';
+import { getDaysDiff, getExpiryStatus, isValidDateStr } from '../utils/dateUtils';
 import { exportExpiryToExcel } from '../utils/excelExport';
 import CopyButton from '../components/CopyButton';
 import BrandSelectorModal from '../components/BrandSelectorModal';
@@ -20,8 +20,9 @@ export default function ExpiryScreen({
   onOpenDatePicker,
   onClearDateFilter
 }) {
-  // Bottom 4 urgency filters: 'ALL', 'in_02_days', 'today', 'expired'
-  const [filter, setFilter] = useState(initialFilter);
+  // Expiry filter state: 'ALL' (general view), 'current', 'past', 'today', 'in_02_days', 'expired'
+  // Default is 'ALL': neither Current Expiry nor Past Expiry is selected automatically
+  const [filter, setFilter] = useState(initialFilter || 'ALL');
 
   // Top 4 categorizations: Account, Validity, Brand, Notified
   const [groupByAccount, setGroupByAccount] = useState(true); // Account-wise view active by default per Master Prompt
@@ -35,6 +36,33 @@ export default function ExpiryScreen({
   const [inventoryList, setInventoryList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+
+  // Sync brand and filter with props if updated externally, defaulting to general view ('all' / 'ALL')
+  useEffect(() => {
+    setFilterBrand(selectedBrand?.id || 'all');
+  }, [selectedBrand]);
+
+  useEffect(() => {
+    setFilter(initialFilter || 'ALL');
+  }, [initialFilter]);
+
+  // Handle Expiry filter clicks with toggle support
+  const handleToggleExpiryFilter = (target) => {
+    setFilter(prev => {
+      // Clicking the already active filter returns to General View ('ALL')
+      if (prev === target || (target === 'past' && prev === 'expired')) {
+        if (showToast) showToast('Expiry Filter cleared: Showing General View (All Subscriptions)', 'info');
+        return 'ALL';
+      }
+      if (showToast) {
+        if (target === 'current') showToast('Filter: Current Expiry (Today & Future)', 'info');
+        else if (target === 'past') showToast('Filter: Past Expiry (Expired)', 'info');
+        else if (target === 'today') showToast('Filter: Expiring Today', 'info');
+        else if (target === 'in_02_days') showToast('Filter: Expiring in 02 Days', 'info');
+      }
+      return target;
+    });
+  };
 
   const fetchExpiryList = async () => {
     try {
@@ -240,21 +268,34 @@ export default function ExpiryScreen({
 
   // Summary counts calculated from underlying screen records
   const totalScreensCount = baseScreenRecords.length;
-  const expiredCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining < 0).length;
-  const todayCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining === 0).length;
-  const inTwoDaysCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining > 0 && s.daysRemaining <= 2).length;
-  const activeCount = baseScreenRecords.filter(s => s.expiryDate && s.daysRemaining > 2).length;
+  const expiredCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining < 0).length;
+  const todayCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining === 0).length;
+  const inTwoDaysCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining > 0 && s.daysRemaining <= 2).length;
+  const activeCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining >= 0).length;
 
   // =========================================================================
   // 3. COMBINED COMPOSABLE FILTERING
   // =========================================================================
   const filteredScreens = baseScreenRecords.filter(sub => {
-    const diff = sub.daysRemaining;
+    const rawDiff = sub.daysRemaining;
+    const isValidExp = isValidDateStr(sub.expiryDate);
+    const diff = (isValidExp && rawDiff !== null && typeof rawDiff === 'number' && !isNaN(rawDiff)) ? rawDiff : null;
 
-    // 1. Urgency filter (bottom 4)
-    if (filter === 'expired' && (!sub.expiryDate || diff >= 0)) return false;
-    if (filter === 'today' && (!sub.expiryDate || diff !== 0)) return false;
-    if (filter === 'in_02_days' && (!sub.expiryDate || diff <= 0 || diff > 2)) return false;
+    // 1. Expiry filter
+    // Default 'ALL': General view - do NOT filter by expiry condition on page load
+    if (filter === 'current') {
+      // Current Expiry: show only records whose expiry date is today or in the future
+      // Exclude records whose expiry date is in the past.
+      if (!isValidExp || diff === null || diff < 0) return false;
+    } else if (filter === 'past' || filter === 'expired') {
+      // Past Expiry: show only records whose expiry date is earlier than today's date
+      // Exclude records that have not expired. Missing dates are not classified as expired.
+      if (!isValidExp || diff === null || diff >= 0) return false;
+    } else if (filter === 'today') {
+      if (!isValidExp || diff !== 0) return false;
+    } else if (filter === 'in_02_days') {
+      if (!isValidExp || diff === null || diff <= 0 || diff > 2) return false;
+    }
 
     // 2. Validity filter
     if (filterValidity !== 'all' && sub.validity !== filterValidity) {
@@ -461,51 +502,55 @@ export default function ExpiryScreen({
       </div>
 
       {/* =================================================================== */}
-      {/* ROW 2: 4 URGENCY FILTERS BAR (ALL, in 02 Days, Today, Expired)      */}
+      {/* ROW 2: EXPIRY FILTERS BAR (ALL, Current Expiry, Past Expiry, Today) */}
       {/* =================================================================== */}
       <div className="filter-bar-4" style={{ marginBottom: '10px' }}>
-        {/* 1. ALL (Blue) */}
+        {/* 1. ALL (Blue when active) */}
         <button
           type="button"
           className={`filter-pill-btn ${filter === 'ALL' ? 'glossy-btn-blue' : 'glossy-btn-gray'}`}
           onClick={() => setFilter('ALL')}
           id="expiry-filter-all"
+          title="General View: Show all records with no expiry filter"
         >
           <LayoutGrid size={13} />
           <span>ALL</span>
         </button>
 
-        {/* 2. in 02 Days (Yellow/Amber) */}
+        {/* 2. Current Expiry */}
         <button
           type="button"
-          className={`filter-pill-btn ${filter === 'in_02_days' ? 'glossy-btn-yellow' : 'glossy-btn-gray'}`}
-          onClick={() => setFilter('in_02_days')}
-          id="expiry-filter-in-02-days"
+          className={`filter-pill-btn ${filter === 'current' ? 'glossy-btn-green' : 'glossy-btn-gray'}`}
+          onClick={() => handleToggleExpiryFilter('current')}
+          id="expiry-filter-current"
+          title={filter === 'current' ? 'Current Expiry Active (Click to return to General View)' : 'Click to show Current Expiry (Today & Future)'}
         >
-          <Clock size={13} />
-          <span>in 02 Days</span>
+          <CheckCircle2 size={13} />
+          <span style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Current Expiry</span>
         </button>
 
-        {/* 3. Today (Orange) */}
+        {/* 3. Past Expiry */}
+        <button
+          type="button"
+          className={`filter-pill-btn ${(filter === 'past' || filter === 'expired') ? 'glossy-btn-red' : 'glossy-btn-gray'}`}
+          onClick={() => handleToggleExpiryFilter('past')}
+          id="expiry-filter-past"
+          title={(filter === 'past' || filter === 'expired') ? 'Past Expiry Active (Click to return to General View)' : 'Click to show Past Expiry (Expired records)'}
+        >
+          <XCircle size={13} />
+          <span style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Past Expiry</span>
+        </button>
+
+        {/* 4. Today */}
         <button
           type="button"
           className={`filter-pill-btn ${filter === 'today' ? 'glossy-btn-orange' : 'glossy-btn-gray'}`}
-          onClick={() => setFilter('today')}
+          onClick={() => handleToggleExpiryFilter('today')}
           id="expiry-filter-today"
+          title={filter === 'today' ? 'Expiring Today Active (Click to return to General View)' : 'Click to show Expiring Today'}
         >
           <AlertTriangle size={13} />
           <span>Today</span>
-        </button>
-
-        {/* 4. Expired (Red) */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filter === 'expired' ? 'glossy-btn-red' : 'glossy-btn-gray'}`}
-          onClick={() => setFilter('expired')}
-          id="expiry-filter-expired"
-        >
-          <XCircle size={13} />
-          <span>Expired</span>
         </button>
       </div>
 
@@ -604,23 +649,73 @@ export default function ExpiryScreen({
         textAlign: 'center',
         boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
       }}>
-        <div>
+        <div
+          onClick={() => setFilter('ALL')}
+          style={{
+            cursor: 'pointer',
+            borderRadius: '8px',
+            padding: '3px 2px',
+            background: filter === 'ALL' ? '#f1f5f9' : 'transparent',
+            transition: 'background 0.15s ease'
+          }}
+          title="Click to view All records (General View)"
+        >
           <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>TOTAL</div>
           <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{totalScreensCount}</div>
         </div>
-        <div>
+        <div
+          onClick={() => handleToggleExpiryFilter('current')}
+          style={{
+            cursor: 'pointer',
+            borderRadius: '8px',
+            padding: '3px 2px',
+            background: filter === 'current' ? '#dcfce7' : 'transparent',
+            transition: 'background 0.15s ease'
+          }}
+          title="Click to filter Current Expiry (Today & Future)"
+        >
           <div style={{ fontSize: '9px', fontWeight: 800, color: '#16a34a' }}>ACTIVE</div>
           <div style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>{activeCount}</div>
         </div>
-        <div>
+        <div
+          onClick={() => handleToggleExpiryFilter('in_02_days')}
+          style={{
+            cursor: 'pointer',
+            borderRadius: '8px',
+            padding: '3px 2px',
+            background: filter === 'in_02_days' ? '#fef3c7' : 'transparent',
+            transition: 'background 0.15s ease'
+          }}
+          title="Click to filter in 02 Days"
+        >
           <div style={{ fontSize: '9px', fontWeight: 800, color: '#d97706' }}>IN 02D</div>
           <div style={{ fontSize: '13px', fontWeight: 900, color: '#d97706' }}>{inTwoDaysCount}</div>
         </div>
-        <div>
+        <div
+          onClick={() => handleToggleExpiryFilter('today')}
+          style={{
+            cursor: 'pointer',
+            borderRadius: '8px',
+            padding: '3px 2px',
+            background: filter === 'today' ? '#ffedd5' : 'transparent',
+            transition: 'background 0.15s ease'
+          }}
+          title="Click to filter Today"
+        >
           <div style={{ fontSize: '9px', fontWeight: 800, color: '#ea580c' }}>TODAY</div>
           <div style={{ fontSize: '13px', fontWeight: 900, color: '#ea580c' }}>{todayCount}</div>
         </div>
-        <div>
+        <div
+          onClick={() => handleToggleExpiryFilter('past')}
+          style={{
+            cursor: 'pointer',
+            borderRadius: '8px',
+            padding: '3px 2px',
+            background: (filter === 'past' || filter === 'expired') ? '#fee2e2' : 'transparent',
+            transition: 'background 0.15s ease'
+          }}
+          title="Click to filter Past Expiry (Expired records)"
+        >
           <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626' }}>EXPIRED</div>
           <div style={{ fontSize: '13px', fontWeight: 900, color: '#dc2626' }}>{expiredCount}</div>
         </div>

@@ -289,6 +289,16 @@ export default function App() {
       } else {
         setSelectedBrand(params.brand);
       }
+    } else if (screenName === 'expiry') {
+      // Expiry screen must open in normal, general view without carrying over brands or filters from other screens
+      if (!params.brand) {
+        setSelectedBrand(null);
+      } else {
+        setSelectedBrand(params.brand);
+      }
+      if (!params.date) {
+        setExpiryDateFilter('');
+      }
     }
     setScreenParams(params);
     setCurrentScreen(screenName);
@@ -316,7 +326,7 @@ export default function App() {
     if (tab === 'home') {
       navigateTo('home');
     } else if (tab === 'expiry') {
-      navigateTo('expiry');
+      navigateTo('expiry', { filter: 'ALL', brand: null });
     }
   };
 

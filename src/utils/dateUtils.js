@@ -14,10 +14,19 @@ export function formatDate(date) {
   return `${day}-${month}-${year}`;
 }
 
+export function isValidDateStr(str) {
+  if (!str) return false;
+  const s = String(str).trim().toLowerCase();
+  if (!s || s === 'no date' || s === '-' || s === 'null' || s === 'undefined' || s === 'n/a' || s === 'none' || s === 'empty') {
+    return false;
+  }
+  return true;
+}
+
 export function parseDate(str) {
-  if (!str) return new Date();
+  if (!isValidDateStr(str)) return null;
   if (str instanceof Date) return str;
-  const parts = str.trim().replace(/-/g, ' ').split(/\s+/);
+  const parts = String(str).trim().replace(/-/g, ' ').split(/\s+/);
   if (parts.length === 3) {
     const day = parseInt(parts[0], 10);
     const monthStr = parts[1].toLowerCase();
@@ -28,11 +37,13 @@ export function parseDate(str) {
     }
   }
   const fallback = new Date(str);
-  return isNaN(fallback.getTime()) ? new Date() : fallback;
+  return isNaN(fallback.getTime()) ? null : fallback;
 }
 
 export function calculateExpiryDate(activationDateStr, validityStr) {
+  if (!isValidDateStr(activationDateStr)) return '';
   const startDate = parseDate(activationDateStr);
+  if (!startDate) return '';
   const result = new Date(startDate);
 
   let monthsToAdd = 1;
@@ -51,8 +62,9 @@ export function calculateExpiryDate(activationDateStr, validityStr) {
 }
 
 export function getDaysDiff(targetDateStr, refDate = new Date()) {
-  if (!targetDateStr) return 999;
+  if (!isValidDateStr(targetDateStr)) return null;
   const target = parseDate(targetDateStr);
+  if (!target || isNaN(target.getTime())) return null;
   const t = new Date(target.getFullYear(), target.getMonth(), target.getDate());
   const r = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
   const diffTime = t.getTime() - r.getTime();
@@ -96,22 +108,36 @@ export function saveColorCodingSettings(settings) {
  * - Active (> 10 days) -> Green
  */
 export function getExpiryStatus(expiryDateStr) {
-  if (!expiryDateStr || !String(expiryDateStr).trim()) {
+  if (!isValidDateStr(expiryDateStr)) {
     return {
       status: 'empty',
-      label: 'Empty',
+      label: 'No Date',
       color: '#64748b',
       bg: '#f8fafc',
       border: '2px dashed #94a3b8',
       badgeBg: '#f1f5f9',
       badgeBorder: '1px solid #cbd5e1',
       badgeColor: '#475569',
+      shadow: 'none',
       daysRemaining: null
     };
   }
 
   const diff = getDaysDiff(expiryDateStr);
-  const settings = getColorCodingSettings();
+  if (diff === null || isNaN(diff)) {
+    return {
+      status: 'empty',
+      label: 'No Date',
+      color: '#64748b',
+      bg: '#f8fafc',
+      border: '2px dashed #94a3b8',
+      badgeBg: '#f1f5f9',
+      badgeBorder: '1px solid #cbd5e1',
+      badgeColor: '#475569',
+      shadow: 'none',
+      daysRemaining: null
+    };
+  }
 
   if (diff < 0) {
     // Expired: Red
@@ -177,7 +203,9 @@ export function getExpiryStatus(expiryDateStr) {
 }
 
 export function getExpiryCategory(expiryDateStr) {
+  if (!isValidDateStr(expiryDateStr)) return 'empty';
   const diff = getDaysDiff(expiryDateStr);
+  if (diff === null || isNaN(diff)) return 'empty';
   if (diff < 0) return 'expired';
   if (diff === 0) return 'today';
   if (diff <= 2) return 'in_02_days';
