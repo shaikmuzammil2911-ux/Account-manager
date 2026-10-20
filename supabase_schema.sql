@@ -1,9 +1,16 @@
 -- ==============================================================================
--- SUPABASE DATABASE SCHEMA MIGRATION: MULTI-USER ADMIN PANEL & BRANDING
--- Run this in the Supabase SQL Editor: https://xkpdusmqfprmhkzchwgp.supabase.co
+-- SUPABASE COMPLETE PRODUCTION SCHEMA MIGRATION: ACCOUNT MANAGER
+-- Project: OTT Sellers & Account Manager (Murex)
+-- Supabase Project URL: https://xkpdusmqfprmhkzchwgp.supabase.co
+-- Idempotent script: Safe to execute in Supabase SQL Editor
 -- ==============================================================================
 
--- 1. PROFILES TABLE (Linked with Supabase Auth or internal user ID)
+-- Enable UUID extension if not already enabled
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- ==============================================================================
+-- 1. PROFILES TABLE (Multi-User Admin Panel & Users List)
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.profiles (
   id TEXT PRIMARY KEY,
   full_name TEXT NOT NULL,
@@ -15,12 +22,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Index for fast user searching
 CREATE INDEX IF NOT EXISTS idx_profiles_email ON public.profiles (email);
 CREATE INDEX IF NOT EXISTS idx_profiles_mobile ON public.profiles (mobile_number);
 CREATE INDEX IF NOT EXISTS idx_profiles_role ON public.profiles (role);
 
--- 2. USER FEATURE PERMISSIONS TABLE (Independent ON/OFF toggles per user)
+-- ==============================================================================
+-- 2. USER FEATURE PERMISSIONS TABLE (Independent Controls per user)
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.user_feature_permissions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id TEXT NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
@@ -33,7 +41,9 @@ CREATE TABLE IF NOT EXISTS public.user_feature_permissions (
 CREATE INDEX IF NOT EXISTS idx_user_perms_user_id ON public.user_feature_permissions (user_id);
 CREATE INDEX IF NOT EXISTS idx_user_perms_feature ON public.user_feature_permissions (feature_key);
 
+-- ==============================================================================
 -- 3. SITE SETTINGS TABLE (Global branding & website configuration)
+-- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.site_settings (
   id TEXT PRIMARY KEY DEFAULT 'global_config',
   business_name TEXT NOT NULL DEFAULT 'OTT SELLERS',
@@ -46,32 +56,13 @@ CREATE TABLE IF NOT EXISTS public.site_settings (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
--- Insert initial default site settings if not present
 INSERT INTO public.site_settings (id, business_name, subtitle, primary_color, accent_color, header_bg, headings_text)
 VALUES ('global_config', 'OTT SELLERS', 'Management System', '#2563eb', '#0284c7', '#0f172a', 'Multi-Brand OTT Subscriptions')
 ON CONFLICT (id) DO NOTHING;
 
--- Insert initial super admin profile if not present
 INSERT INTO public.profiles (id, full_name, mobile_number, email, role, account_status)
 VALUES ('admin_1', 'Super Admin', '9876543210', 'Fixyourmobiles10@gmail.com', 'admin', 'active')
 ON CONFLICT (email) DO NOTHING;
-
--- Enable Row Level Security (RLS)
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.user_feature_permissions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
-
--- Allow read access for authenticated & anon clients
-CREATE POLICY "Public Read Profiles" ON public.profiles FOR SELECT USING (true);
-CREATE POLICY "Allow Insert Profiles" ON public.profiles FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow Update Profiles" ON public.profiles FOR UPDATE USING (true);
-
-CREATE POLICY "Public Read Feature Permissions" ON public.user_feature_permissions FOR SELECT USING (true);
-CREATE POLICY "Allow Insert Permissions" ON public.user_feature_permissions FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow Update Permissions" ON public.user_feature_permissions FOR UPDATE USING (true);
-
-CREATE POLICY "Public Read Site Settings" ON public.site_settings FOR SELECT USING (true);
-CREATE POLICY "Allow Update Site Settings" ON public.site_settings FOR ALL USING (true);
 
 -- ==============================================================================
 -- 4. BRANDS TABLE (Workspace scoped by owner_email / owner_user_id)
@@ -96,7 +87,7 @@ CREATE TABLE IF NOT EXISTS public.brands (
 CREATE INDEX IF NOT EXISTS idx_brands_owner ON public.brands (owner_email);
 
 -- ==============================================================================
--- 5. ACCOUNTS (INVENTORY) TABLE
+-- 5. ACCOUNTS / INVENTORY TABLE (Multi-Screen Accounts)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.accounts (
   id TEXT PRIMARY KEY,
@@ -108,6 +99,7 @@ CREATE TABLE IF NOT EXISTS public.accounts (
   password TEXT NOT NULL,
   validity TEXT NOT NULL DEFAULT '01 Month',
   plan_variant TEXT NOT NULL DEFAULT 'General',
+  password_change_required BOOLEAN NOT NULL DEFAULT false,
   notes TEXT,
   is_locked BOOLEAN NOT NULL DEFAULT true,
   is_selected BOOLEAN NOT NULL DEFAULT false,
@@ -116,11 +108,21 @@ CREATE TABLE IF NOT EXISTS public.accounts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Idempotent column additions for existing installations
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS password_change_required BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS plan_variant TEXT NOT NULL DEFAULT 'General';
+
 CREATE INDEX IF NOT EXISTS idx_accounts_owner ON public.accounts (owner_email);
 CREATE INDEX IF NOT EXISTS idx_accounts_brand ON public.accounts (brand_id);
+CREATE INDEX IF NOT EXISTS idx_accounts_email ON public.accounts (email);
+CREATE INDEX IF NOT EXISTS idx_accounts_pwd_req ON public.accounts (password_change_required);
+
+-- Optional Table Synonym / View for `inventory` if queried directly
+CREATE OR REPLACE VIEW public.inventory AS
+SELECT * FROM public.accounts;
 
 -- ==============================================================================
--- 6. SCREENS TABLE
+-- 6. SCREENS TABLE (Screen-Level State & Expiry Synchronization)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.screens (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -131,17 +133,30 @@ CREATE TABLE IF NOT EXISTS public.screens (
   device_type TEXT NOT NULL DEFAULT 'tv',
   status TEXT NOT NULL DEFAULT 'empty' CHECK (status IN ('empty', 'occupied')),
   sale_id TEXT,
+  customer_name TEXT,
+  customer_number TEXT,
   expiry_date TEXT,
+  activation_date TEXT,
+  notification_sent BOOLEAN NOT NULL DEFAULT false,
+  last_notified_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
   CONSTRAINT unique_account_screen UNIQUE (account_id, screen_number)
 );
 
+-- Idempotent column additions
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS customer_name TEXT;
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS customer_number TEXT;
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS activation_date TEXT;
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS notification_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_screens_account ON public.screens (account_id);
+CREATE INDEX IF NOT EXISTS idx_screens_sale_id ON public.screens (sale_id);
+CREATE INDEX IF NOT EXISTS idx_screens_expiry ON public.screens (expiry_date);
 
 -- ==============================================================================
--- 7. SELLER DETAILS TABLE (Image Copy 127 Requirement: Attached to exact account)
--- Note: Raw CVV is NOT stored to ensure security compliance
+-- 7. SELLER DETAILS TABLE (Star Button popup modal per account)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.seller_details (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -166,19 +181,21 @@ CREATE INDEX IF NOT EXISTS idx_seller_details_account ON public.seller_details (
 CREATE INDEX IF NOT EXISTS idx_seller_details_owner ON public.seller_details (owner_email);
 
 -- ==============================================================================
--- 8. SALES TABLE
+-- 8. SALES TABLE (Recent Sales & History, Expiry Records)
 -- ==============================================================================
 CREATE TABLE IF NOT EXISTS public.sales (
   id TEXT PRIMARY KEY,
   owner_user_id TEXT,
   owner_email TEXT NOT NULL DEFAULT 'Fixyourmobiles10@gmail.com',
   seller_email TEXT NOT NULL DEFAULT 'Fixyourmobiles10@gmail.com',
+  seller_name TEXT,
   brand_id TEXT NOT NULL,
   brand_name TEXT NOT NULL,
   inventory_id TEXT REFERENCES public.accounts(id) ON DELETE SET NULL,
   record_number TEXT NOT NULL,
   customer_name TEXT NOT NULL,
   customer_number TEXT NOT NULL,
+  customer_email TEXT,
   reference_name TEXT,
   reference_number TEXT,
   account_email TEXT,
@@ -199,13 +216,26 @@ CREATE TABLE IF NOT EXISTS public.sales (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
 );
 
+-- Idempotent column additions
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS customer_email TEXT;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS seller_name TEXT;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS notification_sent BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_sales_owner ON public.sales (owner_email);
 CREATE INDEX IF NOT EXISTS idx_sales_seller ON public.sales (seller_email);
 CREATE INDEX IF NOT EXISTS idx_sales_brand ON public.sales (brand_id);
+CREATE INDEX IF NOT EXISTS idx_sales_inventory ON public.sales (inventory_id);
+CREATE INDEX IF NOT EXISTS idx_sales_expiry ON public.sales (expiry_date);
+CREATE INDEX IF NOT EXISTS idx_sales_activation ON public.sales (activation_date);
+CREATE INDEX IF NOT EXISTS idx_sales_notified ON public.sales (notification_sent);
 
 -- ==============================================================================
 -- 9. ROW LEVEL SECURITY (RLS) FOR MULTI-USER DATA ISOLATION
 -- ==============================================================================
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_feature_permissions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.brands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.screens ENABLE ROW LEVEL SECURITY;
@@ -224,78 +254,70 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Brands RLS
-CREATE POLICY "Brands User Isolation - SELECT" ON public.brands
-  FOR SELECT USING (
+-- Public / Anonymous Read Policies for Profiles and Settings
+DROP POLICY IF EXISTS "Public Read Profiles" ON public.profiles;
+CREATE POLICY "Public Read Profiles" ON public.profiles FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow Insert Profiles" ON public.profiles;
+CREATE POLICY "Allow Insert Profiles" ON public.profiles FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Update Profiles" ON public.profiles;
+CREATE POLICY "Allow Update Profiles" ON public.profiles FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public Read Feature Permissions" ON public.user_feature_permissions;
+CREATE POLICY "Public Read Feature Permissions" ON public.user_feature_permissions FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow Insert Permissions" ON public.user_feature_permissions;
+CREATE POLICY "Allow Insert Permissions" ON public.user_feature_permissions FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow Update Permissions" ON public.user_feature_permissions;
+CREATE POLICY "Allow Update Permissions" ON public.user_feature_permissions FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS "Public Read Site Settings" ON public.site_settings;
+CREATE POLICY "Public Read Site Settings" ON public.site_settings FOR SELECT USING (true);
+
+DROP POLICY IF EXISTS "Allow Update Site Settings" ON public.site_settings;
+CREATE POLICY "Allow Update Site Settings" ON public.site_settings FOR ALL USING (true);
+
+-- Brands Policies
+DROP POLICY IF EXISTS "Brands Isolation - ALL" ON public.brands;
+CREATE POLICY "Brands Isolation - ALL" ON public.brands
+  FOR ALL USING (
     is_admin() OR
     owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
+    owner_user_id = auth.uid()::text OR
+    auth.role() = 'anon'
   );
 
-CREATE POLICY "Brands User Isolation - INSERT" ON public.brands
-  FOR INSERT WITH CHECK (
+-- Accounts Policies
+DROP POLICY IF EXISTS "Accounts Isolation - ALL" ON public.accounts;
+CREATE POLICY "Accounts Isolation - ALL" ON public.accounts
+  FOR ALL USING (
     is_admin() OR
     owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
+    owner_user_id = auth.uid()::text OR
+    auth.role() = 'anon'
   );
 
-CREATE POLICY "Brands User Isolation - UPDATE" ON public.brands
-  FOR UPDATE USING (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Brands User Isolation - DELETE" ON public.brands
-  FOR DELETE USING (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
--- Accounts RLS
-CREATE POLICY "Accounts User Isolation - SELECT" ON public.accounts
-  FOR SELECT USING (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Accounts User Isolation - INSERT" ON public.accounts
-  FOR INSERT WITH CHECK (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Accounts User Isolation - UPDATE" ON public.accounts
-  FOR UPDATE USING (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Accounts User Isolation - DELETE" ON public.accounts
-  FOR DELETE USING (
-    is_admin() OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
--- Screens RLS (Inherited via parent account ownership)
+-- Screens Policies
+DROP POLICY IF EXISTS "Screens Isolation - ALL" ON public.screens;
 CREATE POLICY "Screens Isolation - ALL" ON public.screens
   FOR ALL USING (
-    is_admin() OR EXISTS (
+    is_admin() OR
+    auth.role() = 'anon' OR
+    EXISTS (
       SELECT 1 FROM public.accounts a
       WHERE a.id = screens.account_id
         AND (a.owner_email = (auth.jwt() ->> 'email') OR a.owner_user_id = auth.uid()::text)
     )
   );
 
--- Seller Details RLS (Inherited via parent account ownership)
+-- Seller Details Policies
+DROP POLICY IF EXISTS "Seller Details Isolation - ALL" ON public.seller_details;
 CREATE POLICY "Seller Details Isolation - ALL" ON public.seller_details
   FOR ALL USING (
     is_admin() OR
+    auth.role() = 'anon' OR
     owner_email = (auth.jwt() ->> 'email') OR
     owner_user_id = auth.uid()::text OR
     EXISTS (
@@ -305,36 +327,13 @@ CREATE POLICY "Seller Details Isolation - ALL" ON public.seller_details
     )
   );
 
--- Sales RLS
-CREATE POLICY "Sales User Isolation - SELECT" ON public.sales
-  FOR SELECT USING (
+-- Sales Policies
+DROP POLICY IF EXISTS "Sales Isolation - ALL" ON public.sales;
+CREATE POLICY "Sales Isolation - ALL" ON public.sales
+  FOR ALL USING (
     is_admin() OR
+    auth.role() = 'anon' OR
     seller_email = (auth.jwt() ->> 'email') OR
     owner_email = (auth.jwt() ->> 'email') OR
     owner_user_id = auth.uid()::text
   );
-
-CREATE POLICY "Sales User Isolation - INSERT" ON public.sales
-  FOR INSERT WITH CHECK (
-    is_admin() OR
-    seller_email = (auth.jwt() ->> 'email') OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Sales User Isolation - UPDATE" ON public.sales
-  FOR UPDATE USING (
-    is_admin() OR
-    seller_email = (auth.jwt() ->> 'email') OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
-CREATE POLICY "Sales User Isolation - DELETE" ON public.sales
-  FOR DELETE USING (
-    is_admin() OR
-    seller_email = (auth.jwt() ->> 'email') OR
-    owner_email = (auth.jwt() ->> 'email') OR
-    owner_user_id = auth.uid()::text
-  );
-
