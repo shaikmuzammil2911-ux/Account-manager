@@ -31,9 +31,16 @@ export default function HomeMenuDrawer({
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-label="Application Menu"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: '100dvh',
+          height: '100%',
+          overflow: 'hidden'
+        }}
       >
         {/* Drawer Header */}
-        <div className="menu-drawer-header">
+        <div className="menu-drawer-header" style={{ flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div className="menu-header-badge">
               <Sparkles size={18} color="#ffffff" />
@@ -57,7 +64,19 @@ export default function HomeMenuDrawer({
         </div>
 
         {/* Menu Buttons as Requested */}
-        <div className="menu-drawer-items">
+        <div
+          className="menu-drawer-items"
+          style={{
+            flex: '1 1 auto',
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehavior: 'contain',
+            touchAction: 'pan-y',
+            paddingBottom: '24px'
+          }}
+        >
           {/* Admin Panel Button (Exclusive to Super Admin) */}
           {isAdmin && onSelectAdminPanel && (
             <button

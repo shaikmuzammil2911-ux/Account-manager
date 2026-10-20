@@ -1732,7 +1732,8 @@ export default function InventoryScreen({
                 justifyContent: 'space-between',
                 padding: '14px 18px',
                 borderBottom: '1px solid #e2e8f0',
-                background: '#f8fafc'
+                background: '#f8fafc',
+                flexShrink: 0
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -1783,7 +1784,20 @@ export default function InventoryScreen({
             </div>
 
             {/* Scrollable Form Body */}
-            <div style={{ padding: '16px 18px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div
+              style={{
+                padding: '16px 18px',
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '14px',
+                flex: '1 1 auto',
+                minHeight: 0,
+                WebkitOverflowScrolling: 'touch',
+                overscrollBehavior: 'contain',
+                touchAction: 'pan-y'
+              }}
+            >
               {sellerError && (
                 <div
                   style={{
