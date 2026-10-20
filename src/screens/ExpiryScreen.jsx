@@ -1,77 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  LayoutGrid, Clock, AlertTriangle, XCircle, User, Phone, Mail, Lock,
-  CheckCircle2, Tv, Key, Calendar, Bell, Check, Layers, X, Search,
-  FileSpreadsheet, Download, RefreshCw, Smartphone, Laptop
+  Calendar, Bell, Check, X, Search,
+  FileSpreadsheet, RefreshCw, User, Phone, Mail, Lock,
+  CheckCircle2, Tv, Key, Clock, AlertTriangle, Layers, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { api } from '../api/client';
-import { getDaysDiff, getExpiryStatus, isValidDateStr } from '../utils/dateUtils';
+import { formatDate, parseDate, getDaysDiff, getExpiryStatus, isValidDateStr } from '../utils/dateUtils';
 import { exportExpiryToExcel } from '../utils/excelExport';
 import CopyButton from '../components/CopyButton';
 import BrandSelectorModal from '../components/BrandSelectorModal';
+import DatePickerModal from '../components/DatePickerModal';
 
 export default function ExpiryScreen({
   brands = [],
   selectedBrand,
   onOpenNotifyModal,
-  initialFilter = 'ALL',
   showToast,
   dateFilter = '',
   onOpenDatePicker,
   onClearDateFilter
 }) {
-  // Expiry filter state: 'ALL' (general view), 'current', 'past', 'today', 'in_02_days', 'expired'
-  // Default is 'ALL': neither Current Expiry nor Past Expiry is selected automatically
-  const [filter, setFilter] = useState(initialFilter || 'ALL');
+  const todayStr = formatDate(new Date());
 
-  // Top 4 categorizations: Account, Validity, Brand, Notified
-  const [groupByAccount, setGroupByAccount] = useState(true); // Account-wise view active by default per Master Prompt
-  const [filterValidity, setFilterValidity] = useState('all');
-  const [filterBrand, setFilterBrand] = useState(selectedBrand?.id || 'all');
-  const [filterNotified, setFilterNotified] = useState('all'); // 'all', 'pending', 'notified'
+  // Dynamic date selection: defaults to current date dynamically (not hardcoded)
+  const [selectedDate, setSelectedDate] = useState(dateFilter || todayStr);
+  const [dateRange, setDateRange] = useState(null); // { start: 'DD-MMM-YYYY', end: 'DD-MMM-YYYY' }
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterBrand, setFilterBrand] = useState(selectedBrand?.id || 'all');
   const [showBrandModal, setShowBrandModal] = useState(false);
+  const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   const [items, setItems] = useState([]);
   const [inventoryList, setInventoryList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 
-  // Sync brand and filter with props if updated externally, defaulting to general view ('all' / 'ALL')
+  const dateStripRef = useRef(null);
+  const selectedPillRef = useRef(null);
+
+  // Sync external brand or dateFilter if updated from outside
   useEffect(() => {
-    setFilterBrand(selectedBrand?.id || 'all');
+    if (selectedBrand?.id) {
+      setFilterBrand(selectedBrand.id);
+    }
   }, [selectedBrand]);
 
   useEffect(() => {
-    setFilter(initialFilter || 'ALL');
-  }, [initialFilter]);
+    if (dateFilter) {
+      setSelectedDate(dateFilter);
+      setDateRange(null);
+    }
+  }, [dateFilter]);
 
-  // Handle Expiry filter clicks with toggle support
-  const handleToggleExpiryFilter = (target) => {
-    setFilter(prev => {
-      // Clicking the already active filter returns to General View ('ALL')
-      if (prev === target || (target === 'past' && prev === 'expired')) {
-        if (showToast) showToast('Expiry Filter cleared: Showing General View (All Subscriptions)', 'info');
-        return 'ALL';
-      }
-      if (showToast) {
-        if (target === 'current') showToast('Filter: Current Expiry (Today & Future)', 'info');
-        else if (target === 'past') showToast('Filter: Past Expiry (Expired)', 'info');
-        else if (target === 'today') showToast('Filter: Expiring Today', 'info');
-        else if (target === 'in_02_days') showToast('Filter: Expiring in 02 Days', 'info');
-      }
-      return target;
-    });
-  };
-
+  // Fetch sales and inventory accounts
   const fetchExpiryList = async () => {
     try {
       setLoading(true);
       const [salesData, invData] = await Promise.all([
-        api.getExpiry({
-          filter: 'ALL',
-          brandId: 'all'
-        }),
+        api.getExpiry({ filter: 'ALL', brandId: 'all' }),
         api.getInventory({ brandId: 'all' })
       ]);
       setItems(salesData || []);
@@ -87,74 +73,8 @@ export default function ExpiryScreen({
     fetchExpiryList();
   }, []);
 
-  // Handlers for Top 4 Buttons
-  const toggleAccountGrouping = () => {
-    setGroupByAccount(prev => {
-      const next = !prev;
-      if (showToast) {
-        showToast(next ? 'Account-wise view: Grouped by parent accounts' : 'Flat view: Individual screen cards', 'info');
-      }
-      return next;
-    });
-  };
-
-  const cycleValidity = () => {
-    const list = ['all', '01 Month', '03 Months', '06 Months', '12 Months'];
-    const idx = list.indexOf(filterValidity);
-    const next = list[(idx + 1) % list.length];
-    setFilterValidity(next);
-    if (showToast) showToast(next === 'all' ? 'Validity: All Validities' : `Validity Filter: ${next}`, 'info');
-  };
-
-  const cycleNotified = () => {
-    const list = ['all', 'pending', 'notified'];
-    const idx = list.indexOf(filterNotified);
-    const next = list[(idx + 1) % list.length];
-    setFilterNotified(next);
-    if (showToast) {
-      if (next === 'all') showToast('Notifications: All Records', 'info');
-      else if (next === 'pending') showToast('Showing Pending Notifications only', 'info');
-      else showToast('Showing Successfully Notified only', 'info');
-    }
-  };
-
   const getBrandObj = (brandId) => {
-    return (brands || []).find(b => b.id === brandId || b.name?.toLowerCase() === brandId?.toLowerCase()) || null;
-  };
-
-  const getBrandShortName = (brandId) => {
-    const b = getBrandObj(brandId);
-    if (b?.displayName) return b.displayName.split(' ')[0];
-    return (brandId || 'ALL').toUpperCase().slice(0, 8);
-  };
-
-  // Render Highlighted Expiry Date Badge on Top Right (Red for expired, Orange for today/2-days, Green for active)
-  const renderHighlightedExpiryBadge = (sub) => {
-    const statusObj = getExpiryStatus(sub.expiryDate);
-
-    return (
-      <div
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '5px',
-          padding: '4px 10px',
-          borderRadius: '8px',
-          background: statusObj.badgeBg,
-          border: statusObj.badgeBorder,
-          color: statusObj.badgeColor,
-          boxShadow: statusObj.shadow,
-          fontSize: '12px',
-          fontWeight: 900,
-          letterSpacing: '-0.2px',
-          whiteSpace: 'nowrap'
-        }}
-        title={`Expiry Date: ${sub.expiryDate} (${statusObj.label})`}
-      >
-        <Calendar size={13} strokeWidth={2.5} color={statusObj.color} />
-        <span>{sub.expiryDate || 'No Date'}</span>
-      </div>
-    );
+    return (brands || []).find(b => b.id === brandId || b.name?.toLowerCase() === String(brandId).toLowerCase()) || null;
   };
 
   // =========================================================================
@@ -177,7 +97,7 @@ export default function ExpiryScreen({
       }
       if (!sale) {
         sale = (items || []).find(s =>
-          (s.inventoryId === inv.id || s.accountEmail?.toLowerCase() === inv.email?.toLowerCase()) &&
+          (s.inventoryId === inv.id || String(s.accountEmail || '').toLowerCase() === String(inv.email || '').toLowerCase()) &&
           (parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === screenNum || s.screenNumber === `Screen-${screenNum}` || s.screenNumber === `Screen ${screenNum}`)
         );
       }
@@ -202,14 +122,15 @@ export default function ExpiryScreen({
         status: screen.status || (sale ? 'occupied' : 'empty'),
         customerName: sale?.customerName || (screen.status === 'occupied' ? 'Customer' : 'Vacant Screen'),
         customerNumber: sale?.customerNumber || '',
+        customerEmail: sale?.customerEmail || '',
         validity: sale?.validity || inv.validity || '01 Month',
         activationDate: sale?.activationDate || sale?.saleDate || '',
         expiryDate: expiryDate,
         daysRemaining: diff,
         expiryStatus: statusObj.status,
         deviceName: sale?.deviceName || '',
-        notificationSent: !!sale?.notificationSent,
-        lastNotifiedAt: sale?.lastNotifiedAt || null,
+        notificationSent: !!(sale?.notificationSent || screen.notificationSent),
+        lastNotifiedAt: sale?.lastNotifiedAt || screen.lastNotifiedAt || null,
         amount: sale?.amount || '',
         sellerName: sale?.sellerName || '',
         saleId: sale?.id || screen.saleId || null
@@ -238,6 +159,7 @@ export default function ExpiryScreen({
         status: 'occupied',
         customerName: s.customerName || 'Customer',
         customerNumber: s.customerNumber || '',
+        customerEmail: s.customerEmail || '',
         validity: s.validity || '01 Month',
         activationDate: s.activationDate || s.saleDate || '',
         expiryDate: s.expiryDate || '',
@@ -253,72 +175,85 @@ export default function ExpiryScreen({
     }
   });
 
-  // =========================================================================
-  // 2. BRAND-AWARE BASE RECORDS FOR ACCURATE COUNTERS & FILTERING
-  // =========================================================================
+  // Base brand filtering
   const baseScreenRecords = allScreens.filter(s => {
     if (filterBrand !== 'all') {
-      const bId = (s.brandId || '').toLowerCase();
-      const bName = (s.brandName || '').toLowerCase();
+      const bId = String(s.brandId || '').toLowerCase();
+      const bName = String(s.brandName || '').toLowerCase();
       const target = filterBrand.toLowerCase();
       return bId === target || bName.includes(target);
     }
     return true;
   });
 
-  // Summary counts calculated from underlying screen records
-  const totalScreensCount = baseScreenRecords.length;
-  const expiredCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining < 0).length;
-  const todayCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining === 0).length;
-  const inTwoDaysCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining > 0 && s.daysRemaining <= 2).length;
-  const activeCount = baseScreenRecords.filter(s => isValidDateStr(s.expiryDate) && s.daysRemaining !== null && s.daysRemaining >= 0).length;
+  // =========================================================================
+  // 2. HORIZONTAL DATE LIST GENERATION (-14 Days to +28 Days)
+  // =========================================================================
+  const daysList = [];
+  const baseDateObj = new Date();
+  for (let offset = -14; offset <= 28; offset++) {
+    const d = new Date(baseDateObj.getFullYear(), baseDateObj.getMonth(), baseDateObj.getDate() + offset);
+    const dStr = formatDate(d); // e.g. "20-Oct-2026"
+    const dayNum = String(d.getDate()).padStart(2, '0');
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon", "Tue"
+    const monthName = d.toLocaleDateString('en-US', { month: 'short' }); // "Oct"
+    const isToday = offset === 0;
+
+    // Evaluate matching screens for this date to determine persistent status
+    const matchingScreens = baseScreenRecords.filter(s => {
+      if (!isValidDateStr(s.expiryDate)) return false;
+      const parsed = parseDate(s.expiryDate);
+      return parsed && formatDate(parsed) === dStr;
+    });
+
+    const hasRecords = matchingScreens.length > 0;
+    const allNotified = hasRecords && matchingScreens.every(s => s.notificationSent);
+
+    daysList.push({
+      dateStr: dStr,
+      dayNum,
+      dayName,
+      monthName,
+      isToday,
+      offset,
+      recordCount: matchingScreens.length,
+      hasRecords,
+      allNotified
+    });
+  }
+
+  // Auto-scroll the date strip to the selected date pill
+  useEffect(() => {
+    if (selectedPillRef.current) {
+      selectedPillRef.current.scrollIntoView({
+        behavior: 'smooth',
+        inline: 'center',
+        block: 'nearest'
+      });
+    }
+  }, [selectedDate, dateRange]);
 
   // =========================================================================
-  // 3. COMBINED COMPOSABLE FILTERING
+  // 3. FILTER SCREEN RECORDS BASED ON DATE / RANGE & SEARCH
   // =========================================================================
   const filteredScreens = baseScreenRecords.filter(sub => {
-    const rawDiff = sub.daysRemaining;
-    const isValidExp = isValidDateStr(sub.expiryDate);
-    const diff = (isValidExp && rawDiff !== null && typeof rawDiff === 'number' && !isNaN(rawDiff)) ? rawDiff : null;
+    const hasValidDate = isValidDateStr(sub.expiryDate);
 
-    // 1. Expiry filter
-    // Default 'ALL': General view - do NOT filter by expiry condition on page load
-    if (filter === 'current') {
-      // Current Expiry: show only records whose expiry date is today or in the future
-      // Exclude records whose expiry date is in the past.
-      if (!isValidExp || diff === null || diff < 0) return false;
-    } else if (filter === 'past' || filter === 'expired') {
-      // Past Expiry: show only records whose expiry date is earlier than today's date
-      // Exclude records that have not expired. Missing dates are not classified as expired.
-      if (!isValidExp || diff === null || diff >= 0) return false;
-    } else if (filter === 'today') {
-      if (!isValidExp || diff !== 0) return false;
-    } else if (filter === 'in_02_days') {
-      if (!isValidExp || diff === null || diff <= 0 || diff > 2) return false;
+    // 1. Date selection / Range filter
+    if (dateRange && dateRange.start && dateRange.end) {
+      if (!hasValidDate) return false;
+      const subTime = parseDate(sub.expiryDate)?.getTime();
+      const startTime = parseDate(dateRange.start)?.getTime();
+      const endTime = parseDate(dateRange.end)?.getTime();
+      if (!subTime || !startTime || !endTime) return false;
+      if (subTime < startTime || subTime > endTime) return false;
+    } else if (selectedDate && selectedDate !== 'ALL') {
+      if (!hasValidDate) return false;
+      const parsed = parseDate(sub.expiryDate);
+      if (!parsed || formatDate(parsed) !== selectedDate) return false;
     }
 
-    // 2. Validity filter
-    if (filterValidity !== 'all' && sub.validity !== filterValidity) {
-      return false;
-    }
-
-    // 3. Notified filter
-    if (filterNotified === 'pending' && sub.notificationSent) {
-      return false;
-    }
-    if (filterNotified === 'notified' && !sub.notificationSent) {
-      return false;
-    }
-
-    // 4. Calendar Date filter
-    if (dateFilter) {
-      const subExp = (sub.expiryDate || '').trim();
-      if (subExp !== dateFilter.trim()) {
-        return false;
-      }
-    }
-
-    // 5. Search query filter
+    // 2. Search query filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       const match =
@@ -333,35 +268,31 @@ export default function ExpiryScreen({
     return true;
   });
 
-  // =========================================================================
-  // 4. ACCOUNT-WISE GROUPING LOGIC (Section 4 of Master Prompt)
-  // =========================================================================
-  const accountGroups = [];
-  if (groupByAccount) {
-    const accMap = new Map();
+  // Sort screens chronologically and by screenNumber
+  filteredScreens.sort((a, b) => {
+    const dateA = parseDate(a.expiryDate)?.getTime() || 0;
+    const dateB = parseDate(b.expiryDate)?.getTime() || 0;
+    if (dateA !== dateB) return dateA - dateB;
+    return (a.screenNumber || 0) - (b.screenNumber || 0);
+  });
 
-    filteredScreens.forEach(sub => {
-      const key = sub.accountId;
-      if (!accMap.has(key)) {
-        accMap.set(key, {
-          accountId: sub.accountId,
-          recordNumber: sub.accountRecordNumber,
-          email: sub.accountEmail || 'Unassigned Account',
-          password: sub.accountPassword || '',
-          brandId: sub.brandId,
-          brandName: sub.brandName,
-          screens: []
-        });
+  // Handle WhatsApp Notify action directly
+  const handleNotifyAction = async (sub) => {
+    if (onOpenNotifyModal) {
+      onOpenNotifyModal(sub);
+      return;
+    }
+
+    try {
+      if (sub.saleId) {
+        await api.notifyCustomer(sub.saleId);
       }
-      accMap.get(key).screens.push(sub);
-    });
-
-    accMap.forEach(group => {
-      // Sort screens within account by screenNumber
-      group.screens.sort((a, b) => (a.screenNumber || 0) - (b.screenNumber || 0));
-      accountGroups.push(group);
-    });
-  }
+      setItems(prev => prev.map(s => s.id === sub.id ? { ...s, notificationSent: true, lastNotifiedAt: new Date().toISOString() } : s));
+      if (showToast) showToast(`Notification sent for Screen-${sub.screenNumber}`, 'success');
+    } catch (e) {
+      if (showToast) showToast('Failed to record notification', 'error');
+    }
+  };
 
   // Handle Excel Export (.xlsx)
   const handleExportExcel = () => {
@@ -369,7 +300,8 @@ export default function ExpiryScreen({
       setExporting(true);
       const bObj = getBrandObj(filterBrand);
       const brandName = bObj ? (bObj.displayName || bObj.name) : 'All Brands';
-      const filename = exportExpiryToExcel(filteredScreens.length > 0 ? filteredScreens : baseScreenRecords, {
+      const recordsToExport = filteredScreens.length > 0 ? filteredScreens : baseScreenRecords;
+      const filename = exportExpiryToExcel(recordsToExport, {
         selectedBrandName: brandName
       });
       if (showToast) showToast(`Downloaded: ${filename}`, 'success');
@@ -380,9 +312,38 @@ export default function ExpiryScreen({
     }
   };
 
+  // Render Highlighted Expiry Date Badge
+  const renderHighlightedExpiryBadge = (sub) => {
+    const statusObj = getExpiryStatus(sub.expiryDate);
+
+    return (
+      <div
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '5px',
+          padding: '4px 10px',
+          borderRadius: '8px',
+          background: statusObj.badgeBg,
+          border: statusObj.badgeBorder,
+          color: statusObj.badgeColor,
+          boxShadow: statusObj.shadow,
+          fontSize: '12px',
+          fontWeight: 900,
+          letterSpacing: '-0.2px',
+          whiteSpace: 'nowrap'
+        }}
+        title={`Expiry Date: ${sub.expiryDate} (${statusObj.label})`}
+      >
+        <Calendar size={13} strokeWidth={2.5} color={statusObj.color} />
+        <span>{sub.expiryDate || 'No Date'}</span>
+      </div>
+    );
+  };
+
   return (
-    <div className="screen-content" style={{ paddingBottom: '95px', paddingTop: '10px' }}>
-      {/* Brand Selector Modal for Single-Click OTT Selection */}
+    <div className="screen-content" style={{ paddingBottom: '95px', paddingTop: '8px' }}>
+      {/* Brand Selector Modal */}
       <BrandSelectorModal
         isOpen={showBrandModal}
         brands={brands}
@@ -396,166 +357,36 @@ export default function ExpiryScreen({
         onClose={() => setShowBrandModal(false)}
       />
 
-      {/* =================================================================== */}
-      {/* ROW 1: TOP 4 BUTTONS: Account, Validity, Brand, Notified           */}
-      {/* =================================================================== */}
-      <div className="filter-bar-4" style={{ marginBottom: '8px' }}>
-        {/* 1. Account Button (Toggles Account-wise grouping) */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${groupByAccount ? 'pill-selected-active' : 'pill-selected-inactive'}`}
-          style={{
-            padding: '7px 4px',
-            fontSize: '12px',
-            fontWeight: 800,
-            borderRadius: '10px',
-            background: groupByAccount ? 'linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%)' : undefined,
-            color: groupByAccount ? '#ffffff' : undefined,
-            borderColor: groupByAccount ? '#1e40af' : undefined,
-            boxShadow: groupByAccount ? '0 2px 6px rgba(37, 99, 235, 0.35)' : 'none'
-          }}
-          onClick={toggleAccountGrouping}
-          id="expiry-filter-account"
-          title={groupByAccount ? 'Active: Account-Wise View (Click for individual cards)' : 'Click to enable Account-Wise View'}
-        >
-          <Layers size={13} strokeWidth={2.4} />
-          <span>{groupByAccount ? 'Account' : 'All A/C'}</span>
-        </button>
-
-        {/* 2. Validity Button */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filterValidity !== 'all' ? 'pill-selected-active' : 'pill-selected-inactive'}`}
-          style={{
-            padding: '7px 4px',
-            fontSize: '12px',
-            fontWeight: 800,
-            borderRadius: '10px',
-            background: filterValidity !== 'all' ? 'linear-gradient(135deg, #7c3aed 0%, #9333ea 100%)' : undefined,
-            color: filterValidity !== 'all' ? '#ffffff' : undefined,
-            borderColor: filterValidity !== 'all' ? '#6d28d9' : undefined,
-            boxShadow: filterValidity !== 'all' ? '0 2px 6px rgba(124, 58, 237, 0.35)' : 'none'
-          }}
-          onClick={cycleValidity}
-          id="expiry-filter-validity"
-          title={filterValidity === 'all' ? 'Filter by Validity Duration' : `Validity: ${filterValidity}`}
-        >
-          <Clock size={13} strokeWidth={2.4} />
-          <span>
-            {filterValidity === 'all'
-              ? 'Validity'
-              : filterValidity.replace(' Months', 'M').replace(' Month', 'M')}
-          </span>
-        </button>
-
-        {/* 3. Brand Button (Click opens modal for manual single-click selection) */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filterBrand !== 'all' ? 'pill-selected-active' : 'pill-selected-inactive'}`}
-          style={{
-            padding: '7px 4px',
-            fontSize: '12px',
-            fontWeight: 800,
-            borderRadius: '10px',
-            background: filterBrand !== 'all' ? (getBrandObj(filterBrand)?.color || '#ea580c') : undefined,
-            color: filterBrand !== 'all' ? '#ffffff' : undefined,
-            borderColor: filterBrand !== 'all' ? '#c2410c' : undefined,
-            boxShadow: filterBrand !== 'all' ? '0 2px 6px rgba(234, 88, 12, 0.35)' : 'none'
-          }}
-          onClick={() => setShowBrandModal(true)}
-          id="expiry-filter-brand"
-          title={filterBrand === 'all' ? 'Click to select OTT Brand' : `Brand: ${filterBrand}`}
-        >
-          <Tv size={13} strokeWidth={2.4} />
-          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {filterBrand === 'all' ? 'Brand' : getBrandShortName(filterBrand)}
-          </span>
-        </button>
-
-        {/* 4. Notified Button */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filterNotified !== 'all' ? 'pill-selected-active' : 'pill-selected-inactive'}`}
-          style={{
-            padding: '7px 4px',
-            fontSize: '12px',
-            fontWeight: 800,
-            borderRadius: '10px',
-            background: filterNotified === 'pending'
-              ? 'linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)'
-              : filterNotified === 'notified'
-                ? 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)'
-                : undefined,
-            color: filterNotified !== 'all' ? '#ffffff' : undefined,
-            borderColor: filterNotified === 'pending' ? '#be123c' : filterNotified === 'notified' ? '#15803d' : undefined,
-            boxShadow: filterNotified !== 'all' ? '0 2px 6px rgba(22, 163, 74, 0.35)' : 'none'
-          }}
-          onClick={cycleNotified}
-          id="expiry-filter-notified"
-          title={filterNotified === 'all' ? 'Filter by Customer Notification Status' : `Notification: ${filterNotified}`}
-        >
-          <Bell size={13} strokeWidth={2.4} />
-          <span>
-            {filterNotified === 'all' ? 'Notified' : filterNotified === 'pending' ? 'Pending' : 'Sent'}
-          </span>
-        </button>
-      </div>
+      {/* Date Picker Modal for Single Date or Date Range */}
+      <DatePickerModal
+        isOpen={showCalendarModal}
+        initialDate={selectedDate !== 'ALL' ? selectedDate : todayStr}
+        initialStartDate={dateRange?.start || ''}
+        initialEndDate={dateRange?.end || ''}
+        onSelectDate={(date) => {
+          setSelectedDate(date);
+          setDateRange(null);
+          setShowCalendarModal(false);
+          if (showToast) showToast(`Selected Expiry Date: ${date}`, 'info');
+        }}
+        onSelectRange={(start, end) => {
+          setDateRange({ start, end });
+          setSelectedDate(null);
+          setShowCalendarModal(false);
+          if (showToast) showToast(`Selected Expiry Range: ${start} → ${end}`, 'info');
+        }}
+        onClearDate={() => {
+          setSelectedDate('ALL');
+          setDateRange(null);
+          setShowCalendarModal(false);
+          if (onClearDateFilter) onClearDateFilter();
+          if (showToast) showToast('Date filter cleared: Showing all dates', 'info');
+        }}
+        onClose={() => setShowCalendarModal(false)}
+      />
 
       {/* =================================================================== */}
-      {/* ROW 2: EXPIRY FILTERS BAR (ALL, Current Expiry, Past Expiry, Today) */}
-      {/* =================================================================== */}
-      <div className="filter-bar-4" style={{ marginBottom: '10px' }}>
-        {/* 1. ALL (Blue when active) */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filter === 'ALL' ? 'glossy-btn-blue' : 'glossy-btn-gray'}`}
-          onClick={() => setFilter('ALL')}
-          id="expiry-filter-all"
-          title="General View: Show all records with no expiry filter"
-        >
-          <LayoutGrid size={13} />
-          <span>ALL</span>
-        </button>
-
-        {/* 2. Current Expiry */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filter === 'current' ? 'glossy-btn-green' : 'glossy-btn-gray'}`}
-          onClick={() => handleToggleExpiryFilter('current')}
-          id="expiry-filter-current"
-          title={filter === 'current' ? 'Current Expiry Active (Click to return to General View)' : 'Click to show Current Expiry (Today & Future)'}
-        >
-          <CheckCircle2 size={13} />
-          <span style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Current Expiry</span>
-        </button>
-
-        {/* 3. Past Expiry */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${(filter === 'past' || filter === 'expired') ? 'glossy-btn-red' : 'glossy-btn-gray'}`}
-          onClick={() => handleToggleExpiryFilter('past')}
-          id="expiry-filter-past"
-          title={(filter === 'past' || filter === 'expired') ? 'Past Expiry Active (Click to return to General View)' : 'Click to show Past Expiry (Expired records)'}
-        >
-          <XCircle size={13} />
-          <span style={{ fontSize: '11px', whiteSpace: 'nowrap' }}>Past Expiry</span>
-        </button>
-
-        {/* 4. Today */}
-        <button
-          type="button"
-          className={`filter-pill-btn ${filter === 'today' ? 'glossy-btn-orange' : 'glossy-btn-gray'}`}
-          onClick={() => handleToggleExpiryFilter('today')}
-          id="expiry-filter-today"
-          title={filter === 'today' ? 'Expiring Today Active (Click to return to General View)' : 'Click to show Expiring Today'}
-        >
-          <AlertTriangle size={13} />
-          <span>Today</span>
-        </button>
-      </div>
-
-      {/* =================================================================== */}
-      {/* SEARCH BAR & EXCEL DOWNLOAD STRIP                                  */}
+      {/* ROW 1: SEARCH BAR & QUICK FILTERS                                 */}
       {/* =================================================================== */}
       <div style={{
         display: 'flex',
@@ -563,7 +394,6 @@ export default function ExpiryScreen({
         gap: '8px',
         marginBottom: '10px'
       }}>
-        {/* Search input */}
         <div style={{
           flex: 1,
           position: 'relative',
@@ -575,7 +405,7 @@ export default function ExpiryScreen({
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder="Search by customer, phone, email, brand..."
+            placeholder="Search customer, phone, email, brand, screen..."
             style={{
               width: '100%',
               height: '38px',
@@ -609,165 +439,294 @@ export default function ExpiryScreen({
           )}
         </div>
 
-        {/* Excel Download Button */}
+        {/* Brand Filter Pill (Click opens brand modal) */}
         <button
           type="button"
-          className="glossy-btn glossy-btn-green"
-          onClick={handleExportExcel}
-          disabled={exporting}
+          onClick={() => setShowBrandModal(true)}
           style={{
-            padding: '8px 12px',
+            height: '38px',
+            padding: '0 12px',
+            borderRadius: '10px',
+            background: filterBrand !== 'all' ? (getBrandObj(filterBrand)?.color || '#2563eb') : '#ffffff',
+            color: filterBrand !== 'all' ? '#ffffff' : '#334155',
+            border: filterBrand !== 'all' ? 'none' : '1.5px solid #cbd5e1',
             fontSize: '12px',
             fontWeight: 800,
-            borderRadius: '10px',
+            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
             gap: '5px',
             whiteSpace: 'nowrap',
-            boxShadow: '0 2px 6px rgba(22, 163, 74, 0.35)'
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
           }}
-          title="Download Complete Subscription Report as .xlsx Excel"
-          id="expiry-excel-download-btn"
+          title="Filter by OTT Brand"
         >
-          <FileSpreadsheet size={15} strokeWidth={2.4} />
-          <span>{exporting ? 'Exporting...' : 'Excel'}</span>
+          <Tv size={14} />
+          <span>{filterBrand === 'all' ? 'All Brands' : (getBrandObj(filterBrand)?.displayName?.split(' ')[0] || filterBrand)}</span>
+        </button>
+
+        {/* Calendar / Date Range Picker Trigger */}
+        <button
+          type="button"
+          onClick={() => setShowCalendarModal(true)}
+          style={{
+            height: '38px',
+            width: '38px',
+            minWidth: '38px',
+            borderRadius: '10px',
+            background: (dateRange || (selectedDate && selectedDate !== todayStr && selectedDate !== 'ALL')) ? '#eff6ff' : '#ffffff',
+            border: (dateRange || (selectedDate && selectedDate !== todayStr && selectedDate !== 'ALL')) ? '1.5px solid #2563eb' : '1.5px solid #cbd5e1',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+          }}
+          title="Open Calendar / Date-Range Picker"
+        >
+          <Calendar size={17} color={(dateRange || (selectedDate && selectedDate !== todayStr && selectedDate !== 'ALL')) ? '#2563eb' : '#475569'} strokeWidth={2.4} />
         </button>
       </div>
 
       {/* =================================================================== */}
-      {/* ACCOUNT SUMMARY STRIP (Section 8 of Master Prompt)                 */}
+      {/* ROW 2: HORIZONTALLY SCROLLABLE DATE SELECTOR STRIP (Section 3)     */}
+      {/* Past dates left, Today in center, Future dates right                */}
+      {/* Visual Status: Green = All Notified, Red = Pending, Neutral = None  */}
+      {/* Distinct selected highlight outline                                 */}
+      {/* =================================================================== */}
+      <div
+        ref={dateStripRef}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '7px',
+          overflowX: 'auto',
+          paddingBottom: '8px',
+          marginBottom: '10px',
+          WebkitOverflowScrolling: 'touch',
+          scrollbarWidth: 'none',
+          msOverflowStyle: 'none'
+        }}
+      >
+        {/* "ALL DATES" Pill */}
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedDate('ALL');
+            setDateRange(null);
+          }}
+          style={{
+            flexShrink: 0,
+            minWidth: '58px',
+            height: '62px',
+            borderRadius: '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: selectedDate === 'ALL' && !dateRange ? '#1e40af' : '#ffffff',
+            color: selectedDate === 'ALL' && !dateRange ? '#ffffff' : '#475569',
+            border: selectedDate === 'ALL' && !dateRange ? '2px solid #1e3a8a' : '1.5px solid #e2e8f0',
+            boxShadow: selectedDate === 'ALL' && !dateRange ? '0 3px 8px rgba(30, 64, 175, 0.35)' : '0 1px 2px rgba(0,0,0,0.04)',
+            cursor: 'pointer',
+            transition: 'all 0.15s ease',
+            padding: '4px'
+          }}
+        >
+          <div style={{ fontSize: '10px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.3px' }}>
+            VIEW
+          </div>
+          <div style={{ fontSize: '14px', fontWeight: 900 }}>ALL</div>
+          <div style={{ fontSize: '9px', fontWeight: 700, opacity: 0.85 }}>DATES</div>
+        </button>
+
+        {/* Dynamic Day Pills (-14 Days to +28 Days) */}
+        {daysList.map((item) => {
+          const isSelected = !dateRange && selectedDate === item.dateStr;
+
+          // Status colors based on actual persisted data:
+          // Green: All applicable expiry records for that date have been successfully processed and notified.
+          // Red: One or more applicable expiry records remain pending notification.
+          // Neutral: No applicable expiry records exist for that date.
+          let pillBg = '#ffffff';
+          let pillBorder = '#e2e8f0';
+          let textColor = '#334155';
+          let statusBadgeBg = '#f1f5f9';
+          let statusBadgeColor = '#64748b';
+          let statusLabel = item.recordCount > 0 ? `${item.recordCount}` : '0';
+
+          if (item.hasRecords) {
+            if (item.allNotified) {
+              pillBg = '#f0fdf4';
+              pillBorder = '#86efac';
+              textColor = '#15803d';
+              statusBadgeBg = '#dcfce7';
+              statusBadgeColor = '#166534';
+              statusLabel = `✓ ${item.recordCount}`;
+            } else {
+              pillBg = '#fef2f2';
+              pillBorder = '#fca5a5';
+              textColor = '#b91c1c';
+              statusBadgeBg = '#fee2e2';
+              statusBadgeColor = '#991b1b';
+              statusLabel = `${item.recordCount} Due`;
+            }
+          }
+
+          return (
+            <button
+              key={item.dateStr}
+              ref={isSelected ? selectedPillRef : null}
+              type="button"
+              onClick={() => {
+                setSelectedDate(item.dateStr);
+                setDateRange(null);
+              }}
+              style={{
+                flexShrink: 0,
+                width: '54px',
+                minWidth: '54px',
+                height: '62px',
+                borderRadius: '12px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '5px 2px',
+                background: pillBg,
+                color: textColor,
+                border: isSelected ? '2.5px solid #2563eb' : `1.5px solid ${pillBorder}`,
+                boxShadow: isSelected
+                  ? '0 0 0 2px #bfdbfe, 0 4px 10px rgba(37,99,235,0.25)'
+                  : '0 1px 2px rgba(0,0,0,0.04)',
+                cursor: 'pointer',
+                position: 'relative',
+                transition: 'all 0.15s ease'
+              }}
+              title={`${item.dateStr}${item.isToday ? ' (Today)' : ''}: ${item.recordCount} expiring (${item.hasRecords ? (item.allNotified ? 'All Notified' : 'Pending Notifications') : 'No records'})`}
+            >
+              {/* Day of Week */}
+              <div style={{
+                fontSize: '9.5px',
+                fontWeight: 800,
+                textTransform: 'uppercase',
+                letterSpacing: '0.2px',
+                color: item.isToday ? '#2563eb' : undefined
+              }}>
+                {item.isToday ? 'Today' : item.dayName}
+              </div>
+
+              {/* Big Day Number */}
+              <div style={{
+                fontSize: '17px',
+                fontWeight: 900,
+                lineHeight: 1,
+                color: isSelected ? '#1d4ed8' : undefined
+              }}>
+                {item.dayNum}
+              </div>
+
+              {/* Status Indicator / Count Pill */}
+              <div style={{
+                fontSize: '9px',
+                fontWeight: 800,
+                padding: '1px 5px',
+                borderRadius: '6px',
+                background: statusBadgeBg,
+                color: statusBadgeColor,
+                lineHeight: 1.1,
+                whiteSpace: 'nowrap'
+              }}>
+                {statusLabel}
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* =================================================================== */}
+      {/* ROW 3: ACTIVE DATE FILTER BANNER                                   */}
       {/* =================================================================== */}
       <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
-        gap: '4px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         background: '#ffffff',
         border: '1.5px solid #e2e8f0',
-        borderRadius: '12px',
-        padding: '6px 8px',
+        borderRadius: '10px',
+        padding: '7px 12px',
         marginBottom: '12px',
-        textAlign: 'center',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
       }}>
-        <div
-          onClick={() => setFilter('ALL')}
-          style={{
-            cursor: 'pointer',
-            borderRadius: '8px',
-            padding: '3px 2px',
-            background: filter === 'ALL' ? '#f1f5f9' : 'transparent',
-            transition: 'background 0.15s ease'
-          }}
-          title="Click to view All records (General View)"
-        >
-          <div style={{ fontSize: '9px', fontWeight: 800, color: '#64748b' }}>TOTAL</div>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#0f172a' }}>{totalScreensCount}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
+          <Calendar size={15} color="#2563eb" strokeWidth={2.4} />
+          {dateRange ? (
+            <span style={{ fontWeight: 800, color: '#1e40af' }}>
+              Range: <strong>{dateRange.start}</strong> &rarr; <strong>{dateRange.end}</strong> ({filteredScreens.length} screens)
+            </span>
+          ) : selectedDate === 'ALL' ? (
+            <span style={{ fontWeight: 800, color: '#334155' }}>
+              Viewing: <strong>All Expiry Dates</strong> ({filteredScreens.length} screens)
+            </span>
+          ) : (
+            <span style={{ fontWeight: 800, color: '#1e40af' }}>
+              Date: <strong>{selectedDate}</strong> {selectedDate === todayStr ? '(Today)' : ''} &bull; {filteredScreens.length} screens
+            </span>
+          )}
         </div>
-        <div
-          onClick={() => handleToggleExpiryFilter('current')}
-          style={{
-            cursor: 'pointer',
-            borderRadius: '8px',
-            padding: '3px 2px',
-            background: filter === 'current' ? '#dcfce7' : 'transparent',
-            transition: 'background 0.15s ease'
-          }}
-          title="Click to filter Current Expiry (Today & Future)"
-        >
-          <div style={{ fontSize: '9px', fontWeight: 800, color: '#16a34a' }}>ACTIVE</div>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#16a34a' }}>{activeCount}</div>
-        </div>
-        <div
-          onClick={() => handleToggleExpiryFilter('in_02_days')}
-          style={{
-            cursor: 'pointer',
-            borderRadius: '8px',
-            padding: '3px 2px',
-            background: filter === 'in_02_days' ? '#fef3c7' : 'transparent',
-            transition: 'background 0.15s ease'
-          }}
-          title="Click to filter in 02 Days"
-        >
-          <div style={{ fontSize: '9px', fontWeight: 800, color: '#d97706' }}>IN 02D</div>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#d97706' }}>{inTwoDaysCount}</div>
-        </div>
-        <div
-          onClick={() => handleToggleExpiryFilter('today')}
-          style={{
-            cursor: 'pointer',
-            borderRadius: '8px',
-            padding: '3px 2px',
-            background: filter === 'today' ? '#ffedd5' : 'transparent',
-            transition: 'background 0.15s ease'
-          }}
-          title="Click to filter Today"
-        >
-          <div style={{ fontSize: '9px', fontWeight: 800, color: '#ea580c' }}>TODAY</div>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#ea580c' }}>{todayCount}</div>
-        </div>
-        <div
-          onClick={() => handleToggleExpiryFilter('past')}
-          style={{
-            cursor: 'pointer',
-            borderRadius: '8px',
-            padding: '3px 2px',
-            background: (filter === 'past' || filter === 'expired') ? '#fee2e2' : 'transparent',
-            transition: 'background 0.15s ease'
-          }}
-          title="Click to filter Past Expiry (Expired records)"
-        >
-          <div style={{ fontSize: '9px', fontWeight: 800, color: '#dc2626' }}>EXPIRED</div>
-          <div style={{ fontSize: '13px', fontWeight: 900, color: '#dc2626' }}>{expiredCount}</div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {selectedDate !== todayStr && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDate(todayStr);
+                setDateRange(null);
+              }}
+              style={{
+                background: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                color: '#1d4ed8',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+              title="Jump to Today"
+            >
+              Today
+            </button>
+          )}
+
+          {selectedDate !== 'ALL' && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedDate('ALL');
+                setDateRange(null);
+              }}
+              style={{
+                background: '#f1f5f9',
+                border: '1px solid #cbd5e1',
+                color: '#475569',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                fontSize: '11px',
+                fontWeight: 800,
+                cursor: 'pointer'
+              }}
+              title="Show All Dates"
+            >
+              All
+            </button>
+          )}
         </div>
       </div>
 
       {/* =================================================================== */}
-      {/* DATE ACTIVE FILTER STRIP (from Header Calendar)                    */}
-      {/* =================================================================== */}
-      {dateFilter && (
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#eff6ff',
-          border: '1.5px solid #93c5fd',
-          padding: '8px 12px',
-          borderRadius: '10px',
-          marginBottom: '12px',
-          fontSize: '13px'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <Calendar size={16} color="#2563eb" strokeWidth={2.3} />
-            <span style={{ color: '#1e40af', fontWeight: 800 }}>
-              Expiry Date: <strong>{dateFilter}</strong>
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onClearDateFilter}
-            style={{
-              background: '#fee2e2',
-              border: '1px solid #fecaca',
-              color: '#dc2626',
-              borderRadius: '6px',
-              padding: '3px 8px',
-              fontSize: '11.5px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px'
-            }}
-            title="Clear Date Filter"
-          >
-            <X size={13} />
-            <span>Clear</span>
-          </button>
-        </div>
-      )}
-
-      {/* =================================================================== */}
-      {/* SUBSCRIPTION CONTENT: ACCOUNT-WISE VIEW VS INDIVIDUAL SCREEN VIEW  */}
+      {/* ROW 4: INDEPENDENT SCREEN-LEVEL EXPIRY CARDS (Section 4)           */}
+      {/* Displays all screen records expiring on selected date               */}
       {/* =================================================================== */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
@@ -775,260 +734,21 @@ export default function ExpiryScreen({
         </div>
       ) : filteredScreens.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 16px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px' }}>No subscriptions match active filters.</p>
-          <p style={{ fontSize: '12px', color: '#94a3b8' }}>Try resetting Brand, Validity, Notified, or Date filters.</p>
+          <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px' }}>
+            No screen expiries on {selectedDate === 'ALL' ? 'selected filters' : selectedDate}.
+          </p>
+          <p style={{ fontSize: '12px', color: '#94a3b8' }}>
+            Use the date strip above to select another date or click "All" to view all records.
+          </p>
         </div>
-      ) : groupByAccount ? (
-        /* ----------------------------------------------------------------- */
-        /* ACCOUNT-WISE SCREEN ORGANIZATION (MASTER PROMPT SECTION 4)        */
-        /* ----------------------------------------------------------------- */
-        accountGroups.map((group, gIdx) => {
-          const brandObj = getBrandObj(group.brandId);
-          const brandDisplayName = brandObj?.displayName || group.brandName || 'OTT Service';
-          const isNetflix = (group.brandId || '').toLowerCase() === 'netflix' || brandDisplayName.toLowerCase().includes('netflix');
-
-          // Count expired in this specific account group
-          const groupExpiredCount = group.screens.filter(s => s.daysRemaining < 0).length;
-
-          return (
-            <div
-              key={group.accountId || gIdx}
-              style={{
-                background: '#ffffff',
-                borderRadius: '16px',
-                border: '1.5px solid #cbd5e1',
-                padding: '12px',
-                marginBottom: '16px',
-                boxShadow: '0 3px 10px rgba(15, 23, 42, 0.06)'
-              }}
-              id={`account-group-${gIdx + 1}`}
-            >
-              {/* Account Group Header */}
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '10px',
-                paddingBottom: '8px',
-                borderBottom: '1.5px solid #f1f5f9'
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', overflow: 'hidden' }}>
-                  {/* Brand Tag Pill */}
-                  <div style={{
-                    background: isNetflix ? '#000000' : (brandObj?.color || '#0284c7'),
-                    color: '#ffffff',
-                    padding: '3px 8px',
-                    borderRadius: '6px',
-                    fontSize: '11px',
-                    fontWeight: 900,
-                    letterSpacing: '0.3px',
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {isNetflix ? 'NETFLIX' : brandDisplayName.toUpperCase()}
-                  </div>
-
-                  {/* Account Name / Email & Password */}
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{
-                      fontSize: '13px',
-                      fontWeight: 800,
-                      color: '#0f172a',
-                      textOverflow: 'ellipsis',
-                      overflow: 'hidden',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      Account {group.recordNumber || gIdx + 1} — {group.email}
-                    </div>
-                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>
-                      Pass: {group.password || '••••••••'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Account Screens Summary Pill */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{
-                    background: '#eff6ff',
-                    border: '1px solid #bfdbfe',
-                    color: '#1d4ed8',
-                    borderRadius: '6px',
-                    padding: '3px 6px',
-                    fontSize: '11px',
-                    fontWeight: 800,
-                    whiteSpace: 'nowrap'
-                  }}>
-                    {group.screens.length} Screens
-                  </span>
-                  {groupExpiredCount > 0 && (
-                    <span style={{
-                      background: '#fee2e2',
-                      border: '1px solid #fecaca',
-                      color: '#dc2626',
-                      borderRadius: '6px',
-                      padding: '3px 6px',
-                      fontSize: '11px',
-                      fontWeight: 900,
-                      whiteSpace: 'nowrap'
-                    }}>
-                      {groupExpiredCount} Exp
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Screens List under this Account - Vertically Stacked Cards */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {group.screens.map((sub, sIdx) => {
-                  const statusObj = getExpiryStatus(sub.expiryDate);
-                  const showPin = brandObj ? (brandObj.showScreenPin !== false) : true;
-                  const showDevice = brandObj ? (brandObj.showDeviceName !== false) : true;
-
-                  return (
-                    <div
-                      key={sub.id || sIdx}
-                      style={{
-                        background: '#f8fafc',
-                        borderRadius: '12px',
-                        border: statusObj.border,
-                        padding: '10px 12px',
-                        boxShadow: '0 1px 4px rgba(0,0,0,0.03)'
-                      }}
-                      id={`screen-card-${gIdx + 1}-${sIdx + 1}`}
-                    >
-                      {/* Top Screen Header: Screen number badge, PIN, and HIGHLIGHTED Expiry Date */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <span style={{
-                            background: '#e0f2fe',
-                            color: '#0369a1',
-                            border: '1px solid #bae6fd',
-                            borderRadius: '6px',
-                            padding: '3px 8px',
-                            fontSize: '11.5px',
-                            fontWeight: 900
-                          }}>
-                            Screen-{String(sub.screenNumber || sIdx + 1).padStart(2, '0')}
-                          </span>
-
-                          <span style={{
-                            background: '#f3e8ff',
-                            border: '1px solid #e9d5ff',
-                            color: '#7e22ce',
-                            borderRadius: '6px',
-                            padding: '2px 6px',
-                            fontSize: '10.5px',
-                            fontWeight: 700
-                          }}>
-                            {sub.validity || '1M'}
-                          </span>
-
-                          {showPin && sub.screenPin && (
-                            <span style={{
-                              background: '#fffbeb',
-                              border: '1px solid #fde68a',
-                              color: '#b45309',
-                              borderRadius: '6px',
-                              padding: '2px 6px',
-                              fontSize: '11px',
-                              fontWeight: 800
-                            }}>
-                              PIN: {sub.screenPin}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Top-Right Highlighted Expiry Date Badge */}
-                        {renderHighlightedExpiryBadge(sub)}
-                      </div>
-
-                      {/* Row 1: Customer Name & Phone */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                        <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 8px' }}>
-                          <div style={{ fontSize: '9px', color: '#dc2626', fontWeight: 800 }}>NAME</div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>
-                            <User size={12} color="#64748b" />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                              {sub.customerName || 'Customer'}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', padding: '5px 8px' }}>
-                          <div style={{ fontSize: '9px', color: '#dc2626', fontWeight: 800 }}>NUMBER</div>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '4px', fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <Phone size={12} color="#64748b" />
-                              <span>{sub.customerNumber || '-'}</span>
-                            </div>
-                            {sub.customerNumber && (
-                              <CopyButton text={sub.customerNumber} size={12} showLabelOnCopy={false} />
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Row 2: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
-                      <div style={{
-                        display: 'grid',
-                        gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.1fr' : '1.2fr 1fr',
-                        gap: '6px',
-                        alignItems: 'center'
-                      }}>
-                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
-                          <div style={{ fontSize: '8.5px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
-                          <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap' }}>
-                            {sub.activationDate || '-'}
-                          </div>
-                        </div>
-
-                        {showDevice && sub.deviceName && (
-                          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px', textAlign: 'center', overflow: 'hidden' }}>
-                            <div style={{ fontSize: '8.5px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
-                            <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName}>
-                              {sub.deviceName}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Screen Notify Button */}
-                        <button
-                          type="button"
-                          className={`glossy-btn ${sub.notificationSent ? 'glossy-btn-green' : 'glossy-btn-red'}`}
-                          style={{ padding: '7px 4px', fontSize: '12px', borderRadius: '8px', height: '100%' }}
-                          onClick={() => onOpenNotifyModal(sub)}
-                          id={`notify-btn-${gIdx + 1}-${sIdx + 1}`}
-                          title={sub.notificationSent ? `Notified on ${sub.lastNotifiedAt?.slice(0, 10)}. Click to resend.` : 'Send WhatsApp Reminder'}
-                        >
-                          {sub.notificationSent ? <Check size={13} strokeWidth={2.5} /> : <Bell size={13} />}
-                          <span>{sub.notificationSent ? 'Notified' : 'Notify'}</span>
-                        </button>
-                      </div>
-
-                      {/* Notification Completed Banner if present */}
-                      {sub.notificationSent && (
-                        <div style={{ marginTop: '6px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10.5px', color: '#15803d', fontWeight: 700 }}>
-                          <Check size={11} strokeWidth={2.5} />
-                          <span>Notified on {sub.lastNotifiedAt?.slice(0, 10)}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })
       ) : (
-        /* ----------------------------------------------------------------- */
-        /* STANDARD FLAT CARDS VIEW (Matching image copy 118.png)            */
-        /* ----------------------------------------------------------------- */
         filteredScreens.map((sub, sIdx) => {
           const isSecondCard = sIdx % 2 === 1;
           const statusObj = getExpiryStatus(sub.expiryDate);
           const brandObj = getBrandObj(sub.brandId);
           const showPin = brandObj ? (brandObj.showScreenPin !== false) : true;
           const showDevice = brandObj ? (brandObj.showDeviceName !== false) : true;
-          const isNetflix = (sub.brandId || '').toLowerCase() === 'netflix' || (sub.brandName || '').toLowerCase().includes('netflix');
+          const isNetflix = String(sub.brandId || '').toLowerCase() === 'netflix' || String(sub.brandName || '').toLowerCase().includes('netflix');
 
           return (
             <div
@@ -1038,12 +758,13 @@ export default function ExpiryScreen({
                 border: statusObj.border,
                 borderRadius: '16px',
                 padding: '12px 14px',
-                marginBottom: '16px',
-                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)'
+                marginBottom: '14px',
+                boxShadow: '0 2px 8px rgba(15, 23, 42, 0.05)',
+                background: '#ffffff'
               }}
-              id={`expiry-card-${sIdx + 1}`}
+              id={`expiry-screen-card-${sIdx + 1}`}
             >
-              {/* Card Header: Ribbon, Brand Badge, HIGHLIGHTED Expiry Date */}
+              {/* Card Header: Ribbon, Brand Badge, Highlighted Expiry Date Badge */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <div className={`ribbon-badge ${isSecondCard ? 'blue' : ''}`}>
                   {String(sIdx + 1).padStart(2, '0')}
@@ -1081,7 +802,9 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>NAME</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#0f172a' }}>
                     <User size={13} color="#64748b" />
-                    <span>{sub.customerName || 'Customer'}</span>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {sub.customerName || 'Vacant Screen'}
+                    </span>
                   </div>
                 </div>
 
@@ -1105,7 +828,9 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>MAIL ID</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     <Mail size={13} color="#64748b" />
-                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>{sub.accountEmail || '-'}</span>
+                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {sub.accountEmail || '-'}
+                    </span>
                   </div>
                 </div>
 
@@ -1113,7 +838,9 @@ export default function ExpiryScreen({
                   <div style={{ fontSize: '10px', color: '#dc2626', fontWeight: 800 }}>PASSWORD</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600, color: '#0f172a' }}>
                     <Lock size={13} color="#64748b" />
-                    <span>{sub.accountPassword || '-'}</span>
+                    <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {sub.accountPassword || '-'}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1155,13 +882,15 @@ export default function ExpiryScreen({
               {/* Row 4: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1fr' : '1.2fr 1fr',
+                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.2fr' : '1.2fr 1fr',
                 gap: '6px',
                 alignItems: 'center'
               }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
                   <div style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>{sub.activationDate || '-'}</div>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>
+                    {sub.activationDate || '-'}
+                  </div>
                 </div>
 
                 {showDevice && sub.deviceName && (
@@ -1177,9 +906,16 @@ export default function ExpiryScreen({
                 <button
                   type="button"
                   className={`glossy-btn ${sub.notificationSent ? 'glossy-btn-green' : 'glossy-btn-red'}`}
-                  style={{ padding: '8px 4px', fontSize: '13px', height: '100%' }}
-                  onClick={() => onOpenNotifyModal(sub)}
+                  style={{
+                    padding: '8px 4px',
+                    fontSize: '13px',
+                    height: '100%',
+                    justifyContent: 'center',
+                    boxShadow: sub.notificationSent ? '0 2px 6px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.25)'
+                  }}
+                  onClick={() => handleNotifyAction(sub)}
                   id={`notify-btn-${sIdx + 1}`}
+                  title={sub.notificationSent ? `Notified on ${sub.lastNotifiedAt?.slice(0, 10)}. Click to resend.` : 'Send WhatsApp Reminder'}
                 >
                   {sub.notificationSent ? <Check size={14} strokeWidth={2.5} /> : <Bell size={15} />}
                   <span>{sub.notificationSent ? 'Notified' : 'Notify'}</span>

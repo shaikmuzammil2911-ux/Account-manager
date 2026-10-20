@@ -863,10 +863,20 @@ export default function App() {
         <DatePickerModal
           isOpen={showExpiryDatePicker}
           initialDate={expiryDateFilter || ''}
-          onSelect={(date) => {
+          onSelectDate={(date) => {
             setExpiryDateFilter(date);
             setShowExpiryDatePicker(false);
             showToast(`Filtering subscriptions expiring on ${date}`, 'success');
+          }}
+          onSelectRange={(start, end) => {
+            setExpiryDateFilter(`${start} to ${end}`);
+            setShowExpiryDatePicker(false);
+            showToast(`Filtering subscriptions expiring from ${start} to ${end}`, 'success');
+          }}
+          onClearDate={() => {
+            setExpiryDateFilter('');
+            setShowExpiryDatePicker(false);
+            showToast('Cleared date filter: Showing all records', 'info');
           }}
           onClose={() => setShowExpiryDatePicker(false)}
         />

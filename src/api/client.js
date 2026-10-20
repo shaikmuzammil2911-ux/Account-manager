@@ -1053,17 +1053,52 @@ export const api = {
   },
 
   async notifyCustomer(saleId) {
-    try {
-      const res = await fetch(`/api/notify/${saleId}`, { method: 'POST' });
-      if (res.ok) return await res.json();
-    } catch (e) {}
-
     const local = getLocalData();
     const sale = (local.sales || []).find(s => s.id === saleId);
     if (!sale) return null;
+
+    const nowIso = new Date().toISOString();
     sale.notificationSent = true;
-    sale.lastNotifiedAt = new Date().toISOString();
+    sale.lastNotifiedAt = nowIso;
+
+    // Persist password-change requirement on linked account (Section 5 & 7)
+    let linkedAccountId = sale.inventoryId;
+    if (!linkedAccountId && sale.accountEmail) {
+      const invMatch = (local.inventory || []).find(i => String(i?.email || '').toLowerCase() === String(sale.accountEmail).toLowerCase());
+      if (invMatch) linkedAccountId = invMatch.id;
+    }
+
+    if (linkedAccountId) {
+      const inv = (local.inventory || []).find(i => i.id === linkedAccountId);
+      if (inv) {
+        inv.passwordChangeRequired = true;
+        inv.updatedAt = Date.now();
+      }
+    }
+
     saveLocalData(local);
+
+    // Direct Supabase Update for 100% production persistence
+    try {
+      await supabase.from('sales').update({
+        notification_sent: true,
+        last_notified_at: nowIso,
+        updated_at: nowIso
+      }).eq('id', saleId);
+
+      if (linkedAccountId) {
+        await supabase.from('inventory').update({
+          password_change_required: true,
+          updated_at: nowIso
+        }).eq('id', linkedAccountId);
+      }
+    } catch (e) {
+      console.warn('[Supabase Notify Warning]:', e.message);
+    }
+
+    try {
+      fetch(`/api/notify/${saleId}`, { method: 'POST' }).catch(() => {});
+    } catch (e) {}
 
     const cleanNumber = (sale.customerNumber || '').replace(/\D/g, '');
     const whatsappUrl = `https://wa.me/91${cleanNumber}?text=Subscription%20Reminder`;

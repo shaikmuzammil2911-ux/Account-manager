@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import {
   Check, Calendar, ArrowUpDown, Eye, EyeOff, Lock, Unlock,
-  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw, Star
+  Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw, Star,
+  ChevronDown, ChevronUp, AlertTriangle
 } from 'lucide-react';
 import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
@@ -100,6 +101,7 @@ export default function InventoryScreen({
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
+  const [expandedAccounts, setExpandedAccounts] = useState({});
 
   // Seller Details Modal State
   const [sellerModalItem, setSellerModalItem] = useState(null);
@@ -410,6 +412,7 @@ export default function InventoryScreen({
         password: editState.password,
         validity: editState.validity,
         planVariant: editState.planVariant || item.planVariant || 'General',
+        passwordChangeRequired: false,
         screens: updatedScreens
       };
 
@@ -670,44 +673,95 @@ export default function InventoryScreen({
           const freeCount = (item.screens || []).filter(s => s.status === 'empty').length;
           const totalScreens = item.screens?.length || 5;
 
+          const isExpanded = expandedAccounts[item.id] !== undefined ? expandedAccounts[item.id] : isEditing;
+
           return (
             <div key={item.id} className="inventory-card" id={`inventory-card-${item.recordNumber}`}>
-              {/* Top Row: Ribbon Tag, Screen Count Summary, Validity Badge, Checkbox */}
+              {/* Top Row: Ribbon Tag, Plan Variant, Password Alert, Screen Count Summary, Validity Badge, Checkbox */}
               <div className="card-top-row">
-                <div className="ribbon-badge">
-                  {item.recordNumber || '01'}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                  <div className="ribbon-badge">
+                    {item.recordNumber || '01'}
+                  </div>
+
+                  {/* Password Change Required Reminder Badge (Section 7) */}
+                  {item.passwordChangeRequired && (
+                    <div
+                      style={{
+                        background: '#fee2e2',
+                        border: '1.5px solid #f87171',
+                        borderRadius: '8px',
+                        padding: '2px 8px',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        color: '#b91c1c',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: '0 1px 3px rgba(220, 38, 38, 0.15)'
+                      }}
+                      title="Expiry notification completed. Password change required."
+                    >
+                      <AlertTriangle size={12} color="#dc2626" strokeWidth={2.5} />
+                      <span>Password Change Required</span>
+                    </div>
+                  )}
+
+                  {/* Plan Variant Badge: Only show if special (not General) or if editing per user requirement */}
+                  {(isEditing || (item.planVariant && item.planVariant !== 'General')) && (
+                    <div
+                      className="badge-plan-variant"
+                      onClick={() => handleCyclePlanVariant(item)}
+                      style={{
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        padding: '3px 10px',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        fontWeight: 800,
+                        background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
+                        color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
+                        border: '1.5px solid',
+                        borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '5px',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title="Click to cycle plan variant (General, With Ads, Ads Free...)"
+                    >
+                      <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
+                      <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Plan Variant Badge: Only show if special (not General) or if editing per user requirement */}
-                {(isEditing || (item.planVariant && item.planVariant !== 'General')) && (
-                  <div
-                    className="badge-plan-variant"
-                    onClick={() => handleCyclePlanVariant(item)}
+                <div className="card-top-right">
+                  {/* Expand / Collapse Control Button (Section 9) */}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedAccounts(p => ({ ...p, [item.id]: !isExpanded }))}
                     style={{
-                      cursor: 'pointer',
-                      userSelect: 'none',
-                      padding: '3px 10px',
+                      background: isExpanded ? '#eff6ff' : '#f8fafc',
+                      border: isExpanded ? '1.5px solid #93c5fd' : '1.5px solid #cbd5e1',
                       borderRadius: '8px',
-                      fontSize: '12px',
-                      fontWeight: 800,
-                      background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
-                      color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
-                      border: '1.5px solid',
-                      borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
+                      padding: '3px 8px',
+                      cursor: 'pointer',
                       display: 'inline-flex',
                       alignItems: 'center',
-                      gap: '5px',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-                      transition: 'all 0.15s ease'
+                      gap: '4px',
+                      fontSize: '11px',
+                      fontWeight: 800,
+                      color: isExpanded ? '#1d4ed8' : '#475569',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                     }}
-                    title="Click to cycle plan variant (General, With Ads, Ads Free...)"
+                    title={isExpanded ? 'Collapse screens' : 'Expand screens'}
                   >
-                    <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
-                    <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
-                  </div>
-                )}
+                    <span>{freeCount > 0 ? `${totalScreens - freeCount}/${totalScreens}` : 'Full'}</span>
+                    {isExpanded ? <ChevronUp size={13} strokeWidth={2.5} /> : <ChevronDown size={13} strokeWidth={2.5} />}
+                  </button>
 
-                <div className="card-top-right">
                   <div
                     className="badge-navy-pill"
                     onClick={() => handleCycleValidity(item)}
@@ -752,8 +806,11 @@ export default function InventoryScreen({
                 </div>
               </div>
 
-              {/* Password Row with reveal toggle & Copy button */}
-              <div className="credential-row">
+              {/* Collapsible Details: Password, PINs, Screens Grid, and Action Buttons (Section 9) */}
+              {(isExpanded || isEditing) && (
+                <>
+                  {/* Password Row with reveal toggle & Copy button */}
+                  <div className="credential-row">
                 <div className="credential-label-badge purple">
                   Password
                 </div>
@@ -1060,8 +1117,10 @@ export default function InventoryScreen({
                   </button>
                 )}
               </div>
-            </div>
-          );
+            </>
+          )}
+        </div>
+      );
         })
       )}
 
@@ -1713,15 +1772,15 @@ export default function InventoryScreen({
           <div
             style={{
               background: '#ffffff',
-              borderRadius: '16px',
-              maxWidth: '540px',
+              borderRadius: '14px',
+              maxWidth: '420px',
               width: '100%',
-              maxHeight: '92vh',
+              maxHeight: '86vh',
               display: 'flex',
               flexDirection: 'column',
-              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
+              boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.3)',
               overflow: 'hidden',
-              animation: 'modalSlideUp 0.2s ease-out'
+              animation: 'modalSlideUp 0.18s ease-out'
             }}
           >
             {/* Header */}
@@ -1730,33 +1789,33 @@ export default function InventoryScreen({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '14px 18px',
+                padding: '9px 12px',
                 borderBottom: '1px solid #e2e8f0',
                 background: '#f8fafc',
                 flexShrink: 0
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <div
                   style={{
-                    width: '34px',
-                    height: '34px',
-                    borderRadius: '10px',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '8px',
                     background: '#fef9c3',
-                    border: '1.5px solid #facc15',
+                    border: '1px solid #facc15',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: '#ca8a04'
                   }}
                 >
-                  <Star size={18} fill="#ca8a04" />
+                  <Star size={15} fill="#ca8a04" />
                 </div>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>
+                  <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>
                     Seller Details
                   </h3>
-                  <div style={{ fontSize: '11px', fontWeight: 600, color: '#64748b' }}>
+                  <div style={{ fontSize: '10px', fontWeight: 600, color: '#64748b' }}>
                     Account #{sellerModalItem.recordNumber || '01'} &bull; {currentBrand?.displayName || 'OTT'}
                   </div>
                 </div>
@@ -1767,9 +1826,9 @@ export default function InventoryScreen({
                 onClick={() => setSellerModalItem(null)}
                 disabled={sellerSaving}
                 style={{
-                  width: '32px',
-                  height: '32px',
-                  borderRadius: '8px',
+                  width: '28px',
+                  height: '28px',
+                  borderRadius: '6px',
                   border: '1px solid #e2e8f0',
                   background: '#ffffff',
                   color: '#64748b',
@@ -1779,18 +1838,18 @@ export default function InventoryScreen({
                   cursor: 'pointer'
                 }}
               >
-                <X size={16} />
+                <X size={15} />
               </button>
             </div>
 
             {/* Scrollable Form Body */}
             <div
               style={{
-                padding: '16px 18px',
+                padding: '8px 10px',
                 overflowY: 'auto',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '14px',
+                gap: '7px',
                 flex: '1 1 auto',
                 minHeight: 0,
                 WebkitOverflowScrolling: 'touch',
@@ -1803,9 +1862,9 @@ export default function InventoryScreen({
                   style={{
                     background: '#fef2f2',
                     border: '1px solid #fecaca',
-                    borderRadius: '8px',
-                    padding: '8px 12px',
-                    fontSize: '12px',
+                    borderRadius: '6px',
+                    padding: '6px 10px',
+                    fontSize: '11px',
                     color: '#b91c1c',
                     fontWeight: 600
                   }}
@@ -1815,13 +1874,13 @@ export default function InventoryScreen({
               )}
 
               {/* A. Purchase Information */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ color: '#2563eb' }}>&bull;</span> A. Purchase Information
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '6px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Purchase Date
                     </label>
                     <input
@@ -1830,17 +1889,18 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, purchaseDate: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Seller Name
                     </label>
                     <input
@@ -1850,17 +1910,18 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, sellerName: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Phone Number
                     </label>
                     <input
@@ -1870,10 +1931,11 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, sellerNumber: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
@@ -1883,13 +1945,13 @@ export default function InventoryScreen({
               </div>
 
               {/* B. Reference Information */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ color: '#0284c7' }}>&bull;</span> B. Reference Information
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(110px, 1fr))', gap: '6px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Date
                     </label>
                     <input
@@ -1898,17 +1960,18 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, referenceDate: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Reference
                     </label>
                     <input
@@ -1918,17 +1981,18 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, reference: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Link
                     </label>
                     <input
@@ -1938,10 +2002,11 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, link: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
@@ -1951,13 +2016,13 @@ export default function InventoryScreen({
               </div>
 
               {/* C. Payment / Card Information */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ color: '#059669' }}>&bull;</span> C. Payment / Card Information
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(115px, 1fr))', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(95px, 1fr))', gap: '6px' }}>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Card
                     </label>
                     <input
@@ -1967,17 +2032,18 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, card: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Expiry
                     </label>
                     <input
@@ -1988,18 +2054,19 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, expiry: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
-                      CVV (Secure)
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
+                      CVV
                     </label>
                     <input
                       type="password"
@@ -2009,10 +2076,11 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, cvv: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box',
                         letterSpacing: '2px'
@@ -2020,7 +2088,7 @@ export default function InventoryScreen({
                     />
                   </div>
                   <div>
-                    <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                    <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                       Amount (₹)
                     </label>
                     <input
@@ -2030,10 +2098,11 @@ export default function InventoryScreen({
                       onChange={(e) => setSellerFormData({ ...sellerFormData, amount: e.target.value })}
                       style={{
                         width: '100%',
-                        padding: '7px 10px',
-                        fontSize: '12px',
-                        border: '1.5px solid #cbd5e1',
-                        borderRadius: '8px',
+                        padding: '4px 6px',
+                        fontSize: '11px',
+                        height: '28px',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '6px',
                         background: '#ffffff',
                         boxSizing: 'border-box'
                       }}
@@ -2043,25 +2112,25 @@ export default function InventoryScreen({
               </div>
 
               {/* D. Additional Information */}
-              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '12px' }}>
-                <div style={{ fontSize: '12px', fontWeight: 900, color: '#1e293b', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px 8px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 900, color: '#1e293b', marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   <span style={{ color: '#7c3aed' }}>&bull;</span> D. Additional Information
                 </div>
                 <div>
-                  <label style={{ display: 'block', fontSize: '11px', fontWeight: 700, color: '#475569', marginBottom: '4px' }}>
+                  <label style={{ display: 'block', fontSize: '10px', fontWeight: 700, color: '#475569', marginBottom: '2px' }}>
                     Note Box
                   </label>
                   <textarea
-                    rows={3}
+                    rows={2}
                     placeholder="Enter seller contact details, replacement policies, or account notes..."
                     value={sellerFormData.notes}
                     onChange={(e) => setSellerFormData({ ...sellerFormData, notes: e.target.value })}
                     style={{
                       width: '100%',
-                      padding: '8px 10px',
-                      fontSize: '12px',
-                      border: '1.5px solid #cbd5e1',
-                      borderRadius: '8px',
+                      padding: '4px 6px',
+                      fontSize: '11px',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '6px',
                       background: '#ffffff',
                       boxSizing: 'border-box',
                       fontFamily: 'inherit',
@@ -2078,7 +2147,7 @@ export default function InventoryScreen({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                padding: '12px 18px',
+                padding: '8px 12px',
                 borderTop: '1px solid #e2e8f0',
                 background: '#f8fafc',
                 gap: '8px'
@@ -2091,13 +2160,13 @@ export default function InventoryScreen({
                     onClick={handleClearSellerDetails}
                     disabled={sellerSaving}
                     style={{
-                      padding: '8px 12px',
-                      fontSize: '12px',
+                      padding: '5px 10px',
+                      fontSize: '11px',
                       fontWeight: 700,
                       color: '#dc2626',
                       background: '#fee2e2',
                       border: '1px solid #fecaca',
-                      borderRadius: '8px',
+                      borderRadius: '6px',
                       cursor: 'pointer'
                     }}
                   >
@@ -2106,19 +2175,19 @@ export default function InventoryScreen({
                 )}
               </div>
 
-              <div style={{ display: 'flex', gap: '8px' }}>
+              <div style={{ display: 'flex', gap: '6px' }}>
                 <button
                   type="button"
                   onClick={() => setSellerModalItem(null)}
                   disabled={sellerSaving}
                   style={{
-                    padding: '8px 16px',
-                    fontSize: '13px',
+                    padding: '6px 12px',
+                    fontSize: '11.5px',
                     fontWeight: 700,
                     color: '#475569',
                     background: '#ffffff',
-                    border: '1.5px solid #cbd5e1',
-                    borderRadius: '8px',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
                     cursor: 'pointer'
                   }}
                 >
@@ -2130,10 +2199,10 @@ export default function InventoryScreen({
                   disabled={sellerSaving}
                   className="glossy-btn glossy-btn-blue"
                   style={{
-                    padding: '8px 18px',
-                    fontSize: '13px',
+                    padding: '6px 14px',
+                    fontSize: '11.5px',
                     fontWeight: 800,
-                    borderRadius: '8px'
+                    borderRadius: '6px'
                   }}
                 >
                   {sellerSaving ? 'Saving...' : 'Save Details'}

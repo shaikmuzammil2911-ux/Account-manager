@@ -8,6 +8,7 @@ export default function DatePickerModal({
   initialStartDate,
   initialEndDate,
   onSelectDate,
+  onSelect,
   onSelectRange,
   onClearDate,
   onClose
@@ -72,11 +73,13 @@ export default function DatePickerModal({
   const handleApply = () => {
     if (mode === 'single') {
       if (onSelectDate) onSelectDate(singleDate);
+      else if (onSelect) onSelect(singleDate);
     } else {
       if (rangeStart && rangeEnd && onSelectRange) {
         onSelectRange(rangeStart, rangeEnd);
-      } else if (rangeStart && onSelectDate) {
-        onSelectDate(rangeStart);
+      } else if (rangeStart) {
+        if (onSelectDate) onSelectDate(rangeStart);
+        else if (onSelect) onSelect(rangeStart);
       }
     }
     onClose();
@@ -85,6 +88,7 @@ export default function DatePickerModal({
   const handleResetToday = () => {
     const todayStr = formatDate(new Date());
     if (onSelectDate) onSelectDate(todayStr);
+    else if (onSelect) onSelect(todayStr);
     onClose();
   };
 
