@@ -16,9 +16,16 @@ import {
 } from '../utils/googleSheets';
 import { uploadToCloudinary } from '../utils/cloudinary';
 
-const STORAGE_KEY = 'accounts_manager_app_data_v5';
+const STORAGE_KEY = 'accounts_manager_app_data_v6';
 const WEBHOOK_STORAGE_KEY = 'accounts_manager_google_sheet_webhook_v1';
 const SHEET_ID_STORAGE_KEY = 'accounts_manager_spreadsheet_id_v1';
+
+// One-time purge of stale demo client caches
+if (typeof localStorage !== 'undefined') {
+  ['accounts_manager_app_data_v5', 'accounts_manager_app_data_v4', 'accounts_manager_app_data_v3', 'accounts_manager_app_data_v2', 'accounts_manager_app_data_v1', 'accounts_manager_data_v1'].forEach(k => {
+    try { localStorage.removeItem(k); } catch (e) {}
+  });
+}
 
 // Initialize or load from LocalStorage as primary persistent client store
 function getLocalData() {
@@ -26,7 +33,10 @@ function getLocalData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.brands && parsed.brands.length > 0) {
+      if (parsed && typeof parsed === 'object') {
+        parsed.brands = Array.isArray(parsed.brands) ? parsed.brands : [];
+        parsed.inventory = Array.isArray(parsed.inventory) ? parsed.inventory : [];
+        parsed.sales = Array.isArray(parsed.sales) ? parsed.sales : [];
         // Ensure Google Sheet config defaults are intact
         parsed.settings = parsed.settings || {};
         parsed.settings.googleSheetConfig = parsed.settings.googleSheetConfig || {};

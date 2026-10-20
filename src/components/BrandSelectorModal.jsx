@@ -1,7 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import OttLogo from './OttLogos';
-import { getClientInitialData } from '../utils/initialData';
 
 export default function BrandSelectorModal({
   isOpen,
@@ -11,8 +10,7 @@ export default function BrandSelectorModal({
   onClose
 }) {
   if (!isOpen) return null;
-
-  const allBrands = (brands && brands.length > 0) ? brands : getClientInitialData().brands;
+  const allBrands = brands || [];
 
   return (
     <div
@@ -105,6 +103,12 @@ export default function BrandSelectorModal({
               </span>
             </button>
           ))}
+
+          {allBrands.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '24px 12px', color: '#64748b', fontSize: '13px', fontWeight: 600 }}>
+              No custom OTT brands added yet.
+            </div>
+          )}
         </div>
       </div>
     </div>

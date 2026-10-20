@@ -80,22 +80,34 @@ export default function OttBrandsGrid({
       )}
 
       {/* 3 Columns × Rows Grid matching image copy 13.png & 46.png */}
-      <div className="ott-brands-grid-3col">
-        {brands.map((brand) => (
-          <button
-            key={brand.id}
-            type="button"
-            className="ott-brand-tile"
-            onClick={() => onSelectBrand(brand)}
-            id={`ott-brand-${brand.id}`}
-          >
-            <OttLogo brandId={brand.id} name={brand.displayName || brand.name} size={68} />
-            <span className="ott-brand-tile-name">
-              {brand.displayName || brand.name}
-            </span>
-          </button>
-        ))}
-      </div>
+      {brands.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '40px 16px', background: '#ffffff', borderRadius: '16px', border: '1.5px dashed #cbd5e1', marginTop: '16px' }}>
+          <Layers size={36} color="#94a3b8" style={{ margin: '0 auto 10px auto', display: 'block' }} />
+          <p style={{ fontWeight: 800, color: '#334155', fontSize: '15px', marginBottom: '6px' }}>
+            No OTT Brands Created Yet
+          </p>
+          <p style={{ fontSize: '13px', color: '#64748b' }}>
+            Go to the Brands management section to add your first OTT streaming brand.
+          </p>
+        </div>
+      ) : (
+        <div className="ott-brands-grid-3col">
+          {brands.map((brand) => (
+            <button
+              key={brand.id}
+              type="button"
+              className="ott-brand-tile"
+              onClick={() => onSelectBrand(brand)}
+              id={`ott-brand-${brand.id}`}
+            >
+              <OttLogo brandId={brand.id} name={brand.displayName || brand.name} size={68} />
+              <span className="ott-brand-tile-name">
+                {brand.displayName || brand.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Bottom Nav Bar matching image copy 13.png */}
       {onSelectTab && (

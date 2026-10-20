@@ -162,10 +162,10 @@ export default function HomeScreen({
 
     if (isToday) {
       if (soldCount === 0 && (stats?.totalSales || 0) > 0) {
-        soldCount = allSales.length > 0 ? allSales.length : (stats?.totalSales || 6);
+        soldCount = allSales.length > 0 ? allSales.length : (stats?.totalSales || 0);
       }
-      if (amountSum === 0) {
-        amountSum = stats?.totalRevenue || 1250;
+      if (amountSum === 0 && (stats?.totalRevenue || 0) > 0) {
+        amountSum = stats?.totalRevenue || 0;
       }
     }
 
@@ -188,15 +188,15 @@ export default function HomeScreen({
       freeScreens = calcEmpty;
     }
 
-    const totalSales = stats?.totalSales ?? allSales.length ?? 6;
+    const totalSales = stats?.totalSales ?? allSales.length ?? 0;
 
     return {
       dateSoldAC: soldCount,
       dateAmount: amountSum,
-      expiredCount: expired || (stats?.expiredCount ?? 5),
-      todayCount: todayExp || (stats?.todayCount ?? 0),
-      totalSalesCount: totalSales || 6,
-      freeScreensCount: freeScreens || 28
+      expiredCount: expired,
+      todayCount: todayExp,
+      totalSalesCount: totalSales,
+      freeScreensCount: freeScreens
     };
   }, [activeDate, allSales, inventoryList, stats]);
 
