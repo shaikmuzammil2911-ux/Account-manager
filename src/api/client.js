@@ -102,6 +102,155 @@ function getActiveUser() {
   }
 }
 
+function maskCredential(val) {
+  if (!val || !String(val).trim()) return 'None';
+  const str = String(val).trim();
+  if (str.length <= 2) return '••';
+  return '••••••';
+}
+
+function mapSupabaseBrand(b) {
+  if (!b) return null;
+  const pricesObj = (b.prices && typeof b.prices === 'object') ? b.prices : {};
+  const logo = pricesObj._logo || b.logo || '';
+  const showScreenPin = pricesObj._showScreenPin !== undefined ? pricesObj._showScreenPin : (b.show_screen_pin !== false);
+  const showDeviceName = pricesObj._showDeviceName !== undefined ? pricesObj._showDeviceName : (b.show_device_name !== false);
+  const pricingPlans = pricesObj._pricingPlans || b.pricing_plans || null;
+
+  const cleanPrices = {};
+  Object.entries(pricesObj).forEach(([k, v]) => {
+    if (!k.startsWith('_')) cleanPrices[k] = v;
+  });
+
+  return {
+    id: b.id,
+    name: b.name || b.display_name || '',
+    displayName: b.display_name || b.name || '',
+    logo,
+    color: b.color || '#3b82f6',
+    bgDark: b.bg_dark || '#0f172a',
+    badgeColor: b.badge_color || b.color || '#3b82f6',
+    screensCount: Number(b.screens_count) || 5,
+    showScreenPin: showScreenPin !== false,
+    showDeviceName: showDeviceName !== false,
+    plans: Array.isArray(b.plans) && b.plans.length > 0 ? b.plans : (Object.keys(cleanPrices).length > 0 ? Object.keys(cleanPrices) : ['01 Month']),
+    prices: Object.keys(cleanPrices).length > 0 ? cleanPrices : { '01 Month': 199 },
+    pricingPlans,
+    ownerEmail: b.owner_email || '',
+    isActive: b.is_active !== false,
+    createdAt: b.created_at,
+    updatedAt: b.updated_at
+  };
+}
+
+function mapBrandToSupabase(brandData, userEmail) {
+  const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  const pricesPayload = { ...(brandData.prices || {}) };
+  if (brandData.logo) pricesPayload._logo = brandData.logo;
+  if (brandData.showScreenPin !== undefined) pricesPayload._showScreenPin = brandData.showScreenPin;
+  if (brandData.showDeviceName !== undefined) pricesPayload._showDeviceName = brandData.showDeviceName;
+  if (brandData.pricingPlans) pricesPayload._pricingPlans = brandData.pricingPlans;
+
+  const generalPlans = Array.isArray(brandData.plans) && brandData.plans.length > 0
+    ? brandData.plans
+    : Object.keys(brandData.prices || { '01 Month': 199 });
+
+  return {
+    id,
+    name: (brandData.name || brandData.displayName || '').trim(),
+    display_name: (brandData.displayName || brandData.name || '').trim(),
+    color: brandData.color || '#3b82f6',
+    bg_dark: brandData.bgDark || '#0f172a',
+    badge_color: brandData.badgeColor || brandData.color || '#3b82f6',
+    screens_count: Number(brandData.screensCount) || 5,
+    plans: generalPlans,
+    prices: pricesPayload,
+    owner_email: brandData.ownerEmail || userEmail || 'Fixyourmobiles10@gmail.com',
+    is_active: brandData.isActive !== false,
+    updated_at: new Date().toISOString()
+  };
+}
+
+function mapSupabaseAccount(a) {
+  if (!a) return null;
+  let parsedNotes = {};
+  if (a.notes) {
+    try {
+      parsedNotes = typeof a.notes === 'string' ? JSON.parse(a.notes) : a.notes;
+    } catch (e) {
+      parsedNotes = { userNotes: a.notes };
+    }
+  }
+
+  const rawScreens = a.screens || [];
+  const sortedScreens = [...rawScreens].sort((x, y) => (x.screen_number || 0) - (y.screen_number || 0));
+  const screens = sortedScreens.map((s, idx) => ({
+    id: s.id,
+    screenNumber: s.screen_number || (idx + 1),
+    name: s.name || `Screen-${String(s.screen_number || idx + 1).padStart(2, '0')}`,
+    pin: s.pin !== undefined ? String(s.pin) : '1234',
+    deviceType: s.device_type || 'tv',
+    status: s.status || 'empty',
+    saleId: s.sale_id || null,
+    customerName: s.customer_name || null,
+    customerNumber: s.customer_number || null,
+    expiryDate: s.expiry_date || null,
+    activationDate: s.activation_date || null,
+    notificationSent: Boolean(s.notification_sent),
+    lastNotifiedAt: s.last_notified_at || null
+  }));
+
+  return {
+    id: a.id,
+    brandId: a.brand_id,
+    recordNumber: a.record_number || '01',
+    email: a.email || '',
+    password: a.password || '',
+    validity: a.validity || '12 Months',
+    planVariant: a.plan_variant || 'General',
+    passwordChangeRequired: Boolean(a.password_change_required),
+    isLocked: a.is_locked !== false,
+    isSelected: Boolean(a.is_selected),
+    isDeleted: Boolean(a.is_deleted),
+    ownerEmail: a.owner_email || '',
+    userId: a.owner_user_id || '',
+    defaultExpanded: Boolean(parsedNotes.defaultExpanded),
+    credentialHistory: Array.isArray(parsedNotes.credentialHistory) ? parsedNotes.credentialHistory : [],
+    sellerDetails: parsedNotes.sellerDetails || null,
+    notes: parsedNotes.userNotes || (typeof parsedNotes === 'string' ? parsedNotes : ''),
+    createdAt: a.created_at,
+    updatedAt: a.updated_at,
+    screens
+  };
+}
+
+function mapAccountToSupabase(item, userEmail, userId) {
+  const notesObj = {
+    defaultExpanded: Boolean(item.defaultExpanded),
+    credentialHistory: Array.isArray(item.credentialHistory) ? item.credentialHistory : [],
+    sellerDetails: item.sellerDetails || null,
+    userNotes: typeof item.notes === 'string' ? item.notes : (item.notes?.userNotes || '')
+  };
+
+  return {
+    id: item.id,
+    brand_id: item.brandId,
+    record_number: item.recordNumber || '01',
+    email: (item.email || '').trim(),
+    password: (item.password || '').trim(),
+    validity: item.validity || '12 Months',
+    plan_variant: item.planVariant || 'General',
+    password_change_required: Boolean(item.passwordChangeRequired),
+    notes: JSON.stringify(notesObj),
+    is_locked: item.isLocked !== false,
+    is_selected: Boolean(item.isSelected),
+    is_deleted: Boolean(item.isDeleted),
+    owner_email: item.ownerEmail || userEmail || 'Fixyourmobiles10@gmail.com',
+    owner_user_id: item.userId || userId || null,
+    updated_at: new Date().toISOString()
+  };
+}
+
 export const api = {
   // BRANDS
   async getBrands(userEmail) {
@@ -110,23 +259,35 @@ export const api = {
     const effectiveRole = activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
     const effectiveUserId = activeUser?.id;
 
+    // 1. Authoritative fetch directly from Supabase brands table
     try {
-      const q = new URLSearchParams();
-      if (effectiveEmail) q.set('userEmail', effectiveEmail);
-      if (effectiveRole) q.set('userRole', effectiveRole);
-      if (effectiveUserId) q.set('userId', effectiveUserId);
+      const { data: sbBrandsData, error: sbErr } = await supabase
+        .from('brands')
+        .select('*')
+        .order('created_at', { ascending: true });
 
-      const res = await fetch(`/api/brands?${q.toString()}`);
-      if (res.ok) {
-        const serverBrands = await res.json();
-        if (serverBrands && Array.isArray(serverBrands)) {
-          return serverBrands;
+      if (!sbErr && Array.isArray(sbBrandsData)) {
+        const mapped = sbBrandsData.map(mapSupabaseBrand).filter(Boolean);
+        // Synchronize local cache
+        const local = getLocalData();
+        local.brands = mapped;
+        saveLocalData(local);
+
+        let filtered = [...mapped];
+        const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+        if (!isAdmin) {
+          filtered = filtered.filter(b => {
+            const owner = (b.ownerEmail || '').trim().toLowerCase();
+            return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && b.userId === effectiveUserId);
+          });
         }
+        return filtered;
       }
     } catch (e) {
-      // offline fallback
+      console.warn('[Supabase getBrands warning]:', e.message);
     }
 
+    // 2. Offline fallback from local storage
     const local = getLocalData();
     let brands = [...(local.brands || [])];
     const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
@@ -174,32 +335,58 @@ export const api = {
     const effectiveRole = params.userRole || activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
     const effectiveUserId = params.userId || activeUser?.id;
 
-    try {
-      const query = new URLSearchParams();
-      if (params.brandId) query.set('brandId', params.brandId);
-      if (params.selectedOnly) query.set('selectedOnly', 'true');
-      if (params.emptyOnly) query.set('emptyOnly', 'true');
-      if (params.validity) query.set('validity', params.validity);
-      if (params.sortOrder) query.set('sortOrder', params.sortOrder);
-      if (effectiveEmail) query.set('userEmail', effectiveEmail);
-      if (effectiveRole) query.set('userRole', effectiveRole);
-      if (effectiveUserId) query.set('userId', effectiveUserId);
+    let items = [];
+    let fetchedFromSupabase = false;
 
-      const res = await fetch(`/api/inventory?${query.toString()}`);
-      if (res.ok) {
-        const serverItems = await res.json();
-        if (serverItems && Array.isArray(serverItems)) {
-          return serverItems;
-        }
+    // 1. Fetch directly from Supabase accounts joined with screens
+    try {
+      let query = supabase.from('accounts').select('*, screens(*)').eq('is_deleted', false);
+      if (params.brandId && params.brandId !== 'all') {
+        const targetBrandId = params.brandId.includes('__shared__') ? params.brandId.split('__shared__')[0] : params.brandId;
+        query = query.or(`brand_id.eq.${params.brandId},brand_id.eq.${targetBrandId}`);
+      }
+      if (params.selectedOnly) {
+        query = query.eq('is_selected', true);
+      }
+      if (params.validity && params.validity !== 'all') {
+        query = query.eq('validity', params.validity);
+      }
+
+      const { data, error } = await query;
+      if (!error && Array.isArray(data)) {
+        items = data.map(mapSupabaseAccount).filter(Boolean);
+        fetchedFromSupabase = true;
+
+        // Synchronize local cache for these accounts
+        const local = getLocalData();
+        const existingInv = local.inventory || [];
+        const invMap = new Map(existingInv.map(i => [i.id, i]));
+        items.forEach(it => {
+          invMap.set(it.id, { ...(invMap.get(it.id) || {}), ...it });
+        });
+        local.inventory = Array.from(invMap.values());
+        saveLocalData(local);
       }
     } catch (e) {
-      // network error
+      console.warn('[Supabase getInventory error]:', e.message);
     }
 
-    const local = getLocalData();
-    let items = (local.inventory || []).filter(i => !i.isDeleted);
-    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+    // 2. Offline fallback if Supabase was unreachable
+    if (!fetchedFromSupabase) {
+      const local = getLocalData();
+      items = (local.inventory || []).filter(i => !i.isDeleted);
+      if (params.brandId && params.brandId !== 'all') {
+        items = items.filter(i => i.brandId === params.brandId);
+      }
+      if (params.selectedOnly) {
+        items = items.filter(i => i.isSelected);
+      }
+      if (params.validity && params.validity !== 'all') {
+        items = items.filter(i => i.validity === params.validity);
+      }
+    }
 
+    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
     if (!isAdmin) {
       items = items.filter(item => {
         const owner = (item.ownerEmail || '').trim().toLowerCase();
@@ -207,12 +394,6 @@ export const api = {
       });
     }
 
-    if (params.brandId && params.brandId !== 'all') {
-      items = items.filter(i => i.brandId === params.brandId);
-    }
-    if (params.selectedOnly) {
-      items = items.filter(i => i.isSelected);
-    }
     if (params.emptyOnly) {
       items = items.filter(i => i.screens && i.screens.some(s => s.status === 'empty'));
 
@@ -243,10 +424,6 @@ export const api = {
       return items;
     }
 
-    if (params.validity && params.validity !== 'all') {
-      items = items.filter(i => i.validity === params.validity);
-    }
-
     if (params.sortOrder === 'bottom') {
       items.sort((a, b) => parseInt(b.recordNumber || '0') - parseInt(a.recordNumber || '0'));
     } else {
@@ -258,82 +435,94 @@ export const api = {
 
   async createInventory(data) {
     const activeUser = getActiveUser();
-    const payload = {
-      ...data,
-      ownerEmail: data.ownerEmail || activeUser?.email || 'fixyourmobiles10@gmail.com',
-      userId: data.userId || activeUser?.id || ''
-    };
-
-    let newItem = null;
-    try {
-      const res = await fetch('/api/inventory', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (res.ok) {
-        newItem = await res.json();
-      }
-    } catch (e) {
-      // offline fallback
-    }
-
-    if (!newItem) {
-      const local = getLocalData();
-      const brandId = data.brandId || 'netflix';
-      const brandItems = (local.inventory || []).filter(i => i.brandId === brandId && !i.isDeleted);
-      const nextNum = String(brandItems.length + 1).padStart(2, '0');
-      const screensCount = Math.min(10, Math.max(1, parseInt(data.screensCount || data.screens?.length || 5, 10)));
-
-      let screens = [];
-      if (data.screens && Array.isArray(data.screens) && data.screens.length > 0) {
-        screens = data.screens.map((s, idx) => ({
-          screenNumber: idx + 1,
-          name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
-          pin: String(s.pin || `${(idx + 1) * 1111}`.slice(0, 4)),
-          deviceType: s.deviceType || 'tv',
-          status: s.status || 'empty',
-          saleId: s.saleId || null,
-          expiryDate: s.expiryDate || null
-        }));
-      } else {
-        screens = Array.from({ length: screensCount }, (_, i) => ({
-          screenNumber: i + 1,
-          name: `Screen-${String(i + 1).padStart(2, '0')}`,
-          pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
-          deviceType: 'tv',
-          status: 'empty',
-          saleId: null,
-          expiryDate: null
-        }));
-      }
-
-      newItem = {
-        id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        brandId,
-        recordNumber: data.recordNumber || nextNum,
-        email: data.email?.trim() || '',
-        password: data.password?.trim() || '',
-        validity: data.validity || '01 Month',
-        planVariant: data.planVariant || 'General',
-        notes: data.notes || '',
-        ownerEmail: payload.ownerEmail,
-        userId: payload.userId,
-        sellerDetails: data.sellerDetails || null,
-        isLocked: data.isLocked ?? true,
-        isSelected: data.isSelected ?? false,
-        isDeleted: false,
-        createdAt: new Date().toISOString().slice(0, 10),
-        updatedAt: new Date().toISOString().slice(0, 10),
-        screens
-      };
-    }
+    const ownerEmail = data.ownerEmail || activeUser?.email || 'Fixyourmobiles10@gmail.com';
+    const userId = data.userId || activeUser?.id || '';
 
     const local = getLocalData();
+    const brandId = data.brandId || 'netflix';
+    const brandItems = (local.inventory || []).filter(i => i.brandId === brandId && !i.isDeleted);
+    const nextNum = data.recordNumber || String(brandItems.length + 1).padStart(2, '0');
+    const screensCount = Math.min(10, Math.max(1, parseInt(data.screensCount || data.screens?.length || 5, 10)));
+
+    let screens = [];
+    if (data.screens && Array.isArray(data.screens) && data.screens.length > 0) {
+      screens = data.screens.map((s, idx) => ({
+        screenNumber: idx + 1,
+        name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
+        pin: s.pin !== undefined ? String(s.pin) : `${(idx + 1) * 1111}`.slice(0, 4),
+        deviceType: s.deviceType || 'tv',
+        status: s.status || (s.expiryDate ? 'occupied' : 'empty'),
+        saleId: s.saleId || null,
+        expiryDate: s.expiryDate || null
+      }));
+    } else {
+      screens = Array.from({ length: screensCount }, (_, i) => ({
+        screenNumber: i + 1,
+        name: `Screen-${String(i + 1).padStart(2, '0')}`,
+        pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
+        deviceType: 'tv',
+        status: 'empty',
+        saleId: null,
+        expiryDate: null
+      }));
+    }
+
+    const newItem = {
+      id: data.id || `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      brandId,
+      recordNumber: nextNum,
+      email: data.email?.trim() || '',
+      password: data.password?.trim() || '',
+      validity: data.validity || '12 Months',
+      planVariant: data.planVariant || 'General',
+      notes: typeof data.notes === 'string' ? data.notes : '',
+      ownerEmail,
+      userId,
+      defaultExpanded: Boolean(data.defaultExpanded),
+      credentialHistory: [],
+      sellerDetails: data.sellerDetails || null,
+      isLocked: data.isLocked ?? true,
+      isSelected: data.isSelected ?? false,
+      isDeleted: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      screens
+    };
+
+    // 1. Direct Supabase Insert
+    try {
+      const sbAccount = mapAccountToSupabase(newItem, ownerEmail, userId);
+      const { error: accErr } = await supabase.from('accounts').upsert(sbAccount);
+      if (accErr) {
+        console.error('[Supabase createAccount error]:', accErr);
+        throw new Error(accErr.message || 'Failed to save account in database');
+      }
+
+      const sbScreens = screens.map(s => ({
+        account_id: newItem.id,
+        screen_number: s.screenNumber,
+        name: s.name,
+        pin: String(s.pin),
+        device_type: s.deviceType || 'tv',
+        status: s.status || 'empty',
+        sale_id: s.saleId || null,
+        expiry_date: s.expiryDate || null
+      }));
+      await supabase.from('screens').delete().eq('account_id', newItem.id);
+      const { error: scrErr } = await supabase.from('screens').insert(sbScreens);
+      if (scrErr) {
+        console.warn('[Supabase createScreens warning]:', scrErr);
+      }
+    } catch (e) {
+      console.warn('[Supabase createInventory warning]:', e.message);
+      if (e.message && e.message !== 'Failed to fetch') throw e;
+    }
+
+    // 2. Synchronize Local Storage
     local.inventory = [...(local.inventory || []), newItem];
     saveLocalData(local);
 
-    // Real-time sync newly created account to Google Sheet
+    // 3. Sync to Google Sheets
     this.getSheetsConfig().then(cfg => {
       const b = (local.brands || []).find(x => x.id === newItem.brandId);
       syncAccountToGoogleSheet(cfg?.webhookUrl || '', newItem, b?.displayName || b?.name).catch(e => {
@@ -345,89 +534,193 @@ export const api = {
   },
 
   async updateInventory(id, updates) {
+    const activeUser = getActiveUser();
     const local = getLocalData();
-    const idx = (local.inventory || []).findIndex(i => i.id === id);
-    let updated = null;
-    if (idx !== -1) {
-      const existing = local.inventory[idx];
-      let mergedScreens = existing.screens;
-      if (updates.screens && Array.isArray(updates.screens)) {
-        mergedScreens = updates.screens.map((newS, sIdx) => {
-          const oldS = existing.screens ? existing.screens[sIdx] : null;
-          return {
-            screenNumber: sIdx + 1,
-            name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
-            pin: newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234'),
-            deviceType: newS.deviceType || oldS?.deviceType || 'tv',
-            status: newS.status || oldS?.status || 'empty',
-            saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
-            expiryDate: newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null)
-          };
-        });
-      }
-      updated = {
-        ...existing,
-        ...updates,
-        screens: mergedScreens,
-        updatedAt: Date.now(),
-        id
-      };
-      local.inventory[idx] = updated;
+    let idx = (local.inventory || []).findIndex(i => i.id === id);
+    let existing = idx !== -1 ? local.inventory[idx] : null;
 
-      // Cascade updates to matching sales records so Expiry and Recent Sales are 100% accurate!
-      if (local.sales && Array.isArray(local.sales)) {
-        local.sales = local.sales.map(sale => {
-          const isLinked = (sale.inventoryId && sale.inventoryId === id) ||
-            (sale.accountEmail && existing.email && String(sale.accountEmail).trim().toLowerCase() === String(existing.email).trim().toLowerCase());
-
-          if (!isLinked) return sale;
-
-          const sNum = parseInt(String(sale.screenNumber || '').replace(/\D/g, '') || '1', 10);
-          const updatedScreen = mergedScreens ? mergedScreens.find(s => s.screenNumber === sNum) : null;
-
-          return {
-            ...sale,
-            accountEmail: updated.email || sale.accountEmail,
-            accountPassword: updated.password || sale.accountPassword,
-            screenPin: updatedScreen?.pin !== undefined ? updatedScreen.pin : sale.screenPin,
-            expiryDate: (updatedScreen && updatedScreen.expiryDate) ? updatedScreen.expiryDate : sale.expiryDate,
-            deviceName: (updatedScreen && updatedScreen.deviceType) ? (updatedScreen.deviceType === 'tv' ? 'Android TV' : updatedScreen.deviceType.toUpperCase()) : sale.deviceName,
-            validity: updated.validity || sale.validity,
-            updatedAt: new Date().toISOString()
-          };
-        });
-      }
-
-      saveLocalData(local);
-
-      // Real-time sync account to Google Sheet
-      this.getSheetsConfig().then(cfg => {
-        const b = (local.brands || []).find(x => x.id === updated.brandId);
-        syncAccountToGoogleSheet(cfg?.webhookUrl || '', updated, b?.displayName || b?.name).catch(e => {
-          console.warn('GSheet inventory sync warning:', e);
-        });
-      }).catch(() => {});
+    // If not in local cache, fetch from Supabase
+    if (!existing) {
+      try {
+        const { data } = await supabase.from('accounts').select('*, screens(*)').eq('id', id).single();
+        if (data) {
+          existing = mapSupabaseAccount(data);
+        }
+      } catch (e) {}
     }
 
+    if (!existing) {
+      throw new Error(`Account not found for id: ${id}`);
+    }
+
+    // Merge screens cleanly
+    let mergedScreens = existing.screens || [];
+    if (updates.screens && Array.isArray(updates.screens)) {
+      mergedScreens = updates.screens.map((newS, sIdx) => {
+        const oldS = existing.screens ? existing.screens[sIdx] : null;
+        const pin = newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234');
+        const expiryDate = newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null);
+        const status = newS.status !== undefined ? newS.status : (expiryDate ? 'occupied' : (oldS?.status || 'empty'));
+        return {
+          screenNumber: sIdx + 1,
+          name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
+          pin,
+          deviceType: newS.deviceType || oldS?.deviceType || 'tv',
+          status,
+          saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
+          expiryDate
+        };
+      });
+    }
+
+    // Record Credential Change Audit History
+    let existingHistory = Array.isArray(existing.credentialHistory) ? [...existing.credentialHistory] : [];
+    const nowIso = new Date().toISOString();
+
+    // Check password change
+    if (updates.password !== undefined && updates.password !== existing.password) {
+      existingHistory.unshift({
+        id: `hist_${Date.now()}_pw`,
+        field: 'Password',
+        previous: maskCredential(existing.password),
+        current: maskCredential(updates.password),
+        timestamp: nowIso,
+        accountId: existing.email || existing.recordNumber || id,
+        status: 'Confirmed'
+      });
+    }
+
+    // Check screen PIN or Expiry changes
+    if (updates.screens && Array.isArray(updates.screens)) {
+      updates.screens.forEach((newS, sIdx) => {
+        const oldS = existing.screens ? existing.screens[sIdx] : null;
+        const screenLabel = `Screen-${sIdx + 1}`;
+        if (newS.pin !== undefined && oldS && String(newS.pin) !== String(oldS.pin)) {
+          existingHistory.unshift({
+            id: `hist_${Date.now()}_pin_${sIdx}`,
+            field: `${screenLabel} PIN`,
+            previous: maskCredential(oldS.pin),
+            current: maskCredential(newS.pin),
+            timestamp: nowIso,
+            accountId: existing.email || existing.recordNumber || id,
+            status: 'Confirmed'
+          });
+        }
+        if (newS.expiryDate !== undefined && oldS && newS.expiryDate !== oldS.expiryDate) {
+          existingHistory.unshift({
+            id: `hist_${Date.now()}_exp_${sIdx}`,
+            field: `${screenLabel} Expiry`,
+            previous: oldS.expiryDate || 'None',
+            current: newS.expiryDate || 'None',
+            timestamp: nowIso,
+            accountId: existing.email || existing.recordNumber || id,
+            status: 'Confirmed'
+          });
+        }
+      });
+    }
+
+    if (existingHistory.length > 50) existingHistory = existingHistory.slice(0, 50);
+
+    const updated = {
+      ...existing,
+      ...updates,
+      screens: mergedScreens,
+      credentialHistory: existingHistory,
+      defaultExpanded: updates.defaultExpanded !== undefined ? Boolean(updates.defaultExpanded) : Boolean(existing.defaultExpanded),
+      sellerDetails: updates.sellerDetails !== undefined ? updates.sellerDetails : existing.sellerDetails,
+      updatedAt: nowIso,
+      id
+    };
+
+    // 1. Direct Supabase Persistence
     try {
-      fetch(`/api/inventory/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      }).catch(() => {});
-    } catch (e) {}
+      const sbAccount = mapAccountToSupabase(updated, activeUser?.email, activeUser?.id);
+      const { error: accErr } = await supabase.from('accounts').update(sbAccount).eq('id', id);
+      if (accErr) {
+        console.error('[Supabase updateAccount error]:', accErr);
+        throw new Error(accErr.message || 'Failed to update account in database');
+      }
+
+      if (updates.screens && Array.isArray(updates.screens)) {
+        await supabase.from('screens').delete().eq('account_id', id);
+        const sbScreens = mergedScreens.map(s => ({
+          account_id: id,
+          screen_number: s.screenNumber,
+          name: s.name,
+          pin: String(s.pin),
+          device_type: s.deviceType || 'tv',
+          status: s.status || 'empty',
+          sale_id: s.saleId || null,
+          expiry_date: s.expiryDate || null
+        }));
+        const { error: scrErr } = await supabase.from('screens').insert(sbScreens);
+        if (scrErr) {
+          console.warn('[Supabase updateScreens error]:', scrErr);
+        }
+      }
+    } catch (e) {
+      console.warn('[Supabase updateInventory warning]:', e.message);
+      if (e.message && e.message !== 'Failed to fetch') throw e;
+    }
+
+    // 2. Cascade updates to matching sales records
+    if (local.sales && Array.isArray(local.sales)) {
+      local.sales = local.sales.map(sale => {
+        const isLinked = (sale.inventoryId && sale.inventoryId === id) ||
+          (sale.accountEmail && existing.email && String(sale.accountEmail).trim().toLowerCase() === String(existing.email).trim().toLowerCase());
+
+        if (!isLinked) return sale;
+
+        const sNum = parseInt(String(sale.screenNumber || '').replace(/\D/g, '') || '1', 10);
+        const updatedScreen = mergedScreens ? mergedScreens.find(s => s.screenNumber === sNum) : null;
+
+        return {
+          ...sale,
+          accountEmail: updated.email || sale.accountEmail,
+          accountPassword: updated.password || sale.accountPassword,
+          screenPin: updatedScreen?.pin !== undefined ? updatedScreen.pin : sale.screenPin,
+          expiryDate: (updatedScreen && updatedScreen.expiryDate) ? updatedScreen.expiryDate : sale.expiryDate,
+          deviceName: (updatedScreen && updatedScreen.deviceType) ? (updatedScreen.deviceType === 'tv' ? 'Android TV' : updatedScreen.deviceType.toUpperCase()) : sale.deviceName,
+          validity: updated.validity || sale.validity,
+          updatedAt: new Date().toISOString()
+        };
+      });
+    }
+
+    // 3. Local Storage Sync
+    if (idx !== -1) {
+      local.inventory[idx] = updated;
+    } else {
+      local.inventory.push(updated);
+    }
+    saveLocalData(local);
+
+    // 4. Sync to Google Sheets
+    this.getSheetsConfig().then(cfg => {
+      const b = (local.brands || []).find(x => x.id === updated.brandId);
+      syncAccountToGoogleSheet(cfg?.webhookUrl || '', updated, b?.displayName || b?.name).catch(e => {
+        console.warn('GSheet inventory sync warning:', e);
+      });
+    }).catch(() => {});
 
     return updated;
   },
 
   async deleteInventory(id) {
+    try {
+      await supabase.from('screens').delete().eq('account_id', id);
+      await supabase.from('accounts').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', id);
+    } catch (e) {
+      console.warn('[Supabase deleteInventory warning]:', e.message);
+    }
+
     const local = getLocalData();
     const item = (local.inventory || []).find(i => i.id === id);
     if (item) {
       item.isDeleted = true;
       saveLocalData(local);
 
-      // Real-time sync account deletion to Google Sheet
       this.getSheetsConfig().then(cfg => {
         const b = (local.brands || []).find(x => x.id === item.brandId);
         syncAccountDeleteToGoogleSheet(cfg?.webhookUrl || '', item, b?.displayName || b?.name).catch(e => {
@@ -435,9 +728,6 @@ export const api = {
         });
       }).catch(() => {});
     }
-    try {
-      fetch(`/api/inventory/${id}`, { method: 'DELETE' }).catch(() => {});
-    } catch (e) {}
     return true;
   },
 
@@ -446,12 +736,14 @@ export const api = {
     const item = (local.inventory || []).find(i => i.id === id);
     if (!item) return null;
     item.isLocked = !item.isLocked;
-    item.updatedAt = Date.now();
+    item.updatedAt = new Date().toISOString();
     saveLocalData(local);
 
     try {
-      fetch(`/api/inventory/${id}/lock`, { method: 'POST' }).catch(() => {});
-    } catch (e) {}
+      await supabase.from('accounts').update({ is_locked: item.isLocked, updated_at: item.updatedAt }).eq('id', id);
+    } catch (e) {
+      console.warn('[Supabase toggleInventoryLock warning]:', e.message);
+    }
 
     return item;
   },
@@ -464,8 +756,10 @@ export const api = {
     saveLocalData(local);
 
     try {
-      fetch(`/api/inventory/${id}/select`, { method: 'POST' }).catch(() => {});
-    } catch (e) {}
+      await supabase.from('accounts').update({ is_selected: item.isSelected, updated_at: new Date().toISOString() }).eq('id', id);
+    } catch (e) {
+      console.warn('[Supabase toggleInventorySelect warning]:', e.message);
+    }
 
     return item;
   },
@@ -1597,62 +1891,93 @@ export const api = {
 
   // BRANDS CRUD
   async createBrand(brandData) {
+    const activeUser = getActiveUser();
+    const effectiveEmail = activeUser?.email || 'Fixyourmobiles10@gmail.com';
+    const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const sbPayload = mapBrandToSupabase({ ...brandData, id }, effectiveEmail);
+
+    let createdBrand = null;
+    try {
+      const { data, error } = await supabase.from('brands').upsert(sbPayload).select();
+      if (error) {
+        console.error('[Supabase createBrand error]:', error);
+        throw new Error(error.message || 'Failed to create brand in database');
+      }
+      if (data && data[0]) {
+        createdBrand = mapSupabaseBrand(data[0]);
+      }
+    } catch (e) {
+      console.warn('[Supabase createBrand error]:', e.message);
+      if (e.message && e.message !== 'Failed to fetch') throw e;
+    }
+
+    if (!createdBrand) {
+      createdBrand = mapSupabaseBrand(sbPayload);
+    }
+
     const local = getLocalData();
     if (!local.brands) local.brands = [];
-    const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
-    const newBrand = { ...brandData, id, updatedAt: Date.now() };
     const existingIdx = local.brands.findIndex(b => b.id === id);
     if (existingIdx !== -1) {
-      local.brands[existingIdx] = newBrand;
+      local.brands[existingIdx] = createdBrand;
     } else {
-      local.brands.push(newBrand);
+      local.brands.push(createdBrand);
     }
     saveLocalData(local);
 
-    try {
-      fetch('/api/brands', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(brandData)
-      }).catch(() => {});
-    } catch (e) {}
-
-    return newBrand;
+    return createdBrand;
   },
 
   async updateBrand(id, updates) {
+    const activeUser = getActiveUser();
+    const effectiveEmail = activeUser?.email || 'Fixyourmobiles10@gmail.com';
+
     const local = getLocalData();
-    const idx = (local.brands || []).findIndex(b => b.id === id);
-    let updated = null;
-    if (idx !== -1) {
-      updated = {
-        ...local.brands[idx],
-        ...updates,
-        updatedAt: Date.now()
-      };
-      local.brands[idx] = updated;
-      saveLocalData(local);
-    }
+    const existing = (local.brands || []).find(b => b.id === id) || {};
+    const merged = { ...existing, ...updates, id };
+
+    const sbPayload = mapBrandToSupabase(merged, effectiveEmail);
+    let updatedBrand = null;
 
     try {
-      fetch(`/api/brands/${id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      }).catch(() => {});
-    } catch (e) {}
+      const { data, error } = await supabase.from('brands').update(sbPayload).eq('id', id).select();
+      if (error) {
+        console.error('[Supabase updateBrand error]:', error);
+        throw new Error(error.message || 'Failed to update brand in database');
+      }
+      if (data && data[0]) {
+        updatedBrand = mapSupabaseBrand(data[0]);
+      }
+    } catch (e) {
+      console.warn('[Supabase updateBrand warning]:', e.message);
+      if (e.message && e.message !== 'Failed to fetch') throw e;
+    }
 
-    return updated;
+    if (!updatedBrand) {
+      updatedBrand = mapSupabaseBrand(sbPayload);
+    }
+
+    const idx = (local.brands || []).findIndex(b => b.id === id);
+    if (idx !== -1) {
+      local.brands[idx] = updatedBrand;
+    } else {
+      local.brands.push(updatedBrand);
+    }
+    saveLocalData(local);
+
+    return updatedBrand;
   },
 
   async deleteBrand(id) {
+    try {
+      await supabase.from('brands').delete().eq('id', id);
+    } catch (e) {
+      console.warn('[Supabase deleteBrand warning]:', e.message);
+    }
+
     const local = getLocalData();
     local.brands = (local.brands || []).filter(b => b.id !== id);
     saveLocalData(local);
-
-    try {
-      fetch(`/api/brands/${id}`, { method: 'DELETE' }).catch(() => {});
-    } catch (e) {}
 
     return true;
   },

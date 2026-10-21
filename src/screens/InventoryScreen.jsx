@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import DatePickerModal from '../components/DatePickerModal';
+import AccountStarDetailsModal from '../components/AccountStarDetailsModal';
 import { getExpiryStatus } from '../utils/dateUtils';
 import { exportInventoryToExcel } from '../utils/excelExport';
 
@@ -24,6 +25,7 @@ export default function InventoryScreen({
   const [loading, setLoading] = useState(false);
   const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
   const [userDetailsModal, setUserDetailsModal] = useState(null); // { name, number, sold, plan, activation, expiry, amount, device, refName, refNumber }
+  const [starModalItem, setStarModalItem] = useState(null);
 
   const handleOpenSoldScreenDetails = async (item, screen, sIdx) => {
     try {
@@ -283,9 +285,24 @@ export default function InventoryScreen({
     }
   };
 
-  const handleToggleLock = (item) => {
+  const handleToggleLock = async (item) => {
     const isCurrentlyEditing = !!editingCards[item.id];
     if (isCurrentlyEditing) {
+      // If there are unsaved edits in progress, auto-save before locking so changes are NEVER lost
+      const editState = editingCards[item.id];
+      const hasEmailChange = editState.email !== undefined && editState.email !== item.email;
+      const hasPwChange = editState.password !== undefined && editState.password !== item.password;
+      const hasValidityChange = editState.validity !== undefined && editState.validity !== item.validity;
+      const hasPlanChange = editState.planVariant !== undefined && editState.planVariant !== item.planVariant;
+      const hasPinChange = editState.pins && editState.pins.some((p, idx) => p !== (item.screens?.[idx]?.pin || '1234'));
+      const hasDateChange = editState.dates && Object.keys(editState.dates).length > 0;
+      const hasDeviceChange = editState.deviceTypes && Object.keys(editState.deviceTypes).length > 0;
+
+      if (hasEmailChange || hasPwChange || hasValidityChange || hasPlanChange || hasPinChange || hasDateChange || hasDeviceChange) {
+        await handleSaveCard(item);
+        return;
+      }
+
       setEditingCards(prev => {
         const copy = { ...prev };
         delete copy[item.id];
@@ -306,6 +323,23 @@ export default function InventoryScreen({
         }
       }));
       showToast('Card unlocked for editing (ID, Password, PINs, Dates, Devices, Validity, Plan)', 'info');
+    }
+  };
+
+  const handleToggleDefaultExpanded = async (item) => {
+    const nextVal = !item.defaultExpanded;
+    try {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, defaultExpanded: nextVal } : i));
+      setExpandedAccounts(prev => ({ ...prev, [item.id]: nextVal }));
+
+      const res = await api.updateInventory(item.id, { defaultExpanded: nextVal });
+      if (res) {
+        setItems(prev => prev.map(i => i.id === item.id ? res : i));
+      }
+      showToast(`Account #${item.recordNumber}: Default expansion set to ${nextVal ? 'ON (Expanded)' : 'OFF (Compact)'}`, 'success');
+    } catch (err) {
+      showToast('Failed to update default expansion: ' + err.message, 'error');
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, defaultExpanded: !nextVal } : i));
     }
   };
 
@@ -673,7 +707,9 @@ export default function InventoryScreen({
           const freeCount = (item.screens || []).filter(s => s.status === 'empty').length;
           const totalScreens = item.screens?.length || 5;
 
-          const isExpanded = expandedAccounts[item.id] !== undefined ? expandedAccounts[item.id] : isEditing;
+          const isExpanded = expandedAccounts[item.id] !== undefined
+            ? expandedAccounts[item.id]
+            : (Boolean(item.defaultExpanded) || isEditing);
 
           return (
             <div key={item.id} className="inventory-card" id={`inventory-card-${item.recordNumber}`}>
@@ -738,6 +774,37 @@ export default function InventoryScreen({
                 </div>
 
                 <div className="card-top-right">
+                  {/* Default Expansion ON/OFF Toggle per Account (Feature One & Two) */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleDefaultExpanded(item);
+                    }}
+                    style={{
+                      background: item.defaultExpanded ? '#dcfce7' : '#f8fafc',
+                      border: `1.5px solid ${item.defaultExpanded ? '#86efac' : '#cbd5e1'}`,
+                      color: item.defaultExpanded ? '#15803d' : '#64748b',
+                      borderRadius: '8px',
+                      padding: '3px 7px',
+                      fontSize: '10.5px',
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '3px',
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                      transition: 'all 0.15s ease'
+                    }}
+                    title={`Default view when opening page. Currently: ${item.defaultExpanded ? 'ON (Expanded)' : 'OFF (Compact)'}. Click to toggle.`}
+                    id={`account-${item.recordNumber}-default-toggle`}
+                  >
+                    <span>Default:</span>
+                    <strong style={{ color: item.defaultExpanded ? '#166534' : '#475569' }}>
+                      {item.defaultExpanded ? 'ON' : 'OFF'}
+                    </strong>
+                  </button>
+
                   {/* Expand / Collapse Control Button (Section 9) */}
                   <button
                     type="button"
@@ -951,7 +1018,7 @@ export default function InventoryScreen({
                 })}
               </div>
 
-              {/* Status / Expiry Boxes Row below Screens (Bigger boxes & clickable per requirement) */}
+              {/* Status / Expiry Boxes Row below Screens (Click to set/edit date) */}
               <div className="screens-grid-row" style={{ marginTop: '6px' }}>
                 {(item.screens || []).map((screen, sIdx) => {
                   const currentExpDate = isEditing
@@ -959,7 +1026,7 @@ export default function InventoryScreen({
                     : screen.expiryDate;
                   const isEmpty = isEditing
                     ? (!currentExpDate || !String(currentExpDate).trim())
-                    : (screen.status === 'empty');
+                    : (screen.status === 'empty' && !currentExpDate);
 
                   const statusObj = getExpiryStatus(currentExpDate);
                   const isExpiredOrCritical = statusObj.status === 'expired' || statusObj.status === 'today' || statusObj.status === 'critical';
@@ -969,27 +1036,12 @@ export default function InventoryScreen({
                     <div
                       key={sIdx}
                       onClick={() => {
-                        if (isEditing) {
-                          // Allow editing expiry date for this screen
-                          setScreenDateModal({
-                            itemId: item.id,
-                            screenIndex: sIdx,
-                            currentDate: currentExpDate || ''
-                          });
-                        } else if (isEmpty && onNavigateToSaleWithSlot) {
-                          onNavigateToSaleWithSlot({
-                            brandId: currentBrand.id,
-                            email: item.email,
-                            password: item.password,
-                            screenName: screen.name || `Screen-${sIdx + 1}`,
-                            pin: screen.pin,
-                            validity: item.validity,
-                            inventoryId: item.id
-                          });
-                        } else if (!isEmpty) {
-                          // Show User Details Short Popup as requested in image copy 70.png!
-                          handleOpenSoldScreenDetails(item, screen, sIdx);
-                        }
+                        // Directly open DatePickerModal so user can set, edit, or clear expiry date for this screen
+                        setScreenDateModal({
+                          itemId: item.id,
+                          screenIndex: sIdx,
+                          currentDate: currentExpDate || ''
+                        });
                       }}
                       style={{
                         height: '34px',
@@ -1014,7 +1066,7 @@ export default function InventoryScreen({
                         whiteSpace: 'nowrap',
                         lineHeight: 1
                       }}
-                      title={isEditing ? 'Click to change or clear expiry date' : (isEmpty ? 'Click to sell this screen' : `Expires: ${currentExpDate || 'Active'} (${statusObj.label})`)}
+                      title={currentExpDate ? `Expires: ${currentExpDate}. Click to change date.` : `Screen-${sIdx + 1}: Click to set expiry date`}
                     >
                       {isEmpty ? '+' : (currentExpDate || 'Active')}
                     </div>
@@ -1049,17 +1101,17 @@ export default function InventoryScreen({
                   </span>
                 </button>
 
-                {/* 2. Star Button (Seller Details) */}
+                {/* 2. Star Button (Account Details & Change History Modal - Feature Four) */}
                 <button
                   type="button"
-                  onClick={() => handleOpenSellerDetails(item)}
+                  onClick={() => setStarModalItem(item)}
                   style={{
                     width: '42px',
                     height: '40px',
                     minWidth: '42px',
                     borderRadius: '10px',
-                    background: item.sellerDetails ? '#fefce8' : '#ffffff',
-                    border: item.sellerDetails ? '1.5px solid #eab308' : '1.5px solid #cbd5e1',
+                    background: (item.sellerDetails || (item.credentialHistory && item.credentialHistory.length > 0)) ? '#fefce8' : '#ffffff',
+                    border: (item.sellerDetails || (item.credentialHistory && item.credentialHistory.length > 0)) ? '1.5px solid #eab308' : '1.5px solid #cbd5e1',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
@@ -1068,12 +1120,12 @@ export default function InventoryScreen({
                     transition: 'all 0.15s ease',
                     padding: 0
                   }}
-                  title={item.sellerDetails ? `Seller Details: ${item.sellerDetails.sellerName || 'Saved'}` : 'Add Seller Details'}
+                  title="Account Details & Change History"
                 >
                   <Star
                     size={18}
                     color="#eab308"
-                    fill={item.sellerDetails ? '#eab308' : '#fde047'}
+                    fill={(item.sellerDetails || (item.credentialHistory && item.credentialHistory.length > 0)) ? '#eab308' : '#fde047'}
                   />
                 </button>
 
@@ -1474,7 +1526,7 @@ export default function InventoryScreen({
               setScreenDateModal(null);
               showToast(`Screen ${screenIndex + 1} expiry set to ${selectedDate} (Click Save)`, 'info');
             } else {
-              // Direct immediate save to local DB and Google Sheets!
+              // Direct immediate save to Supabase!
               try {
                 const targetItem = items.find(i => i.id === itemId);
                 if (targetItem) {
@@ -1494,6 +1546,44 @@ export default function InventoryScreen({
                 }
               } catch (err) {
                 showToast('Failed to save date: ' + err.message, 'error');
+              }
+              setScreenDateModal(null);
+            }
+          }}
+          onClearDate={async () => {
+            const { itemId, screenIndex } = screenDateModal;
+            if (editingCards[itemId]) {
+              setEditingCards(prev => {
+                const currentEdit = prev[itemId] || {};
+                const currentDates = [...(currentEdit.dates || [])];
+                currentDates[screenIndex] = '';
+                return {
+                  ...prev,
+                  [itemId]: { ...currentEdit, dates: currentDates }
+                };
+              });
+              setScreenDateModal(null);
+              showToast(`Screen ${screenIndex + 1} expiry cleared`, 'info');
+            } else {
+              try {
+                const targetItem = items.find(i => i.id === itemId);
+                if (targetItem) {
+                  const updatedScreens = (targetItem.screens || []).map((s, idx) => {
+                    if (idx === screenIndex) {
+                      return {
+                        ...s,
+                        expiryDate: null,
+                        status: 'empty'
+                      };
+                    }
+                    return s;
+                  });
+                  const res = await api.updateInventory(itemId, { screens: updatedScreens });
+                  setItems(prev => prev.map(i => i.id === itemId ? res : i));
+                  showToast(`Screen ${screenIndex + 1} expiry cleared & reset to empty`, 'success');
+                }
+              } catch (err) {
+                showToast('Failed to clear date: ' + err.message, 'error');
               }
               setScreenDateModal(null);
             }
@@ -2211,6 +2301,21 @@ export default function InventoryScreen({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Account Star Details & Credential Change History Modal */}
+      {starModalItem && (
+        <AccountStarDetailsModal
+          isOpen={true}
+          item={starModalItem}
+          brand={currentBrand}
+          onClose={() => setStarModalItem(null)}
+          onOpenSellerDetails={(itemToEdit) => {
+            setStarModalItem(null);
+            handleOpenSellerDetails(itemToEdit);
+          }}
+          onToggleDefaultExpanded={handleToggleDefaultExpanded}
+        />
       )}
     </div>
   );

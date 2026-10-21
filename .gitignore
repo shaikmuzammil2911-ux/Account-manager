@@ -7,4 +7,5 @@ dist-ssr
 .DS_Store
 image copy *.png
 image*.png
+*.mp4
 scratch/
