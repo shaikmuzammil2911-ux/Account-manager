@@ -169,12 +169,18 @@ export default function HomeScreen({
       }
     }
 
-    // Secondary metrics
-    let expired = stats?.expiredCount ?? 0;
-    let todayExp = stats?.todayCount ?? 0;
-    if (allSales.length > 0) {
-      expired = allSales.filter(s => getDaysDiff(s.expiryDate, activeDate) < 0).length;
-      todayExp = allSales.filter(s => getDaysDiff(s.expiryDate, activeDate) === 0).length;
+    // Secondary metrics: strictly computed from actual active records
+    let expired = 0;
+    let todayExp = 0;
+    if (allSales && allSales.length > 0) {
+      expired = allSales.filter(s => {
+        const diff = getDaysDiff(s.expiryDate, activeDate);
+        return diff !== null && typeof diff === 'number' && !isNaN(diff) && diff < 0;
+      }).length;
+      todayExp = allSales.filter(s => {
+        const diff = getDaysDiff(s.expiryDate, activeDate);
+        return diff !== null && typeof diff === 'number' && !isNaN(diff) && diff === 0;
+      }).length;
     }
 
     let freeScreens = stats?.emptyScreens ?? 0;
@@ -188,7 +194,7 @@ export default function HomeScreen({
       freeScreens = calcEmpty;
     }
 
-    const totalSales = stats?.totalSales ?? allSales.length ?? 0;
+    const totalSales = (allSales && allSales.length > 0) ? allSales.length : (stats?.totalSales ?? 0);
 
     return {
       dateSoldAC: soldCount,
@@ -204,142 +210,6 @@ export default function HomeScreen({
     <div className="screen-content" style={{ paddingBottom: '110px', paddingTop: '14px' }}>
       {/* Container with max-width for Desktop SaaS perfection */}
       <div style={{ maxWidth: '640px', margin: '0 auto', width: '100%' }}>
-
-        {/* 1. Google Sheets Connection Status Card (Matching Section 3 & image copy 113.png) */}
-        {isLinked ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: '#ffffff',
-            border: '1.5px solid #bbf7d0',
-            borderRadius: '14px',
-            padding: '9px 14px',
-            marginBottom: '14px',
-            boxShadow: '0 2px 6px rgba(22, 163, 74, 0.08)'
-          }}>
-            <div
-              onClick={() => setShowConnectModal(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-              title="Click to view connection settings"
-            >
-              <span style={{
-                display: 'inline-block',
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                backgroundColor: isSyncing ? '#f59e0b' : '#16a34a',
-                boxShadow: isSyncing ? '0 0 8px #f59e0b' : '0 0 8px #22c55e'
-              }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', lineHeight: 1.2 }}>
-                  Google Sheets: Live Linked
-                </span>
-                <span style={{ fontSize: '11px', color: '#16a34a', fontWeight: 600 }}>
-                  Connected {lastSyncTimeFormatted ? `· Last synced at ${lastSyncTimeFormatted}` : '· Real-time sync'}
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <button
-                type="button"
-                onClick={handleManualSync}
-                disabled={isSyncing}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '5px',
-                  background: '#f0fdf4',
-                  border: '1.5px solid #86efac',
-                  color: '#15803d',
-                  fontSize: '11.5px',
-                  fontWeight: 800,
-                  padding: '6px 11px',
-                  borderRadius: '9px',
-                  cursor: isSyncing ? 'wait' : 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-                id="home-sync-now-btn"
-                title="Sync records with Google Sheets now"
-              >
-                <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} />
-                <span>{isSyncing ? 'Syncing...' : 'Sync Now'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowConnectModal(true)}
-                style={{
-                  background: '#f8fafc',
-                  border: '1.5px solid #e2e8f0',
-                  color: '#475569',
-                  padding: '6px 8px',
-                  borderRadius: '9px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-                title="Google Sheets Settings"
-                id="home-sheets-settings-btn"
-              >
-                <Settings size={14} />
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            background: '#fffbeb',
-            border: '1.5px solid #fde68a',
-            borderRadius: '14px',
-            padding: '9px 14px',
-            marginBottom: '14px',
-            boxShadow: '0 2px 6px rgba(217, 119, 6, 0.08)'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{
-                display: 'inline-block',
-                width: '10px',
-                height: '10px',
-                borderRadius: '50%',
-                backgroundColor: '#d97706',
-                boxShadow: '0 0 6px #f59e0b'
-              }} />
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#92400e', lineHeight: 1.2 }}>
-                  Google Sheets: Setup Required
-                </span>
-                <span style={{ fontSize: '11px', color: '#b45309' }}>
-                  Connect your spreadsheet to enable live sync
-                </span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowConnectModal(true)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
-                background: '#ffffff',
-                border: '1.5px solid #f59e0b',
-                color: '#b45309',
-                fontSize: '11.5px',
-                fontWeight: 800,
-                padding: '6px 12px',
-                borderRadius: '9px',
-                cursor: 'pointer'
-              }}
-              id="home-connect-sheet-btn"
-            >
-              <Link size={12} /> Connect Sheet
-            </button>
-          </div>
-        )}
 
         {/* 2. Date Navigator Bar (Matching Section 4 & image copy 113.png) */}
         <div style={{

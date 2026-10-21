@@ -16,13 +16,13 @@ import {
 } from '../utils/googleSheets';
 import { uploadToCloudinary } from '../utils/cloudinary';
 
-const STORAGE_KEY = 'accounts_manager_app_data_v6';
+const STORAGE_KEY = 'accounts_manager_app_data_v7';
 const WEBHOOK_STORAGE_KEY = 'accounts_manager_google_sheet_webhook_v1';
 const SHEET_ID_STORAGE_KEY = 'accounts_manager_spreadsheet_id_v1';
 
 // One-time purge of stale demo client caches
 if (typeof localStorage !== 'undefined') {
-  ['accounts_manager_app_data_v5', 'accounts_manager_app_data_v4', 'accounts_manager_app_data_v3', 'accounts_manager_app_data_v2', 'accounts_manager_app_data_v1', 'accounts_manager_data_v1'].forEach(k => {
+  ['accounts_manager_app_data_v6', 'accounts_manager_app_data_v5', 'accounts_manager_app_data_v4', 'accounts_manager_app_data_v3', 'accounts_manager_app_data_v2', 'accounts_manager_app_data_v1', 'accounts_manager_data_v1'].forEach(k => {
     try { localStorage.removeItem(k); } catch (e) {}
   });
 }
