@@ -109,6 +109,11 @@ CREATE TABLE IF NOT EXISTS public.accounts (
 );
 
 -- Idempotent column additions for existing installations
+ALTER TABLE public.brands ADD COLUMN IF NOT EXISTS screens_count INT NOT NULL DEFAULT 5;
+ALTER TABLE public.brands ADD COLUMN IF NOT EXISTS show_screen_pin BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.brands ADD COLUMN IF NOT EXISTS show_device_name BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.brands ADD COLUMN IF NOT EXISTS group_screens_by_5 BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS record_number TEXT NOT NULL DEFAULT '01';
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS password_change_required BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS plan_variant TEXT NOT NULL DEFAULT 'General';
 
@@ -131,6 +136,7 @@ CREATE TABLE IF NOT EXISTS public.screens (
   name TEXT NOT NULL,
   pin TEXT NOT NULL DEFAULT '1234',
   device_type TEXT NOT NULL DEFAULT 'tv',
+  device_name TEXT,
   status TEXT NOT NULL DEFAULT 'empty' CHECK (status IN ('empty', 'occupied')),
   sale_id TEXT,
   customer_name TEXT,
@@ -145,6 +151,7 @@ CREATE TABLE IF NOT EXISTS public.screens (
 );
 
 -- Idempotent column additions
+ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS device_name TEXT;
 ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS customer_name TEXT;
 ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS customer_number TEXT;
 ALTER TABLE public.screens ADD COLUMN IF NOT EXISTS activation_date TEXT;

@@ -347,12 +347,56 @@ export const db = {
       items = items.filter(item => item.validity === validity);
     }
 
-    // Sort: default 'top' (recordNumber ascending), 'bottom' (recordNumber descending)
-    if (sortOrder === 'bottom') {
-      items.sort((a, b) => parseInt(b.recordNumber || '0') - parseInt(a.recordNumber || '0'));
-    } else {
-      items.sort((a, b) => parseInt(a.recordNumber || '0') - parseInt(b.recordNumber || '0'));
+    // Reconcile missing screens if brand has higher screensCount
+    if (brandId && brandId !== 'all') {
+      const targetBrandId = brandId.includes('__shared__') ? brandId.split('__shared__')[0] : brandId;
+      const brandObj = (data.brands || []).find(b => b.id === targetBrandId || b.id === brandId);
+      const targetCount = Number(brandObj?.screensCount) || 0;
+      if (targetCount > 0) {
+        items.forEach(item => {
+          const curScreens = item.screens || [];
+          const existingSet = new Set(curScreens.map(s => Number(s.screenNumber)));
+          for (let sNum = 1; sNum <= targetCount; sNum++) {
+            if (!existingSet.has(sNum)) {
+              curScreens.push({
+                screenNumber: sNum,
+                name: `Screen-${String(sNum).padStart(2, '0')}`,
+                pin: '1234',
+                deviceType: 'tv',
+                deviceName: '',
+                status: 'empty',
+                saleId: null,
+                expiryDate: null
+              });
+            }
+          }
+          item.screens = curScreens.sort((a, b) => a.screenNumber - b.screenNumber);
+        });
+      }
     }
+
+    // Sort: numeric recordNumber with stable secondary order (createdAt then id)
+    items.sort((a, b) => {
+      const numA = parseInt(a?.recordNumber, 10);
+      const numB = parseInt(b?.recordNumber, 10);
+      const hasNumA = !isNaN(numA) && numA > 0;
+      const hasNumB = !isNaN(numB) && numB > 0;
+      if (hasNumA && !hasNumB) return -1;
+      if (!hasNumA && hasNumB) return 1;
+      if (!hasNumA && !hasNumB) {
+        const timeA = new Date(a?.createdAt || 0).getTime();
+        const timeB = new Date(b?.createdAt || 0).getTime();
+        if (timeA !== timeB) return timeA - timeB;
+        return String(a?.id || '').localeCompare(String(b?.id || ''));
+      }
+      if (numA !== numB) {
+        return sortOrder === 'bottom' ? numB - numA : numA - numB;
+      }
+      const timeA = new Date(a?.createdAt || 0).getTime();
+      const timeB = new Date(b?.createdAt || 0).getTime();
+      if (timeA !== timeB) return timeA - timeB;
+      return String(a?.id || '').localeCompare(String(b?.id || ''));
+    });
 
     return items;
   },
@@ -366,10 +410,21 @@ export const db = {
     const data = readDb();
     const brandId = itemData.brandId || 'netflix';
     const brandItems = data.inventory.filter(i => i.brandId === brandId);
-    const nextNum = String(brandItems.length + 1).padStart(2, '0');
+    
+    let nextNum = itemData.recordNumber;
+    if (!nextNum) {
+      const highestNum = brandItems.reduce((max, item) => {
+        const n = parseInt(item.recordNumber, 10);
+        return (!isNaN(n) && n > max) ? n : max;
+      }, 0);
+      nextNum = String(highestNum + 1).padStart(2, '0');
+    } else {
+      const p = parseInt(nextNum, 10);
+      nextNum = (!isNaN(p) && p > 0) ? String(p).padStart(2, '0') : String(brandItems.length + 1).padStart(2, '0');
+    }
 
     const brand = data.brands.find(b => b.id === brandId);
-    const screensCount = Math.min(10, Math.max(1, parseInt(itemData.screensCount || itemData.screens?.length || brand?.screensCount || 5, 10)));
+    const screensCount = Math.max(1, parseInt(itemData.screensCount || itemData.screens?.length || brand?.screensCount || 5, 10));
 
     let screens = [];
     if (itemData.screens && Array.isArray(itemData.screens) && itemData.screens.length > 0) {
@@ -378,6 +433,7 @@ export const db = {
         name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
         pin: String(s.pin || itemData.pin || `${(idx + 1) * 1111}`.slice(0, 4)),
         deviceType: s.deviceType || 'tv',
+        deviceName: s.deviceName ? String(s.deviceName).trim() : '',
         status: s.status || 'empty',
         saleId: s.saleId || null,
         expiryDate: s.expiryDate || null
@@ -388,6 +444,7 @@ export const db = {
         name: `Screen-${String(i + 1).padStart(2, '0')}`,
         pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
         deviceType: 'tv',
+        deviceName: '',
         status: 'empty',
         saleId: null,
         expiryDate: null
@@ -397,7 +454,7 @@ export const db = {
     const newItem = {
       id: `inv_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       brandId,
-      recordNumber: itemData.recordNumber || nextNum,
+      recordNumber: nextNum,
       email: itemData.email ? itemData.email.trim() : '',
       password: itemData.password ? itemData.password.trim() : '',
       validity: itemData.validity || '01 Month',
@@ -443,6 +500,7 @@ export const db = {
           name: newScreen.name || oldScreen?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
           pin: newScreen.pin !== undefined ? String(newScreen.pin) : (oldScreen?.pin || '1234'),
           deviceType: newScreen.deviceType || oldScreen?.deviceType || 'tv',
+          deviceName: newScreen.deviceName !== undefined ? String(newScreen.deviceName).trim() : (oldScreen?.deviceName || ''),
           // Preserve existing saleId and occupancy status unless explicitly changed
           status: newScreen.status || oldScreen?.status || 'empty',
           saleId: newScreen.saleId !== undefined ? newScreen.saleId : (oldScreen?.saleId || null),
@@ -451,9 +509,18 @@ export const db = {
       });
     }
 
+    let finalRecordNumber = existing.recordNumber || '01';
+    if (updates.recordNumber !== undefined) {
+      const p = parseInt(updates.recordNumber, 10);
+      if (!isNaN(p) && p > 0) {
+        finalRecordNumber = String(p).padStart(2, '0');
+      }
+    }
+
     data.inventory[idx] = {
       ...existing,
       ...updates,
+      recordNumber: finalRecordNumber,
       screens: mergedScreens,
       updatedAt: new Date().toISOString().slice(0, 10),
       id // preserve immutable ID

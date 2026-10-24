@@ -33,6 +33,7 @@ export default function BrandsManagementScreen({
   const [maxScreenOptions, setMaxScreenOptions] = useState(10);
   const [showScreenPin, setShowScreenPin] = useState(true);
   const [showDeviceName, setShowDeviceName] = useState(true);
+  const [groupScreensBy5, setGroupScreensBy5] = useState(true);
 
   // Active pricing plan tab in modal (e.g. 'general', 'with_ads', etc.)
   const [activePlanTab, setActivePlanTab] = useState('general');
@@ -79,6 +80,7 @@ export default function BrandsManagementScreen({
     setScreensCount(5);
     setShowScreenPin(true);
     setShowDeviceName(true);
+    setGroupScreensBy5(true);
     setActivePlanTab('general');
     setPricingPlans(defaultPricingPlans);
     setShowNewPlanInput(false);
@@ -101,6 +103,7 @@ export default function BrandsManagementScreen({
     setScreensCount(brand.screensCount || 5);
     setShowScreenPin(brand.showScreenPin !== false);
     setShowDeviceName(brand.showDeviceName !== false);
+    setGroupScreensBy5(brand.groupScreensBy5 !== false);
     setActivePlanTab('general');
     setShowNewPlanInput(false);
     setNewPlanName('');
@@ -292,6 +295,7 @@ export default function BrandsManagementScreen({
         screensCount: Number(screensCount) || 5,
         showScreenPin: showScreenPin !== false,
         showDeviceName: showDeviceName !== false,
+        groupScreensBy5: groupScreensBy5 !== false,
         plans: generalPlans.length > 0 ? generalPlans : ['01 Month'],
         prices: Object.keys(generalPrices).length > 0 ? generalPrices : { '01 Month': 199 },
         pricingPlans: formattedPricingPlans
@@ -299,10 +303,14 @@ export default function BrandsManagementScreen({
 
       if (editingBrandId) {
         const updated = await api.updateBrand(editingBrandId, brandPayload);
+        await api.reconcileBrandAccounts(editingBrandId, Number(screensCount) || 5).catch(() => {});
         showToast(`Brand "${name}" updated successfully!`, 'success');
         if (onBrandUpdated) onBrandUpdated(updated || { id: editingBrandId, ...brandPayload });
       } else {
         const created = await api.createBrand(brandPayload);
+        if (created?.id) {
+          await api.reconcileBrandAccounts(created.id, Number(screensCount) || 5).catch(() => {});
+        }
         showToast(`Brand "${name}" created successfully!`, 'success');
         if (onBrandCreated) onBrandCreated(created);
       }
@@ -337,7 +345,7 @@ export default function BrandsManagementScreen({
       setBrands(prev => prev.map(item => item.id === brandId ? { ...item, [settingKey]: nextVal } : item));
 
       const updated = await api.updateBrand(brandId, { [settingKey]: nextVal });
-      const settingLabel = settingKey === 'showScreenPin' ? 'Screen PIN' : 'Device Name';
+      const settingLabel = settingKey === 'showScreenPin' ? 'Screen PIN' : settingKey === 'showDeviceName' ? 'Device Name' : 'Group Screens by 5';
       showToast(`${b.displayName || b.name}: ${settingLabel} turned ${nextVal ? 'ON' : 'OFF'}`, 'success');
       if (onBrandUpdated) onBrandUpdated(updated || { ...b, [settingKey]: nextVal });
     } catch (err) {
@@ -475,6 +483,17 @@ export default function BrandsManagementScreen({
                         }}>
                           Device: {brand.showDeviceName !== false ? 'ON' : 'OFF'}
                         </span>
+                        <span style={{
+                          fontSize: '10px',
+                          background: brand.groupScreensBy5 !== false ? '#ede9fe' : '#f1f5f9',
+                          color: brand.groupScreensBy5 !== false ? '#6d28d9' : '#64748b',
+                          border: `1px solid ${brand.groupScreensBy5 !== false ? '#c4b5fd' : '#cbd5e1'}`,
+                          padding: '1px 6px',
+                          borderRadius: '6px',
+                          fontWeight: 800
+                        }}>
+                          Group by 5: {brand.groupScreensBy5 !== false ? 'ON' : 'OFF'}
+                        </span>
                       </div>
                     </div>
                   </div>
@@ -610,6 +629,36 @@ export default function BrandsManagementScreen({
                       id={`brand-${brand.id}-device-toggle`}
                     >
                       {brand.showDeviceName !== false ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+
+                  {/* Group Screens by 5 Toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155' }}>
+                      Group by 5:
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleBrandSetting(brand.id, 'groupScreensBy5');
+                      }}
+                      style={{
+                        padding: '4px 12px',
+                        borderRadius: '20px',
+                        border: 'none',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        cursor: 'pointer',
+                        background: brand.groupScreensBy5 !== false ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' : '#94a3b8',
+                        color: '#ffffff',
+                        boxShadow: brand.groupScreensBy5 !== false ? '0 2px 6px rgba(139, 92, 246, 0.35)' : 'none',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={`Click to turn Group Screens by 5 ${brand.groupScreensBy5 !== false ? 'OFF' : 'ON'}`}
+                      id={`brand-${brand.id}-group-toggle`}
+                    >
+                      {brand.groupScreensBy5 !== false ? 'ON' : 'OFF'}
                     </button>
                   </div>
                 </div>
@@ -829,10 +878,10 @@ export default function BrandsManagementScreen({
                 </div>
               </div>
 
-              {/* Screen Pin & Device Name Toggles (image copy 108.png & 109.png) */}
+              {/* Screen Pin, Device Name & Group Screens by 5 Toggles */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
                 gap: '10px',
                 background: '#f8fafc',
                 padding: '10px 12px',
@@ -841,20 +890,20 @@ export default function BrandsManagementScreen({
                 marginTop: '2px'
               }}>
                 {/* Screen Pin Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Screen Pin</div>
-                    <div style={{ fontSize: '10.5px', color: '#64748b' }}>Require PIN on card</div>
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>Require PIN</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowScreenPin(!showScreenPin)}
                     style={{
-                      padding: '5px 12px',
+                      padding: '5px 11px',
                       borderRadius: '20px',
                       border: 'none',
                       fontWeight: 900,
-                      fontSize: '11.5px',
+                      fontSize: '11px',
                       cursor: 'pointer',
                       background: showScreenPin ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#e2e8f0',
                       color: showScreenPin ? '#ffffff' : '#64748b',
@@ -866,27 +915,52 @@ export default function BrandsManagementScreen({
                 </div>
 
                 {/* Device Name Toggle */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <div>
                     <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Device Name</div>
-                    <div style={{ fontSize: '10.5px', color: '#64748b' }}>Show Device field</div>
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>Show Device</div>
                   </div>
                   <button
                     type="button"
                     onClick={() => setShowDeviceName(!showDeviceName)}
                     style={{
-                      padding: '5px 12px',
+                      padding: '5px 11px',
                       borderRadius: '20px',
                       border: 'none',
                       fontWeight: 900,
-                      fontSize: '11.5px',
+                      fontSize: '11px',
                       cursor: 'pointer',
-                      background: showDeviceName ? 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)' : '#e2e8f0',
+                      background: showDeviceName ? 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)' : '#e2e8f0',
                       color: showDeviceName ? '#ffffff' : '#64748b',
-                      boxShadow: showDeviceName ? '0 2px 6px rgba(22, 163, 74, 0.3)' : 'none'
+                      boxShadow: showDeviceName ? '0 2px 6px rgba(37, 99, 235, 0.3)' : 'none'
                     }}
                   >
                     {showDeviceName ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+
+                {/* Group Screens by 5 Toggle */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div>
+                    <div style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a' }}>Group by 5</div>
+                    <div style={{ fontSize: '10px', color: '#64748b' }}>Group 5/row</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setGroupScreensBy5(!groupScreensBy5)}
+                    style={{
+                      padding: '5px 11px',
+                      borderRadius: '20px',
+                      border: 'none',
+                      fontWeight: 900,
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      background: groupScreensBy5 ? 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)' : '#e2e8f0',
+                      color: groupScreensBy5 ? '#ffffff' : '#64748b',
+                      boxShadow: groupScreensBy5 ? '0 2px 6px rgba(139, 92, 246, 0.3)' : 'none'
+                    }}
+                  >
+                    {groupScreensBy5 ? 'ON' : 'OFF'}
                   </button>
                 </div>
               </div>

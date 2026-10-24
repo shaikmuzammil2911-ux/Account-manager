@@ -115,6 +115,7 @@ function mapSupabaseBrand(b) {
   const logo = pricesObj._logo || b.logo || '';
   const showScreenPin = pricesObj._showScreenPin !== undefined ? pricesObj._showScreenPin : (b.show_screen_pin !== false);
   const showDeviceName = pricesObj._showDeviceName !== undefined ? pricesObj._showDeviceName : (b.show_device_name !== false);
+  const groupScreensBy5 = pricesObj._groupScreensBy5 !== undefined ? pricesObj._groupScreensBy5 : (b.group_screens_by_5 !== false);
   const pricingPlans = pricesObj._pricingPlans || b.pricing_plans || null;
 
   const cleanPrices = {};
@@ -133,6 +134,7 @@ function mapSupabaseBrand(b) {
     screensCount: Number(b.screens_count) || 5,
     showScreenPin: showScreenPin !== false,
     showDeviceName: showDeviceName !== false,
+    groupScreensBy5: groupScreensBy5 !== false,
     plans: Array.isArray(b.plans) && b.plans.length > 0 ? b.plans : (Object.keys(cleanPrices).length > 0 ? Object.keys(cleanPrices) : ['01 Month']),
     prices: Object.keys(cleanPrices).length > 0 ? cleanPrices : { '01 Month': 199 },
     pricingPlans,
@@ -149,6 +151,7 @@ function mapBrandToSupabase(brandData, userEmail) {
   if (brandData.logo) pricesPayload._logo = brandData.logo;
   if (brandData.showScreenPin !== undefined) pricesPayload._showScreenPin = brandData.showScreenPin;
   if (brandData.showDeviceName !== undefined) pricesPayload._showDeviceName = brandData.showDeviceName;
+  if (brandData.groupScreensBy5 !== undefined) pricesPayload._groupScreensBy5 = brandData.groupScreensBy5;
   if (brandData.pricingPlans) pricesPayload._pricingPlans = brandData.pricingPlans;
 
   const generalPlans = Array.isArray(brandData.plans) && brandData.plans.length > 0
@@ -182,23 +185,30 @@ function mapSupabaseAccount(a) {
     }
   }
 
+  const screenDeviceNames = (parsedNotes && typeof parsedNotes === 'object' && parsedNotes.screenDeviceNames) || {};
+
   const rawScreens = a.screens || [];
   const sortedScreens = [...rawScreens].sort((x, y) => (x.screen_number || 0) - (y.screen_number || 0));
-  const screens = sortedScreens.map((s, idx) => ({
-    id: s.id,
-    screenNumber: s.screen_number || (idx + 1),
-    name: s.name || `Screen-${String(s.screen_number || idx + 1).padStart(2, '0')}`,
-    pin: s.pin !== undefined ? String(s.pin) : '1234',
-    deviceType: s.device_type || 'tv',
-    status: s.status || 'empty',
-    saleId: s.sale_id || null,
-    customerName: s.customer_name || null,
-    customerNumber: s.customer_number || null,
-    expiryDate: s.expiry_date || null,
-    activationDate: s.activation_date || null,
-    notificationSent: Boolean(s.notification_sent),
-    lastNotifiedAt: s.last_notified_at || null
-  }));
+  const screens = sortedScreens.map((s, idx) => {
+    const sNum = s.screen_number || (idx + 1);
+    const dName = s.device_name || screenDeviceNames[sNum] || screenDeviceNames[String(sNum)] || '';
+    return {
+      id: s.id,
+      screenNumber: sNum,
+      name: s.name || `Screen-${String(sNum).padStart(2, '0')}`,
+      pin: s.pin !== undefined ? String(s.pin) : '1234',
+      deviceType: s.device_type || 'tv',
+      deviceName: dName,
+      status: s.status || 'empty',
+      saleId: s.sale_id || null,
+      customerName: s.customer_name || null,
+      customerNumber: s.customer_number || null,
+      expiryDate: s.expiry_date || null,
+      activationDate: s.activation_date || null,
+      notificationSent: Boolean(s.notification_sent),
+      lastNotifiedAt: s.last_notified_at || null
+    };
+  });
 
   return {
     id: a.id,
@@ -225,10 +235,20 @@ function mapSupabaseAccount(a) {
 }
 
 function mapAccountToSupabase(item, userEmail, userId) {
+  const screenDeviceNames = {};
+  if (Array.isArray(item.screens)) {
+    item.screens.forEach(s => {
+      if (s.deviceName && String(s.deviceName).trim()) {
+        screenDeviceNames[s.screenNumber] = String(s.deviceName).trim();
+      }
+    });
+  }
+
   const notesObj = {
     defaultExpanded: Boolean(item.defaultExpanded),
     credentialHistory: Array.isArray(item.credentialHistory) ? item.credentialHistory : [],
     sellerDetails: item.sellerDetails || null,
+    screenDeviceNames,
     userNotes: typeof item.notes === 'string' ? item.notes : (item.notes?.userNotes || '')
   };
 
@@ -249,6 +269,35 @@ function mapAccountToSupabase(item, userEmail, userId) {
     owner_user_id: item.userId || userId || null,
     updated_at: new Date().toISOString()
   };
+}
+
+export function compareAccountOrders(a, b, sortOrder = 'top') {
+  const numA = parseInt(a?.recordNumber, 10);
+  const numB = parseInt(b?.recordNumber, 10);
+
+  const hasNumA = !isNaN(numA) && numA > 0;
+  const hasNumB = !isNaN(numB) && numB > 0;
+
+  // Accounts without an E Number go after numbered accounts
+  if (hasNumA && !hasNumB) return -1;
+  if (!hasNumA && hasNumB) return 1;
+  if (!hasNumA && !hasNumB) {
+    const timeA = new Date(a?.createdAt || 0).getTime();
+    const timeB = new Date(b?.createdAt || 0).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    return String(a?.id || '').localeCompare(String(b?.id || ''));
+  }
+
+  // Both have numbers: sort numerically
+  if (numA !== numB) {
+    return sortOrder === 'bottom' ? numB - numA : numA - numB;
+  }
+
+  // Duplicates exist: keep both accounts and use stable secondary order (createdAt then id)
+  const timeA = new Date(a?.createdAt || 0).getTime();
+  const timeB = new Date(b?.createdAt || 0).getTime();
+  if (timeA !== timeB) return timeA - timeB;
+  return String(a?.id || '').localeCompare(String(b?.id || ''));
 }
 
 export const api = {
@@ -394,6 +443,37 @@ export const api = {
       });
     }
 
+    if (params.brandId && params.brandId !== 'all') {
+      const targetBrandId = params.brandId.includes('__shared__') ? params.brandId.split('__shared__')[0] : params.brandId;
+      const local = getLocalData();
+      const brandObj = (local.brands || []).find(b => b.id === targetBrandId || b.id === params.brandId);
+      const targetCount = Number(brandObj?.screensCount) || 0;
+      if (targetCount > 0) {
+        items.forEach(item => {
+          const curScreens = item.screens || [];
+          const existingSet = new Set(curScreens.map(s => Number(s.screenNumber)));
+          const toAdd = [];
+          for (let sNum = 1; sNum <= targetCount; sNum++) {
+            if (!existingSet.has(sNum)) {
+              toAdd.push({
+                screenNumber: sNum,
+                name: `Screen-${String(sNum).padStart(2, '0')}`,
+                pin: '1234',
+                deviceType: 'tv',
+                deviceName: '',
+                status: 'empty',
+                saleId: null,
+                expiryDate: null
+              });
+            }
+          }
+          if (toAdd.length > 0) {
+            item.screens = [...curScreens, ...toAdd].sort((x, y) => x.screenNumber - y.screenNumber);
+          }
+        });
+      }
+    }
+
     if (params.emptyOnly) {
       items = items.filter(i => i.screens && i.screens.some(s => s.status === 'empty'));
 
@@ -416,19 +496,13 @@ export const api = {
           return emptyB - emptyA;
         }
 
-        const recA = parseInt(a.recordNumber || '0', 10);
-        const recB = parseInt(b.recordNumber || '0', 10);
-        return params.sortOrder === 'bottom' ? recB - recA : recA - recB;
+        return compareAccountOrders(a, b, params.sortOrder);
       });
 
       return items;
     }
 
-    if (params.sortOrder === 'bottom') {
-      items.sort((a, b) => parseInt(b.recordNumber || '0') - parseInt(a.recordNumber || '0'));
-    } else {
-      items.sort((a, b) => parseInt(a.recordNumber || '0') - parseInt(b.recordNumber || '0'));
-    }
+    items.sort((a, b) => compareAccountOrders(a, b, params.sortOrder));
 
     return items;
   },
@@ -440,9 +514,22 @@ export const api = {
 
     const local = getLocalData();
     const brandId = data.brandId || 'netflix';
+    const brand = (local.brands || []).find(b => b.id === brandId);
     const brandItems = (local.inventory || []).filter(i => i.brandId === brandId && !i.isDeleted);
-    const nextNum = data.recordNumber || String(brandItems.length + 1).padStart(2, '0');
-    const screensCount = Math.min(10, Math.max(1, parseInt(data.screensCount || data.screens?.length || 5, 10)));
+    
+    let nextNum = data.recordNumber;
+    if (!nextNum) {
+      const highestNum = brandItems.reduce((max, item) => {
+        const n = parseInt(item.recordNumber, 10);
+        return (!isNaN(n) && n > max) ? n : max;
+      }, 0);
+      nextNum = String(highestNum + 1).padStart(2, '0');
+    } else {
+      const p = parseInt(nextNum, 10);
+      nextNum = (!isNaN(p) && p > 0) ? String(p).padStart(2, '0') : String(brandItems.length + 1).padStart(2, '0');
+    }
+
+    const screensCount = Math.max(1, parseInt(data.screensCount || data.screens?.length || brand?.screensCount || 5, 10));
 
     let screens = [];
     if (data.screens && Array.isArray(data.screens) && data.screens.length > 0) {
@@ -451,6 +538,7 @@ export const api = {
         name: s.name || `Screen-${String(idx + 1).padStart(2, '0')}`,
         pin: s.pin !== undefined ? String(s.pin) : `${(idx + 1) * 1111}`.slice(0, 4),
         deviceType: s.deviceType || 'tv',
+        deviceName: s.deviceName ? String(s.deviceName).trim() : '',
         status: s.status || (s.expiryDate ? 'occupied' : 'empty'),
         saleId: s.saleId || null,
         expiryDate: s.expiryDate || null
@@ -461,6 +549,7 @@ export const api = {
         name: `Screen-${String(i + 1).padStart(2, '0')}`,
         pin: String(1111 * (i + 1)).slice(0, 4) || '1234',
         deviceType: 'tv',
+        deviceName: '',
         status: 'empty',
         saleId: null,
         expiryDate: null
@@ -561,11 +650,13 @@ export const api = {
         const pin = newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234');
         const expiryDate = newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null);
         const status = newS.status !== undefined ? newS.status : (expiryDate ? 'occupied' : (oldS?.status || 'empty'));
+        const deviceName = newS.deviceName !== undefined ? String(newS.deviceName).trim() : (oldS?.deviceName || '');
         return {
           screenNumber: sIdx + 1,
           name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
           pin,
           deviceType: newS.deviceType || oldS?.deviceType || 'tv',
+          deviceName,
           status,
           saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
           expiryDate
@@ -622,9 +713,18 @@ export const api = {
 
     if (existingHistory.length > 50) existingHistory = existingHistory.slice(0, 50);
 
+    let finalRecordNumber = existing.recordNumber || '01';
+    if (updates.recordNumber !== undefined) {
+      const p = parseInt(updates.recordNumber, 10);
+      if (!isNaN(p) && p > 0) {
+        finalRecordNumber = String(p).padStart(2, '0');
+      }
+    }
+
     const updated = {
       ...existing,
       ...updates,
+      recordNumber: finalRecordNumber,
       screens: mergedScreens,
       credentialHistory: existingHistory,
       defaultExpanded: updates.defaultExpanded !== undefined ? Boolean(updates.defaultExpanded) : Boolean(existing.defaultExpanded),
@@ -1965,7 +2065,80 @@ export const api = {
     }
     saveLocalData(local);
 
+    // If screen count was set or updated, reconcile all accounts for this brand
+    if (updatedBrand && updatedBrand.screensCount) {
+      this.reconcileBrandAccounts(id, updatedBrand.screensCount).catch(e => {
+        console.warn('Reconcile screens warning:', e);
+      });
+    }
+
     return updatedBrand;
+  },
+
+  async reconcileBrandAccounts(brandId, screensCount) {
+    if (!brandId || !screensCount) return;
+    const count = parseInt(screensCount, 10);
+    if (isNaN(count) || count < 1) return;
+
+    try {
+      const { data: accounts, error } = await supabase
+        .from('accounts')
+        .select('id, screens(screen_number)')
+        .eq('brand_id', brandId)
+        .eq('is_deleted', false);
+
+      if (!error && Array.isArray(accounts)) {
+        for (const acc of accounts) {
+          const existingSet = new Set((acc.screens || []).map(s => s.screen_number));
+          const toInsert = [];
+          for (let sNum = 1; sNum <= count; sNum++) {
+            if (!existingSet.has(sNum)) {
+              toInsert.push({
+                account_id: acc.id,
+                screen_number: sNum,
+                name: `Screen-${String(sNum).padStart(2, '0')}`,
+                pin: '1234',
+                device_type: 'tv',
+                status: 'empty',
+                sale_id: null,
+                expiry_date: null
+              });
+            }
+          }
+          if (toInsert.length > 0) {
+            await supabase.from('screens').upsert(toInsert, { onConflict: 'account_id,screen_number' });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[Supabase reconcileBrandAccounts warning]:', e.message);
+    }
+
+    const local = getLocalData();
+    if (local.inventory && Array.isArray(local.inventory)) {
+      local.inventory.forEach(acc => {
+        if (acc.brandId === brandId && !acc.isDeleted) {
+          const screens = acc.screens || [];
+          const existingSet = new Set(screens.map(s => s.screenNumber));
+          for (let sNum = 1; sNum <= count; sNum++) {
+            if (!existingSet.has(sNum)) {
+              screens.push({
+                screenNumber: sNum,
+                name: `Screen-${String(sNum).padStart(2, '0')}`,
+                pin: '1234',
+                deviceType: 'tv',
+                deviceName: '',
+                status: 'empty',
+                saleId: null,
+                expiryDate: null
+              });
+            }
+          }
+          acc.screens = screens.sort((a, b) => a.screenNumber - b.screenNumber);
+        }
+      });
+      saveLocalData(local);
+    }
   },
 
   async deleteBrand(id) {

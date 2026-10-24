@@ -4,7 +4,7 @@ import {
   Save, Plus, Trash2, X, Search, ArrowLeft, Tv, Smartphone, Laptop, Sparkles, RefreshCw, Star,
   ChevronDown, ChevronUp, AlertTriangle
 } from 'lucide-react';
-import { api } from '../api/client';
+import { api, compareAccountOrders } from '../api/client';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import DatePickerModal from '../components/DatePickerModal';
@@ -225,6 +225,7 @@ export default function InventoryScreen({
   const [newPlanVariant, setNewPlanVariant] = useState('General');
   const [newScreenCount, setNewScreenCount] = useState(5);
   const [newScreenPins, setNewScreenPins] = useState(['1111', '2222', '3333', '4444', '5555']);
+  const [newDeviceNames, setNewDeviceNames] = useState(['', '', '', '', '']);
   const [newPassVisible, setNewPassVisible] = useState(false);
 
   const fetchInventory = async () => {
@@ -248,6 +249,10 @@ export default function InventoryScreen({
 
   useEffect(() => {
     if (currentBrand) {
+      const brandScreens = parseInt(currentBrand.screensCount || '5', 10) || 5;
+      setNewScreenCount(brandScreens);
+      setNewScreenPins(Array.from({ length: brandScreens }, (_, i) => `${(i + 1) * 1111}`.slice(0, 4)));
+      setNewDeviceNames(Array.from({ length: brandScreens }, () => ''));
       fetchInventory();
     }
   }, [currentBrand, filterSelectedOnly, filterEmptyOnly, selectedValidity, sortOrder]);
@@ -290,6 +295,8 @@ export default function InventoryScreen({
     if (isCurrentlyEditing) {
       // If there are unsaved edits in progress, auto-save before locking so changes are NEVER lost
       const editState = editingCards[item.id];
+      const hasRecordNumberChange = editState.recordNumber !== undefined &&
+        String(parseInt(editState.recordNumber, 10) || '') !== String(parseInt(item.recordNumber || '0', 10) || '');
       const hasEmailChange = editState.email !== undefined && editState.email !== item.email;
       const hasPwChange = editState.password !== undefined && editState.password !== item.password;
       const hasValidityChange = editState.validity !== undefined && editState.validity !== item.validity;
@@ -297,8 +304,10 @@ export default function InventoryScreen({
       const hasPinChange = editState.pins && editState.pins.some((p, idx) => p !== (item.screens?.[idx]?.pin || '1234'));
       const hasDateChange = editState.dates && Object.keys(editState.dates).length > 0;
       const hasDeviceChange = editState.deviceTypes && Object.keys(editState.deviceTypes).length > 0;
+      const hasDeviceNameChange = editState.deviceNames &&
+        editState.deviceNames.some((d, idx) => String(d || '').trim() !== String(item.screens?.[idx]?.deviceName || '').trim());
 
-      if (hasEmailChange || hasPwChange || hasValidityChange || hasPlanChange || hasPinChange || hasDateChange || hasDeviceChange) {
+      if (hasRecordNumberChange || hasEmailChange || hasPwChange || hasValidityChange || hasPlanChange || hasPinChange || hasDateChange || hasDeviceChange || hasDeviceNameChange) {
         await handleSaveCard(item);
         return;
       }
@@ -313,16 +322,19 @@ export default function InventoryScreen({
       setEditingCards(prev => ({
         ...prev,
         [item.id]: {
+          recordNumber: item.recordNumber !== undefined && item.recordNumber !== null ? String(parseInt(item.recordNumber, 10) || 1) : '1',
+          recordNumberError: null,
           email: item.email,
           password: item.password,
           validity: item.validity,
           planVariant: item.planVariant || 'General',
           pins: (item.screens || []).map(s => s.pin || '1234'),
           dates: (item.screens || []).map(s => s.expiryDate || ''),
-          deviceTypes: (item.screens || []).map(s => s.deviceType || 'tv')
+          deviceTypes: (item.screens || []).map(s => s.deviceType || 'tv'),
+          deviceNames: (item.screens || []).map(s => s.deviceName || '')
         }
       }));
-      showToast('Card unlocked for editing (ID, Password, PINs, Dates, Devices, Validity, Plan)', 'info');
+      showToast('Card unlocked for editing (E Number, ID, Password, PINs, Dates, Devices, Validity, Plan)', 'info');
     }
   };
 
@@ -426,22 +438,50 @@ export default function InventoryScreen({
       return;
     }
 
+    // Validate E Number (Feature 1: Positive whole numbers only)
+    const rawRecNum = editState.recordNumber !== undefined ? editState.recordNumber : item.recordNumber;
+    const parsedRecNum = Number(rawRecNum);
+    if (
+      rawRecNum === undefined ||
+      rawRecNum === null ||
+      String(rawRecNum).trim() === '' ||
+      isNaN(parsedRecNum) ||
+      parsedRecNum <= 0 ||
+      !Number.isInteger(parsedRecNum)
+    ) {
+      setEditingCards(prev => ({
+        ...prev,
+        [item.id]: {
+          ...prev[item.id],
+          recordNumberError: 'Positive integer only'
+        }
+      }));
+      showToast('Invalid E Number: Positive whole numbers only (e.g. 1, 2, 10)', 'error');
+      return;
+    }
+    const formattedRecordNumber = String(parsedRecNum).padStart(2, '0');
+
     try {
       const updatedScreens = (item.screens || []).map((screen, idx) => {
         const pin = editState.pins?.[idx] !== undefined ? editState.pins[idx] : screen.pin;
         const expiryDate = editState.dates?.[idx] !== undefined ? editState.dates[idx] : screen.expiryDate;
         const deviceType = editState.deviceTypes?.[idx] || screen.deviceType || 'tv';
+        const deviceName = editState.deviceNames?.[idx] !== undefined
+          ? String(editState.deviceNames[idx] || '').trim()
+          : (screen.deviceName || '');
         const status = expiryDate && String(expiryDate).trim() ? 'occupied' : (expiryDate === '' ? 'empty' : screen.status);
         return {
           ...screen,
           pin,
           deviceType,
+          deviceName,
           expiryDate: status === 'occupied' ? expiryDate : null,
           status
         };
       });
 
       const payload = {
+        recordNumber: formattedRecordNumber,
         email: editState.email,
         password: editState.password,
         validity: editState.validity,
@@ -457,9 +497,9 @@ export default function InventoryScreen({
         delete copy[item.id];
         return copy;
       });
-      showToast('Credentials & settings saved successfully!', 'success');
+      showToast(`Account #${formattedRecordNumber} saved successfully!`, 'success');
     } catch (err) {
-      showToast('Failed to save changes', 'error');
+      showToast('Failed to save changes: ' + (err.message || 'Unknown error'), 'error');
     }
   };
 
@@ -491,9 +531,10 @@ export default function InventoryScreen({
   };
 
   const handleScreenCountChange = (count) => {
-    const n = Math.min(10, Math.max(1, count));
+    const n = Math.max(1, count);
     setNewScreenCount(n);
     setNewScreenPins(Array.from({ length: n }, (_, i) => `${(i + 1) * 1111}`.slice(0, 4)));
+    setNewDeviceNames(Array.from({ length: n }, () => ''));
   };
 
   const handleCreateAccount = async (e) => {
@@ -506,8 +547,9 @@ export default function InventoryScreen({
     try {
       const screens = Array.from({ length: newScreenCount }, (_, i) => ({
         screenNumber: i + 1,
-        name: `Screen-${i + 1}`,
+        name: `Screen-${String(i + 1).padStart(2, '0')}`,
         pin: newScreenPins[i] || '1234',
+        deviceName: (newDeviceNames[i] || '').trim(),
         status: 'empty',
         expiryDate: null
       }));
@@ -557,8 +599,8 @@ export default function InventoryScreen({
     if (filterEmptyOnly) {
       const screensA = a.screens || [];
       const screensB = b.screens || [];
-      const totalA = screensA.length || 5;
-      const totalB = screensB.length || 5;
+      const totalA = screensA.length || (currentBrand?.screensCount || 5);
+      const totalB = screensB.length || (currentBrand?.screensCount || 5);
       const emptyA = screensA.filter(s => s.status === 'empty').length;
       const emptyB = screensB.filter(s => s.status === 'empty').length;
 
@@ -575,12 +617,12 @@ export default function InventoryScreen({
       }
     }
 
-    const recA = parseInt(a.recordNumber || '0', 10);
-    const recB = parseInt(b.recordNumber || '0', 10);
-    return sortOrder === 'bottom' ? recB - recA : recA - recB;
+    return compareAccountOrders(a, b, sortOrder);
   });
 
   const filteredItems = sortedItems.filter(i => {
+    if (filterSelectedOnly && !i.isSelected) return false;
+    if (selectedValidity !== 'all' && i.validity !== selectedValidity) return false;
     if (!searchQuery) return true;
     return i.email?.toLowerCase().includes(searchQuery.toLowerCase());
   });
@@ -705,7 +747,7 @@ export default function InventoryScreen({
           const editState = editingCards[item.id] || {};
           const isPassVisible = !!visiblePasswords[item.id];
           const freeCount = (item.screens || []).filter(s => s.status === 'empty').length;
-          const totalScreens = item.screens?.length || 5;
+          const totalScreens = item.screens?.length || (currentBrand?.screensCount || 5);
 
           const isExpanded = expandedAccounts[item.id] !== undefined
             ? expandedAccounts[item.id]
@@ -713,12 +755,90 @@ export default function InventoryScreen({
 
           return (
             <div key={item.id} className="inventory-card" id={`inventory-card-${item.recordNumber}`}>
-              {/* Top Row: Ribbon Tag, Plan Variant, Password Alert, Screen Count Summary, Validity Badge, Checkbox */}
+              {/* Top Row: Ribbon Tag (E Number), Plan Variant, Password Alert, Screen Count Summary, Validity Badge, Checkbox */}
               <div className="card-top-row">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                  <div className="ribbon-badge">
-                    {item.recordNumber || '01'}
-                  </div>
+                  {/* FEATURE 1: Editable E Number badge */}
+                  {!isEditing ? (
+                    <div
+                      className="ribbon-badge"
+                      style={{
+                        background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
+                        color: '#ffffff',
+                        fontWeight: 900,
+                        fontSize: '13.5px',
+                        padding: '4px 10px',
+                        borderRadius: '8px',
+                        minWidth: '34px',
+                        textAlign: 'center',
+                        boxShadow: '0 2px 6px rgba(220, 38, 38, 0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        userSelect: 'none'
+                      }}
+                      title="E Number (Click Edit (UnLock) to modify)"
+                    >
+                      {String(parseInt(item.recordNumber || '1', 10) || 1).padStart(2, '0')}
+                    </div>
+                  ) : (
+                    <div style={{ position: 'relative', display: 'inline-flex', flexDirection: 'column' }}>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={editState.recordNumber !== undefined ? editState.recordNumber : (parseInt(item.recordNumber || '1', 10) || 1)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          const num = Number(val);
+                          const isInvalid = !val || isNaN(num) || num <= 0 || !Number.isInteger(num);
+                          setEditingCards(prev => ({
+                            ...prev,
+                            [item.id]: {
+                              ...prev[item.id],
+                              recordNumber: val,
+                              recordNumberError: isInvalid ? 'Positive integer only' : null
+                            }
+                          }));
+                        }}
+                        style={{
+                          width: '46px',
+                          height: '28px',
+                          background: '#ffffff',
+                          color: '#dc2626',
+                          border: editState.recordNumberError ? '2px solid #b91c1c' : '2px solid #ef4444',
+                          borderRadius: '8px',
+                          textAlign: 'center',
+                          fontSize: '13.5px',
+                          fontWeight: 900,
+                          outline: 'none',
+                          boxShadow: editState.recordNumberError ? '0 0 0 2px rgba(220, 38, 38, 0.3)' : '0 2px 6px rgba(239, 68, 68, 0.25)',
+                          boxSizing: 'border-box'
+                        }}
+                        title="Edit E Number (Positive whole numbers only)"
+                        id={`account-${item.id}-enumber-input`}
+                      />
+                      {editState.recordNumberError && (
+                        <span style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          fontSize: '9px',
+                          color: '#dc2626',
+                          fontWeight: 800,
+                          whiteSpace: 'nowrap',
+                          background: '#fee2e2',
+                          padding: '1px 5px',
+                          borderRadius: '4px',
+                          zIndex: 10,
+                          marginTop: '2px',
+                          border: '1px solid #fca5a5'
+                        }}>
+                          {editState.recordNumberError}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Password Change Required Reminder Badge (Section 7) */}
                   {item.passwordChangeRequired && (
@@ -917,162 +1037,316 @@ export default function InventoryScreen({
                 </div>
               </div>
 
-              {/* Screen PINs row (only if brand allows Screen PIN) */}
-              {currentBrand?.showScreenPin !== false && (
-                <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
-                  {(item.screens || []).map((screen, sIdx) => (
-                    <div
-                      key={sIdx}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        background: '#e2e8f0',
-                        padding: '5px 2px',
-                        borderRadius: '8px',
-                        border: '1.5px solid #94a3b8',
-                        minHeight: '26px'
-                      }}
-                    >
-                      {isEditing ? (
-                        <input
-                          type="text"
-                          maxLength={6}
-                          value={editState.pins?.[sIdx] ?? screen.pin}
-                          onChange={(e) => {
-                            const newPins = [...(editState.pins || [])];
-                            newPins[sIdx] = e.target.value;
-                            setEditingCards(prev => ({
-                              ...prev,
-                              [item.id]: { ...prev[item.id], pins: newPins }
-                            }));
-                          }}
-                          style={{ width: '100%', fontSize: '12px', textAlign: 'center', border: 'none', background: 'transparent', fontWeight: 800 }}
-                        />
-                      ) : (
-                        <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.4px' }}>
-                          {screen.pin || '1234'}
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Dynamic Screen Count & Grouping by 5 or Horizontal Scroll */}
+              {(() => {
+                const screensList = item.screens || [];
+                const isGroupedBy5 = currentBrand?.groupScreensBy5 !== false;
+                const groupSize = 5;
 
-              {/* Screen Buttons row (Screen name on top, Device icon BELOW if enabled) */}
-              <div className="screens-grid-row" style={{ marginTop: currentBrand?.showScreenPin === false ? '10px' : '0' }}>
-                {(item.screens || []).map((screen, sIdx) => {
-                  const devType = isEditing
-                    ? (editState.deviceTypes?.[sIdx] || screen.deviceType || 'tv')
-                    : (screen.deviceType || 'tv');
+                // Group screens: if grouped by 5, slice into groups of 5; if OFF, single group with all screens
+                const groups = isGroupedBy5
+                  ? Array.from({ length: Math.ceil(screensList.length / groupSize) || 1 }, (_, gIdx) =>
+                      screensList.slice(gIdx * groupSize, (gIdx + 1) * groupSize).map((screen, idx) => ({
+                        screen,
+                        globalIdx: gIdx * groupSize + idx
+                      }))
+                    )
+                  : [screensList.map((screen, idx) => ({ screen, globalIdx: idx }))];
+
+                const renderGroupContent = (groupScreens) => {
+                  const gridStyle = isGroupedBy5
+                    ? { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', alignItems: 'center' }
+                    : { display: 'grid', gridTemplateColumns: `repeat(${screensList.length}, minmax(68px, 1fr))`, gap: '6px', alignItems: 'center', width: 'max-content', minWidth: '100%' };
 
                   return (
-                    <div
-                      key={sIdx}
-                      onClick={(e) => {
-                        if (isEditing && currentBrand?.showDeviceName !== false) {
-                          handleCycleDeviceType(item.id, sIdx, e);
-                        }
-                      }}
-                      style={{
-                        background: '#ea580c',
-                        color: '#ffffff',
-                        borderRadius: '8px',
-                        padding: '5px 2px',
-                        textAlign: 'center',
-                        boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '2px',
-                        cursor: (isEditing && currentBrand?.showDeviceName !== false) ? 'pointer' : 'default',
-                        userSelect: 'none',
-                        lineHeight: 1
-                      }}
-                      title={(isEditing && currentBrand?.showDeviceName !== false) ? `Click to cycle device type (Current: ${devType.toUpperCase()})` : `Screen ${sIdx + 1}`}
-                    >
-                      <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                        Screen-{sIdx + 1}
-                      </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      {/* 1. Screen PINs row (only when Screen PIN is ON) */}
+                      {currentBrand?.showScreenPin !== false && (
+                        <div style={gridStyle}>
+                          {groupScreens.map(({ screen, globalIdx }) => {
+                            const pinVal = isEditing ? (editState.pins?.[globalIdx] ?? screen.pin) : (screen.pin || '1234');
+                            return (
+                              <div
+                                key={globalIdx}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  background: '#e2e8f0',
+                                  padding: '5px 2px',
+                                  borderRadius: '8px',
+                                  border: '1.5px solid #94a3b8',
+                                  minHeight: '26px',
+                                  boxSizing: 'border-box'
+                                }}
+                              >
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    maxLength={6}
+                                    value={pinVal}
+                                    onChange={(e) => {
+                                      const newPins = [...(editState.pins || screensList.map(s => s.pin || '1234'))];
+                                      newPins[globalIdx] = e.target.value;
+                                      setEditingCards(prev => ({
+                                        ...prev,
+                                        [item.id]: { ...prev[item.id], pins: newPins }
+                                      }));
+                                    }}
+                                    style={{
+                                      width: '100%',
+                                      fontSize: '12px',
+                                      textAlign: 'center',
+                                      border: 'none',
+                                      background: 'transparent',
+                                      fontWeight: 800,
+                                      outline: 'none',
+                                      padding: 0
+                                    }}
+                                  />
+                                ) : (
+                                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#0f172a', letterSpacing: '0.4px' }}>
+                                    {pinVal}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* 2. Screen Buttons row (Screen number/button) */}
+                      <div style={gridStyle}>
+                        {groupScreens.map(({ screen, globalIdx }) => {
+                          const devType = isEditing
+                            ? (editState.deviceTypes?.[globalIdx] || screen.deviceType || 'tv')
+                            : (screen.deviceType || 'tv');
+
+                          return (
+                            <div
+                              key={globalIdx}
+                              onClick={(e) => {
+                                if (isEditing) {
+                                  handleCycleDeviceType(item.id, globalIdx, e);
+                                }
+                              }}
+                              style={{
+                                background: '#ea580c',
+                                color: '#ffffff',
+                                borderRadius: '8px',
+                                padding: '5px 2px',
+                                textAlign: 'center',
+                                boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                gap: '2px',
+                                cursor: isEditing ? 'pointer' : 'default',
+                                userSelect: 'none',
+                                lineHeight: 1,
+                                boxSizing: 'border-box'
+                              }}
+                              title={isEditing ? `Click to cycle device icon (Current: ${devType.toUpperCase()})` : `Screen ${globalIdx + 1}`}
+                            >
+                              <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                                Screen-{String(globalIdx + 1).padStart(2, '0')}
+                              </span>
+                              <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: isEditing ? '2px 4px' : '0',
+                                borderRadius: '4px',
+                                background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
+                              }}>
+                                {devType === 'mobile' ? (
+                                  <Smartphone size={15} strokeWidth={2.5} />
+                                ) : devType === 'laptop' ? (
+                                  <Laptop size={15} strokeWidth={2.5} />
+                                ) : (
+                                  <Tv size={15} strokeWidth={2.5} />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* 3. Screen Expiry / Customer Details row (retains empty "+" action) */}
+                      <div style={gridStyle}>
+                        {groupScreens.map(({ screen, globalIdx }) => {
+                          const currentExpDate = isEditing
+                            ? (editState.dates?.[globalIdx] !== undefined ? editState.dates[globalIdx] : screen.expiryDate)
+                            : screen.expiryDate;
+                          const isEmpty = isEditing
+                            ? (!currentExpDate || !String(currentExpDate).trim())
+                            : (screen.status === 'empty' && !currentExpDate);
+
+                          const statusObj = getExpiryStatus(currentExpDate);
+                          const isExpiredOrCritical = statusObj.status === 'expired' || statusObj.status === 'today' || statusObj.status === 'critical';
+                          const isUpcoming = statusObj.status === 'upcoming';
+
+                          return (
+                            <div
+                              key={globalIdx}
+                              onClick={() => {
+                                if (isEmpty && !isEditing) {
+                                  if (onNavigateToSaleWithSlot) {
+                                    onNavigateToSaleWithSlot({
+                                      brandId: currentBrand.id,
+                                      inventoryId: item.id,
+                                      screenNumber: globalIdx + 1,
+                                      accountEmail: item.email
+                                    });
+                                    return;
+                                  }
+                                }
+                                if (!isEmpty && !isEditing) {
+                                  handleOpenSoldScreenDetails(item, screen, globalIdx);
+                                  return;
+                                }
+                                setScreenDateModal({
+                                  itemId: item.id,
+                                  screenIndex: globalIdx,
+                                  currentDate: currentExpDate || ''
+                                });
+                              }}
+                              style={{
+                                height: '34px',
+                                minHeight: '34px',
+                                maxHeight: '34px',
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '0 2px',
+                                borderRadius: '8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                fontSize: isEmpty ? '18px' : '9.5px',
+                                fontWeight: 900,
+                                cursor: 'pointer',
+                                background: isEmpty ? '#f8fafc' : (isExpiredOrCritical ? '#dc2626' : (isUpcoming ? '#ea580c' : '#15803d')),
+                                color: isEmpty ? '#475569' : '#ffffff',
+                                border: isEmpty ? '2px dashed #64748b' : (isExpiredOrCritical ? '2px solid #b91c1c' : (isUpcoming ? '2px solid #c2410c' : '2px solid #166534')),
+                                boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.14)',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                lineHeight: 1
+                              }}
+                              title={currentExpDate ? `Expires: ${currentExpDate}. Click to view or change.` : `Screen-${String(globalIdx + 1).padStart(2, '0')}: Click '+' to assign sale`}
+                            >
+                              {isEmpty ? '+' : (currentExpDate || 'Active')}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* 4. Device Name row (only when Device Name is ON) */}
                       {currentBrand?.showDeviceName !== false && (
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: isEditing ? '2px 4px' : '0',
-                          borderRadius: '4px',
-                          background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
-                        }}>
-                          {devType === 'mobile' ? (
-                            <Smartphone size={16} strokeWidth={2.5} />
-                          ) : devType === 'laptop' ? (
-                            <Laptop size={16} strokeWidth={2.5} />
-                          ) : (
-                            <Tv size={16} strokeWidth={2.5} />
-                          )}
+                        <div style={gridStyle}>
+                          {groupScreens.map(({ screen, globalIdx }) => {
+                            const devNameVal = isEditing
+                              ? (editState.deviceNames?.[globalIdx] !== undefined ? editState.deviceNames[globalIdx] : (screen.deviceName || ''))
+                              : (screen.deviceName || '');
+
+                            return (
+                              <div key={globalIdx} style={{ width: '100%', boxSizing: 'border-box' }}>
+                                {isEditing ? (
+                                  <input
+                                    type="text"
+                                    placeholder="Device name"
+                                    value={devNameVal}
+                                    onChange={(e) => {
+                                      const newNames = [...(editState.deviceNames || screensList.map(s => s.deviceName || ''))];
+                                      newNames[globalIdx] = e.target.value;
+                                      setEditingCards(prev => ({
+                                        ...prev,
+                                        [item.id]: { ...prev[item.id], deviceNames: newNames }
+                                      }));
+                                    }}
+                                    style={{
+                                      height: '28px',
+                                      minHeight: '28px',
+                                      width: '100%',
+                                      boxSizing: 'border-box',
+                                      padding: '0 4px',
+                                      borderRadius: '6px',
+                                      fontSize: '10.5px',
+                                      fontWeight: 700,
+                                      background: '#ffffff',
+                                      color: '#0f172a',
+                                      border: '1.5px solid #93c5fd',
+                                      outline: 'none',
+                                      textAlign: 'center'
+                                    }}
+                                    title={`Screen-${String(globalIdx + 1).padStart(2, '0')} Device Name`}
+                                  />
+                                ) : (
+                                  <div
+                                    style={{
+                                      height: '28px',
+                                      minHeight: '28px',
+                                      boxSizing: 'border-box',
+                                      padding: '0 4px',
+                                      borderRadius: '6px',
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      justifyContent: 'center',
+                                      fontSize: '10px',
+                                      fontWeight: 700,
+                                      background: devNameVal ? '#f0fdf4' : '#f8fafc',
+                                      color: devNameVal ? '#166534' : '#94a3b8',
+                                      border: devNameVal ? '1.5px solid #86efac' : '1.5px solid #e2e8f0',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap',
+                                      textAlign: 'center'
+                                    }}
+                                    title={devNameVal ? `Device: ${devNameVal}` : 'No device name'}
+                                  >
+                                    {devNameVal || '-'}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
                   );
-                })}
-              </div>
+                };
 
-              {/* Status / Expiry Boxes Row below Screens (Click to set/edit date) */}
-              <div className="screens-grid-row" style={{ marginTop: '6px' }}>
-                {(item.screens || []).map((screen, sIdx) => {
-                  const currentExpDate = isEditing
-                    ? (editState.dates?.[sIdx] !== undefined ? editState.dates[sIdx] : screen.expiryDate)
-                    : screen.expiryDate;
-                  const isEmpty = isEditing
-                    ? (!currentExpDate || !String(currentExpDate).trim())
-                    : (screen.status === 'empty' && !currentExpDate);
-
-                  const statusObj = getExpiryStatus(currentExpDate);
-                  const isExpiredOrCritical = statusObj.status === 'expired' || statusObj.status === 'today' || statusObj.status === 'critical';
-                  const isUpcoming = statusObj.status === 'upcoming';
-
+                if (isGroupedBy5) {
                   return (
-                    <div
-                      key={sIdx}
-                      onClick={() => {
-                        // Directly open DatePickerModal so user can set, edit, or clear expiry date for this screen
-                        setScreenDateModal({
-                          itemId: item.id,
-                          screenIndex: sIdx,
-                          currentDate: currentExpDate || ''
-                        });
-                      }}
-                      style={{
-                        height: '34px',
-                        minHeight: '34px',
-                        maxHeight: '34px',
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        padding: '0 2px',
-                        borderRadius: '8px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: isEmpty ? '18px' : '9.5px',
-                        fontWeight: 900,
-                        cursor: 'pointer',
-                        background: isEmpty ? '#f8fafc' : (isExpiredOrCritical ? '#dc2626' : (isUpcoming ? '#ea580c' : '#15803d')),
-                        color: isEmpty ? '#475569' : '#ffffff',
-                        border: isEmpty ? '2px dashed #64748b' : (isExpiredOrCritical ? '2px solid #b91c1c' : (isUpcoming ? '2px solid #c2410c' : '2px solid #166534')),
-                        boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.14)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        lineHeight: 1
-                      }}
-                      title={currentExpDate ? `Expires: ${currentExpDate}. Click to change date.` : `Screen-${sIdx + 1}: Click to set expiry date`}
-                    >
-                      {isEmpty ? '+' : (currentExpDate || 'Active')}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '10px' }}>
+                      {groups.map((groupScreens, gIdx) => (
+                        <div key={gIdx}>
+                          {renderGroupContent(groupScreens)}
+                        </div>
+                      ))}
                     </div>
                   );
-                })}
-              </div>
+                }
+
+                return (
+                  <div
+                    className="screens-scroll-container"
+                    style={{
+                      overflowX: 'auto',
+                      overflowY: 'hidden',
+                      paddingBottom: '8px',
+                      marginTop: '10px',
+                      WebkitOverflowScrolling: 'touch'
+                    }}
+                  >
+                    <div style={{ width: 'max-content', minWidth: '100%' }}>
+                      {renderGroupContent(groups[0])}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Bottom Action Buttons: [ Edit (Unlock) ] [ ⭐ ] [ Save ] */}
               <div style={{
@@ -1338,98 +1612,194 @@ export default function InventoryScreen({
               </div>
             </div>
 
-            {/* Screen PINs row */}
-            <div className="screens-grid-row" style={{ marginTop: '10px', marginBottom: '6px' }}>
-              {newScreenPins.map((pin, sIdx) => (
-                <div
-                  key={sIdx}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    background: '#f1f5f9',
-                    padding: '5px 2px',
-                    borderRadius: '8px',
-                    border: '1px solid #e2e8f0',
-                    minHeight: '26px'
-                  }}
-                >
-                  <input
-                    type="text"
-                    maxLength={6}
-                    value={pin}
-                    onChange={e => {
-                      const updated = [...newScreenPins];
-                      updated[sIdx] = e.target.value;
-                      setNewScreenPins(updated);
-                    }}
-                    style={{
-                      width: '100%',
-                      fontSize: '12px',
-                      textAlign: 'center',
-                      border: 'none',
-                      background: 'transparent',
-                      fontWeight: 800
-                    }}
-                  />
-                </div>
-              ))}
-            </div>
+            {/* Dynamic Screens in Add Account Modal */}
+            {(() => {
+              const count = newScreenCount;
+              const isGrouped = currentBrand?.groupScreensBy5 !== false;
+              const groupSize = 5;
+              const indices = Array.from({ length: count }, (_, i) => i);
 
-            {/* Screen Buttons row (Screen-1 to 5 with TV icon) */}
-            <div className="screens-grid-row">
-              {newScreenPins.map((_, sIdx) => (
-                <div
-                  key={sIdx}
-                  style={{
-                    background: '#ea580c',
-                    color: '#ffffff',
-                    borderRadius: '8px',
-                    padding: '5px 2px',
-                    textAlign: 'center',
-                    boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '2px',
-                    lineHeight: 1
-                  }}
-                >
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
-                    Screen-{sIdx + 1}
-                  </span>
-                  <Tv size={16} strokeWidth={2.5} />
-                </div>
-              ))}
-            </div>
+              const groups = isGrouped
+                ? Array.from({ length: Math.ceil(count / groupSize) || 1 }, (_, gIdx) =>
+                    indices.slice(gIdx * groupSize, (gIdx + 1) * groupSize)
+                  )
+                : [indices];
 
-            {/* Status Empty Boxes Row below Screens (5 dashed empty '+' boxes) */}
-            <div className="screens-grid-row" style={{ marginTop: '6px' }}>
-              {newScreenPins.map((_, sIdx) => (
+              const renderAddModalGroup = (grpIndices) => {
+                const gridStyle = isGrouped
+                  ? { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', alignItems: 'center' }
+                  : { display: 'grid', gridTemplateColumns: `repeat(${count}, minmax(68px, 1fr))`, gap: '6px', alignItems: 'center', width: 'max-content', minWidth: '100%' };
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {/* Screen PINs row (only if brand allows Screen PIN) */}
+                    {currentBrand?.showScreenPin !== false && (
+                      <div style={gridStyle}>
+                        {grpIndices.map(sIdx => (
+                          <div
+                            key={sIdx}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              background: '#f1f5f9',
+                              padding: '5px 2px',
+                              borderRadius: '8px',
+                              border: '1px solid #e2e8f0',
+                              minHeight: '26px',
+                              boxSizing: 'border-box'
+                            }}
+                          >
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={newScreenPins[sIdx] || ''}
+                              onChange={e => {
+                                const updated = [...newScreenPins];
+                                updated[sIdx] = e.target.value;
+                                setNewScreenPins(updated);
+                              }}
+                              style={{
+                                width: '100%',
+                                fontSize: '12px',
+                                textAlign: 'center',
+                                border: 'none',
+                                background: 'transparent',
+                                fontWeight: 800,
+                                outline: 'none',
+                                padding: 0
+                              }}
+                              title={`Screen-${String(sIdx + 1).padStart(2, '0')} PIN`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Screen Buttons row (Screen name on top, TV icon below) */}
+                    <div style={gridStyle}>
+                      {grpIndices.map(sIdx => (
+                        <div
+                          key={sIdx}
+                          style={{
+                            background: '#ea580c',
+                            color: '#ffffff',
+                            borderRadius: '8px',
+                            padding: '5px 2px',
+                            textAlign: 'center',
+                            boxShadow: '0 2px 4px rgba(234,88,12,0.25)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '2px',
+                            lineHeight: 1,
+                            boxSizing: 'border-box'
+                          }}
+                        >
+                          <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            Screen-{String(sIdx + 1).padStart(2, '0')}
+                          </span>
+                          <Tv size={15} strokeWidth={2.5} />
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Status Empty Boxes Row ('+' boxes) */}
+                    <div style={gridStyle}>
+                      {grpIndices.map(sIdx => (
+                        <div
+                          key={sIdx}
+                          style={{
+                            height: '34px',
+                            minHeight: '34px',
+                            maxHeight: '34px',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            borderRadius: '8px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '18px',
+                            fontWeight: 900,
+                            background: '#ffffff',
+                            color: '#64748b',
+                            border: '2px dashed #94a3b8'
+                          }}
+                        >
+                          +
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Device Name input row (when Device Name is ON) */}
+                    {currentBrand?.showDeviceName !== false && (
+                      <div style={gridStyle}>
+                        {grpIndices.map(sIdx => (
+                          <div key={sIdx} style={{ width: '100%', boxSizing: 'border-box' }}>
+                            <input
+                              type="text"
+                              placeholder="Device name"
+                              value={newDeviceNames[sIdx] || ''}
+                              onChange={e => {
+                                const updated = [...newDeviceNames];
+                                updated[sIdx] = e.target.value;
+                                setNewDeviceNames(updated);
+                              }}
+                              style={{
+                                height: '28px',
+                                minHeight: '28px',
+                                width: '100%',
+                                boxSizing: 'border-box',
+                                padding: '0 4px',
+                                borderRadius: '6px',
+                                fontSize: '10.5px',
+                                fontWeight: 700,
+                                background: '#ffffff',
+                                color: '#0f172a',
+                                border: '1.5px solid #93c5fd',
+                                outline: 'none',
+                                textAlign: 'center'
+                              }}
+                              title={`Screen-${String(sIdx + 1).padStart(2, '0')} Device Name`}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+
+              if (isGrouped) {
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                    {groups.map((grpIndices, gIdx) => (
+                      <div key={gIdx}>
+                        {renderAddModalGroup(grpIndices)}
+                      </div>
+                    ))}
+                  </div>
+                );
+              }
+
+              return (
                 <div
-                  key={sIdx}
+                  className="screens-scroll-container"
                   style={{
-                    height: '34px',
-                    minHeight: '34px',
-                    maxHeight: '34px',
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '18px',
-                    fontWeight: 900,
-                    background: '#ffffff',
-                    color: '#64748b',
-                    border: '2px dashed #94a3b8'
+                    overflowX: 'auto',
+                    overflowY: 'hidden',
+                    paddingBottom: '8px',
+                    marginTop: '10px',
+                    WebkitOverflowScrolling: 'touch'
                   }}
                 >
-                  +
+                  <div style={{ width: 'max-content', minWidth: '100%' }}>
+                    {renderAddModalGroup(groups[0])}
+                  </div>
                 </div>
-              ))}
-            </div>
+              );
+            })()}
 
             {/* Bottom 2 Action Buttons: Cancel and Save */}
             <div style={{
