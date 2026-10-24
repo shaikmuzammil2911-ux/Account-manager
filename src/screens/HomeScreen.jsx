@@ -7,7 +7,7 @@ import {
 import { api } from '../api/client';
 import { GOOGLE_APPS_SCRIPT_TEMPLATE, DEFAULT_SPREADSHEET_ID } from '../utils/googleSheets';
 import DatePickerModal from '../components/DatePickerModal';
-import { formatDate, parseDate, MONTH_NAMES, getDaysDiff } from '../utils/dateUtils';
+import { formatDate, parseDate, MONTH_NAMES, getDaysDiff, isSaleOnBusinessDate } from '../utils/dateUtils';
 
 export default function HomeScreen({
   onNavigate,
@@ -159,50 +159,33 @@ export default function HomeScreen({
     }
   };
 
-  // Date-dependent statistics calculation
+  // Date-dependent statistics calculation using configured business timezone (Asia/Kolkata)
   const { dateSoldAC, dateAmount, expiredCount, todayCount, totalSalesCount, freeScreensCount } = useMemo(() => {
-    const targetDateStr = formatDate(activeDate).toLowerCase().trim();
-    const d = activeDate;
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    const isoPrefix = `${yyyy}-${mm}-${dd}`;
+    // Only consider non-deleted, active sales
+    const validSales = (allSales || []).filter(s => s && !s.isDeleted && s.status !== 'deleted' && s.status !== 'Deleted');
 
-    // Calculate sales on active selected date
-    const dateMatchingSales = (allSales || []).filter(s => {
-      const act = (s.activationDate || s.saleDate || '').toLowerCase().trim();
-      const created = (s.createdAt || '').slice(0, 10);
-      return act === targetDateStr || created === isoPrefix;
-    });
+    // Calculate sales on active selected date using business timezone Asia/Kolkata
+    const dateMatchingSales = validSales.filter(s => isSaleOnBusinessDate(s, activeDate, 'Asia/Kolkata'));
 
-    // If matching records found for date, use them; otherwise if activeDate is today, fallback to stats
-    const isToday = new Date().toDateString() === activeDate.toDateString();
-    let soldCount = dateMatchingSales.length;
-    let amountSum = dateMatchingSales.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    // Strictly actual counts on selected date - no falling back to all-time stats when 0
+    const soldCount = dateMatchingSales.length;
+    const amountSum = dateMatchingSales.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-    if (isToday) {
-      if (soldCount === 0 && (stats?.totalSales || 0) > 0) {
-        soldCount = allSales.length > 0 ? allSales.length : (stats?.totalSales || 0);
-      }
-      if (amountSum === 0 && (stats?.totalRevenue || 0) > 0) {
-        amountSum = stats?.totalRevenue || 0;
-      }
-    }
-
-    // Secondary metrics: strictly computed from actual active records
+    // Customer expiry metrics: strictly computed from user's actual valid customer sales
     let expired = 0;
     let todayExp = 0;
-    if (allSales && allSales.length > 0) {
-      expired = allSales.filter(s => {
+    if (validSales.length > 0) {
+      expired = validSales.filter(s => {
         const diff = getDaysDiff(s.expiryDate, activeDate);
         return diff !== null && typeof diff === 'number' && !isNaN(diff) && diff < 0;
       }).length;
-      todayExp = allSales.filter(s => {
+      todayExp = validSales.filter(s => {
         const diff = getDaysDiff(s.expiryDate, activeDate);
         return diff !== null && typeof diff === 'number' && !isNaN(diff) && diff === 0;
       }).length;
     }
 
+    // Free Screens: reflects actual inventory screens
     let freeScreens = stats?.emptyScreens ?? 0;
     if (inventoryList.length > 0) {
       let calcEmpty = 0;
@@ -214,7 +197,8 @@ export default function HomeScreen({
       freeScreens = calcEmpty;
     }
 
-    const totalSales = (allSales && allSales.length > 0) ? allSales.length : (stats?.totalSales ?? 0);
+    // All-time valid customer sales count
+    const totalSales = validSales.length;
 
     return {
       dateSoldAC: soldCount,

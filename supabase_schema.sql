@@ -228,6 +228,8 @@ ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS customer_email TEXT;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS seller_name TEXT;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS notification_sent BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS last_notified_at TIMESTAMPTZ;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE public.sales ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 CREATE INDEX IF NOT EXISTS idx_sales_owner ON public.sales (owner_email);
 CREATE INDEX IF NOT EXISTS idx_sales_seller ON public.sales (seller_email);

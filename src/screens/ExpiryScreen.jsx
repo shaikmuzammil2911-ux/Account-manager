@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Calendar, Bell, Check, X, Search,
   FileSpreadsheet, RefreshCw, User, Phone, Mail, Lock,
-  CheckCircle2, Tv, Key, Clock, AlertTriangle, Layers, ChevronLeft, ChevronRight
+  CheckCircle2, Tv, Key, Clock, AlertTriangle, Layers, ChevronLeft, ChevronRight, Trash2
 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDate, parseDate, getDaysDiff, getExpiryStatus, isValidDateStr } from '../utils/dateUtils';
@@ -10,6 +10,7 @@ import { exportExpiryToExcel } from '../utils/excelExport';
 import CopyButton from '../components/CopyButton';
 import BrandSelectorModal from '../components/BrandSelectorModal';
 import DatePickerModal from '../components/DatePickerModal';
+import DeleteSaleModal from '../components/DeleteSaleModal';
 
 export default function ExpiryScreen({
   brands = [],
@@ -60,16 +61,19 @@ export default function ExpiryScreen({
     }
   }, [dateFilter]);
 
+  // Delete sale modal state
+  const [saleToDelete, setSaleToDelete] = useState(null);
+
   // Fetch sales and inventory accounts
   const fetchExpiryList = async () => {
     try {
       setLoading(true);
       const [salesData, invData] = await Promise.all([
-        api.getExpiry({ filter: 'ALL', brandId: 'all' }),
+        api.getSales({ brandId: 'all' }),
         api.getInventory({ brandId: 'all' })
       ]);
-      setItems(salesData || []);
-      setInventoryList(invData || []);
+      setItems(Array.isArray(salesData) ? salesData : []);
+      setInventoryList(Array.isArray(invData) ? invData : []);
     } catch (err) {
       if (showToast) showToast('Failed to load expiry data', 'error');
     } finally {
@@ -85,102 +89,69 @@ export default function ExpiryScreen({
     return (brands || []).find(b => b.id === brandId || b.name?.toLowerCase() === String(brandId).toLowerCase()) || null;
   };
 
+  const handleInitiateDelete = (screenSub) => {
+    const saleObj = screenSub.rawSale || {
+      id: screenSub.saleId || screenSub.id,
+      customerName: screenSub.customerName,
+      customerNumber: screenSub.customerNumber,
+      brandName: screenSub.brandName,
+      screenNumber: screenSub.screenNumber,
+      accountEmail: screenSub.accountEmail
+    };
+    setSaleToDelete(saleObj);
+  };
+
+  const handleConfirmDelete = async (sale) => {
+    const saleId = sale.id || sale.saleId;
+    if (!saleId) throw new Error('Invalid sale identifier');
+    await api.deleteSale(saleId);
+    setItems(prev => prev.filter(s => s.id !== saleId));
+    if (showToast) showToast('Sale successfully deleted');
+  };
+
   // =========================================================================
-  // 1. BUILD UNIFIED SCREEN RECORDS FROM INVENTORY ACCOUNTS + SALES RECORDS
+  // 1. DERIVE CUSTOMER EXPIRY CARDS STRICTLY FROM VALID CUSTOMER SALES
   // =========================================================================
   const allScreens = [];
-  const processedSaleIds = new Set();
+  (items || []).forEach((sale, sIdx) => {
+    if (!sale || sale.isDeleted || sale.status === 'Deleted' || sale.status === 'deleted') return;
+    const diff = sale.daysRemaining !== undefined ? sale.daysRemaining : getDaysDiff(sale.expiryDate);
+    const statusObj = getExpiryStatus(sale.expiryDate);
+    const screenNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || String(sIdx + 1), 10);
+    const brand = getBrandObj(sale.brandId);
 
-  (inventoryList || []).forEach(inv => {
-    const brand = getBrandObj(inv.brandId);
-    const configuredScreens = inv.screens || [];
+    const linkedAccount = (inventoryList || []).find(inv =>
+      (sale.inventoryId && inv.id === sale.inventoryId) ||
+      (sale.accountEmail && String(inv?.email || '').toLowerCase().trim() === String(sale.accountEmail || '').toLowerCase().trim())
+    );
 
-    configuredScreens.forEach((screen, sIdx) => {
-      const screenNum = screen.screenNumber || (sIdx + 1);
-
-      // Find matching sale for this screen
-      let sale = null;
-      if (screen.saleId) {
-        sale = (items || []).find(s => s.id === screen.saleId);
-      }
-      if (!sale) {
-        sale = (items || []).find(s =>
-          (s.inventoryId === inv.id || String(s.accountEmail || '').toLowerCase() === String(inv.email || '').toLowerCase()) &&
-          (parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === screenNum || s.screenNumber === `Screen-${screenNum}` || s.screenNumber === `Screen ${screenNum}`)
-        );
-      }
-      if (sale && sale.id) {
-        processedSaleIds.add(sale.id);
-      }
-
-      const expiryDate = screen.expiryDate || sale?.expiryDate || '';
-      const diff = getDaysDiff(expiryDate);
-      const statusObj = getExpiryStatus(expiryDate);
-
-      allScreens.push({
-        id: sale?.id || `${inv.id}_s_${screenNum}`,
-        accountId: inv.id,
-        accountRecordNumber: inv.recordNumber,
-        accountEmail: inv.email,
-        accountPassword: inv.password,
-        brandId: inv.brandId,
-        brandName: inv.brandName || brand?.displayName || brand?.name || inv.brandId,
-        screenNumber: screenNum,
-        screenPin: screen.pin || sale?.screenPin || '',
-        status: screen.status || (sale ? 'occupied' : 'empty'),
-        customerName: sale?.customerName || (screen.status === 'occupied' ? 'Customer' : 'Vacant Screen'),
-        customerNumber: sale?.customerNumber || '',
-        customerEmail: sale?.customerEmail || '',
-        validity: sale?.validity || inv.validity || '01 Month',
-        activationDate: sale?.activationDate || sale?.saleDate || '',
-        expiryDate: expiryDate,
-        daysRemaining: diff,
-        expiryStatus: statusObj.status,
-        deviceName: sale?.deviceName || '',
-        notificationSent: !!(sale?.notificationSent || screen.notificationSent),
-        lastNotifiedAt: sale?.lastNotifiedAt || screen.lastNotifiedAt || null,
-        amount: sale?.amount || '',
-        sellerName: sale?.sellerName || '',
-        saleId: sale?.id || screen.saleId || null
-      });
+    allScreens.push({
+      id: sale.id,
+      saleId: sale.id,
+      accountId: sale.inventoryId || linkedAccount?.id || null,
+      accountRecordNumber: linkedAccount?.recordNumber || null,
+      accountEmail: sale.accountEmail || linkedAccount?.email || '',
+      accountPassword: sale.accountPassword || linkedAccount?.password || '',
+      brandId: sale.brandId || linkedAccount?.brandId || 'other',
+      brandName: sale.brandName || linkedAccount?.brandName || brand?.displayName || brand?.name || 'OTT Service',
+      screenNumber: screenNum,
+      screenPin: sale.screenPin || '',
+      status: 'occupied',
+      customerName: sale.customerName || 'Customer',
+      customerNumber: sale.customerNumber || '',
+      customerEmail: sale.customerEmail || '',
+      validity: sale.validity || '01 Month',
+      activationDate: sale.activationDate || sale.saleDate || '',
+      expiryDate: sale.expiryDate || '',
+      daysRemaining: diff,
+      expiryStatus: statusObj.status,
+      deviceName: sale.deviceName || '',
+      notificationSent: !!sale.notificationSent,
+      lastNotifiedAt: sale.lastNotifiedAt || null,
+      amount: sale.amount || '',
+      sellerName: sale.sellerName || '',
+      rawSale: sale
     });
-  });
-
-  // Include any extra sales that were not attached to an inventory account screen
-  (items || []).forEach((s, sIdx) => {
-    if (!processedSaleIds.has(s.id)) {
-      const diff = s.daysRemaining !== undefined ? s.daysRemaining : getDaysDiff(s.expiryDate);
-      const statusObj = getExpiryStatus(s.expiryDate);
-      const screenNum = parseInt(String(s.screenNumber).replace(/\D/g, '') || String(sIdx + 1), 10);
-      const brand = getBrandObj(s.brandId);
-
-      allScreens.push({
-        id: s.id,
-        accountId: s.inventoryId || `orphan_${s.accountEmail || 'acc'}`,
-        accountRecordNumber: null,
-        accountEmail: s.accountEmail || '',
-        accountPassword: s.accountPassword || '',
-        brandId: s.brandId || 'other',
-        brandName: s.brandName || brand?.displayName || s.brandId || 'OTT Service',
-        screenNumber: screenNum,
-        screenPin: s.screenPin || '',
-        status: 'occupied',
-        customerName: s.customerName || 'Customer',
-        customerNumber: s.customerNumber || '',
-        customerEmail: s.customerEmail || '',
-        validity: s.validity || '01 Month',
-        activationDate: s.activationDate || s.saleDate || '',
-        expiryDate: s.expiryDate || '',
-        daysRemaining: diff,
-        expiryStatus: statusObj.status,
-        deviceName: s.deviceName || '',
-        notificationSent: !!s.notificationSent,
-        lastNotifiedAt: s.lastNotifiedAt || null,
-        amount: s.amount || '',
-        sellerName: s.sellerName || '',
-        saleId: s.id
-      });
-    }
   });
 
   // Base brand filtering
@@ -742,11 +713,11 @@ export default function ExpiryScreen({
         </div>
       ) : filteredScreens.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px 16px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px' }}>
-            No screen expiries on {selectedDate === 'ALL' ? 'selected filters' : selectedDate}.
+          <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px', fontSize: '15px' }}>
+            {baseScreenRecords.length === 0 ? 'No expiry records' : `No screen expiries on ${selectedDate === 'ALL' ? 'selected filters' : selectedDate}.`}
           </p>
           <p style={{ fontSize: '12px', color: '#94a3b8' }}>
-            Use the date strip above to select another date or click "All" to view all records.
+            {baseScreenRecords.length === 0 ? 'No customer sales or expiry records found.' : 'Use the date strip above to select another date or click "All" to view all records.'}
           </p>
         </div>
       ) : (
@@ -772,7 +743,7 @@ export default function ExpiryScreen({
               }}
               id={`expiry-screen-card-${sIdx + 1}`}
             >
-              {/* Card Header: Ribbon, Brand Badge, Highlighted Expiry Date Badge */}
+              {/* Card Header: Ribbon, Brand Badge, Highlighted Expiry Date Badge + Delete Button */}
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
                 <div className={`ribbon-badge ${isSecondCard ? 'blue' : ''}`}>
                   {String(sIdx + 1).padStart(2, '0')}
@@ -800,8 +771,38 @@ export default function ExpiryScreen({
                   )}
                 </div>
 
-                {/* Top Right Expiry Date */}
-                {renderHighlightedExpiryBadge(sub)}
+                {/* Top Right: Highlighted Expiry Date + Compact Red Trash Delete Button */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  {renderHighlightedExpiryBadge(sub)}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleInitiateDelete(sub);
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: '32px',
+                      minWidth: '32px',
+                      height: '32px',
+                      borderRadius: '8px',
+                      background: '#fee2e2',
+                      border: '1.5px solid #ef4444',
+                      color: '#dc2626',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 6px rgba(239, 68, 68, 0.2)',
+                      transition: 'all 0.15s ease',
+                      boxSizing: 'border-box'
+                    }}
+                    title="Delete sale"
+                    aria-label="Delete sale"
+                    id={`delete-expiry-sale-${sub.id || sIdx}`}
+                  >
+                    <Trash2 size={15} strokeWidth={2.4} />
+                  </button>
+                </div>
               </div>
 
               {/* Row 1: NAME & NUMBER */}
@@ -941,6 +942,15 @@ export default function ExpiryScreen({
           );
         })
       )}
+
+      {/* Delete Sale Confirmation Modal */}
+      <DeleteSaleModal
+        isOpen={!!saleToDelete}
+        sale={saleToDelete}
+        origin="expiry"
+        onClose={() => setSaleToDelete(null)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

@@ -232,4 +232,79 @@ export function getExpiryCategory(expiryDateStr) {
   return 'active';
 }
 
+export function getBusinessDateParts(dateInput, timeZone = 'Asia/Kolkata') {
+  if (!dateInput) return null;
+  const d = dateInput instanceof Date ? dateInput : (parseDate(dateInput) || new Date(dateInput));
+  if (!d || isNaN(d.getTime())) return null;
+  try {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+    const isoDate = formatter.format(d); // "YYYY-MM-DD"
+    const [yearStr, monthStr, dayStr] = isoDate.split('-');
+    const day = parseInt(dayStr, 10);
+    const month = parseInt(monthStr, 10) - 1;
+    const year = parseInt(yearStr, 10);
+    const dayFormatted = String(day).padStart(2, '0');
+    const monthName = MONTH_NAMES[month];
+    return {
+      isoDate,
+      formatted: `${dayFormatted}-${monthName}-${year}`,
+      year,
+      month,
+      day
+    };
+  } catch (e) {
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = MONTH_NAMES[d.getMonth()];
+    const year = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return {
+      isoDate: `${year}-${mm}-${day}`,
+      formatted: `${day}-${month}-${year}`,
+      year,
+      month: d.getMonth(),
+      day: d.getDate()
+    };
+  }
+}
+
+export function isSaleOnBusinessDate(sale, selectedDate, timeZone = 'Asia/Kolkata') {
+  if (!sale || !selectedDate) return false;
+  const target = getBusinessDateParts(selectedDate, timeZone);
+  if (!target) return false;
+
+  const targetFormatted = target.formatted.toLowerCase();
+  const targetIso = target.isoDate;
+
+  // 1. Check activationDate or saleDate
+  if (sale.activationDate) {
+    const actParts = getBusinessDateParts(sale.activationDate, timeZone);
+    if (actParts && (actParts.formatted.toLowerCase() === targetFormatted || actParts.isoDate === targetIso)) {
+      return true;
+    }
+  }
+
+  if (sale.saleDate && sale.saleDate !== sale.activationDate) {
+    const sParts = getBusinessDateParts(sale.saleDate, timeZone);
+    if (sParts && (sParts.formatted.toLowerCase() === targetFormatted || sParts.isoDate === targetIso)) {
+      return true;
+    }
+  }
+
+  // 2. Check createdAt timestamp in the configured business timezone
+  if (sale.createdAt) {
+    const createdParts = getBusinessDateParts(sale.createdAt, timeZone);
+    if (createdParts && (createdParts.isoDate === targetIso || createdParts.formatted.toLowerCase() === targetFormatted)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export { MONTH_NAMES, FULL_MONTH_NAMES };
+

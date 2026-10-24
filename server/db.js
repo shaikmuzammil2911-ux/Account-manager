@@ -779,18 +779,52 @@ export const db = {
 
     const [deletedSale] = data.sales.splice(idx, 1);
 
-    // Free the screen in inventory
+    // Recalculate screen occupancy from remaining valid sales
+    const targetAccountId = deletedSale.inventoryId;
+    const targetAccountEmail = (deletedSale.accountEmail || '').toLowerCase().trim();
+    const targetScreenNum = parseInt(String(deletedSale.screenNumber).replace(/\D/g, '') || '1', 10);
+
+    const remainingSalesForScreen = (data.sales || []).filter(s => {
+      if (!s || s.id === id || s.isDeleted || s.status === 'Deleted' || s.status === 'deleted') return false;
+      const sameAcc = (targetAccountId && s.inventoryId === targetAccountId) ||
+                      (targetAccountEmail && String(s.accountEmail || '').toLowerCase().trim() === targetAccountEmail);
+      if (!sameAcc) return false;
+      const sNum = parseInt(String(s.screenNumber).replace(/\D/g, '') || '1', 10);
+      return sNum === targetScreenNum;
+    });
+
+    let newestSale = null;
+    if (remainingSalesForScreen.length > 0) {
+      remainingSalesForScreen.sort((a, b) => {
+        const dateA = new Date(a.expiryDate || a.activationDate).getTime() || 0;
+        const dateB = new Date(b.expiryDate || b.activationDate).getTime() || 0;
+        return dateB - dateA;
+      });
+      newestSale = remainingSalesForScreen[0];
+    }
+
     const inv = (data.inventory || []).find(i =>
-      (deletedSale.inventoryId && i.id === deletedSale.inventoryId) ||
-      (deletedSale.accountEmail && i.email?.toLowerCase() === deletedSale.accountEmail.toLowerCase())
+      (targetAccountId && i.id === targetAccountId) ||
+      (targetAccountEmail && String(i.email || '').toLowerCase().trim() === targetAccountEmail)
     );
     if (inv && inv.screens) {
-      const sNum = parseInt(String(deletedSale.screenNumber).replace(/\D/g, '') || '1', 10);
-      const screen = inv.screens.find(s => s.screenNumber === sNum);
+      const screen = inv.screens.find(s => s.screenNumber === targetScreenNum);
       if (screen) {
-        screen.status = 'empty';
-        screen.saleId = null;
-        screen.expiryDate = null;
+        if (newestSale) {
+          screen.status = 'occupied';
+          screen.saleId = newestSale.id;
+          screen.expiryDate = newestSale.expiryDate;
+          screen.customerName = newestSale.customerName;
+          screen.customerNumber = newestSale.customerNumber;
+          if (newestSale.screenPin) screen.pin = newestSale.screenPin;
+          if (newestSale.deviceName) screen.deviceType = newestSale.deviceName;
+        } else {
+          screen.status = 'empty';
+          screen.saleId = null;
+          screen.expiryDate = null;
+          screen.customerName = null;
+          screen.customerNumber = null;
+        }
       }
     }
 

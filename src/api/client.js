@@ -873,6 +873,7 @@ export const api = {
 
     // Collect sales across all available sources (Server, Supabase, LocalStorage)
     const salesMap = new Map();
+    let supabaseSucceeded = false;
 
     // 1. Fetch from backend API if reachable
     try {
@@ -890,7 +891,9 @@ export const api = {
         const serverSales = await res.json();
         if (Array.isArray(serverSales)) {
           serverSales.forEach(s => {
-            if (s && s.id) salesMap.set(s.id, s);
+            if (s && s.id && !s.isDeleted && s.status !== 'Deleted' && s.status !== 'deleted') {
+              salesMap.set(s.id, s);
+            }
           });
         }
       }
@@ -898,15 +901,22 @@ export const api = {
 
     // 2. Fetch directly from Supabase sales table
     try {
-      let sbQuery = supabase.from('sales').select('*');
+      let sbQuery = supabase.from('sales').select('*').neq('status', 'Deleted');
       if (params.brandId && params.brandId !== 'all') {
         const targetBrandId = params.brandId.includes('__shared__') ? params.brandId.split('__shared__')[0] : params.brandId;
         sbQuery = sbQuery.or(`brand_id.eq.${params.brandId},brand_id.eq.${targetBrandId}`);
       }
+      const isAdminCheck = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+      if (!isAdminCheck && effectiveEmail) {
+        sbQuery = sbQuery.or(`seller_email.eq.${effectiveEmail},owner_email.eq.${effectiveEmail}`);
+      }
+
       const { data: sbData, error: sbErr } = await sbQuery;
       if (!sbErr && Array.isArray(sbData)) {
+        supabaseSucceeded = true;
+        salesMap.clear(); // Authoritative data from Supabase
         sbData.forEach(s => {
-          if (s && s.id) {
+          if (s && s.id && s.status !== 'Deleted' && s.status !== 'deleted') {
             const mapped = {
               id: s.id,
               recordNumber: s.record_number,
@@ -936,19 +946,33 @@ export const api = {
               saleDate: s.activation_date,
               createdAt: s.created_at
             };
-            salesMap.set(mapped.id, { ...(salesMap.get(mapped.id) || {}), ...mapped });
+            salesMap.set(mapped.id, mapped);
           }
         });
       }
     } catch (e) {}
 
-    // 3. Merge LocalStorage sales (ensures offline and 0ms saved sales are present)
-    const local = getLocalData();
-    (local.sales || []).forEach(s => {
-      if (s && s.id) {
-        salesMap.set(s.id, { ...(salesMap.get(s.id) || {}), ...s });
-      }
-    });
+    // 3. Fallback to LocalStorage sales ONLY if Supabase was unreachable
+    if (!supabaseSucceeded) {
+      const local = getLocalData();
+      (local.sales || []).forEach(s => {
+        if (s && s.id && !s.isDeleted && s.status !== 'Deleted' && s.status !== 'deleted') {
+          salesMap.set(s.id, { ...(salesMap.get(s.id) || {}), ...s });
+        }
+      });
+    } else {
+      // Sync local storage with authoritative Supabase records to permanently purge deleted/demo records
+      try {
+        const local = getLocalData();
+        const authoritativeSales = Array.from(salesMap.values());
+        local.sales = authoritativeSales;
+        saveLocalData(local);
+        localStorage.setItem('accounts_manager_cached_sales', JSON.stringify(authoritativeSales));
+        if (effectiveEmail) {
+          localStorage.setItem(`accounts_manager_cached_sales_${effectiveEmail}`, JSON.stringify(authoritativeSales));
+        }
+      } catch (e) {}
+    }
 
     let sales = Array.from(salesMap.values());
     const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
@@ -1279,45 +1303,143 @@ export const api = {
   },
 
   async deleteSale(id) {
-    const local = getLocalData();
-    const sale = (local.sales || []).find(s => s.id === id);
-    if (!sale) return false;
+    const activeUser = getActiveUser();
+    const effectiveEmail = activeUser?.email;
+    const isAdmin = activeUser?.role === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
 
+    const local = getLocalData();
+    let sale = (local.sales || []).find(s => s.id === id);
+
+    // If not found in local.sales, attempt to look up from Supabase
+    if (!sale) {
+      try {
+        const { data: sbSale } = await supabase.from('sales').select('*').eq('id', id).single();
+        if (sbSale) {
+          sale = {
+            id: sbSale.id,
+            brandId: sbSale.brand_id,
+            brandName: sbSale.brand_name,
+            inventoryId: sbSale.inventory_id,
+            accountEmail: sbSale.account_email,
+            screenNumber: sbSale.screen_number,
+            sellerEmail: sbSale.seller_email,
+            ownerEmail: sbSale.owner_email,
+            status: sbSale.status
+          };
+        }
+      } catch (e) {}
+    }
+
+    if (!sale) {
+      throw new Error('Sale record not found.');
+    }
+
+    // Ownership enforcement: verify caller is admin or sale owner/seller
+    if (!isAdmin && effectiveEmail) {
+      const saleOwner = (sale.ownerEmail || sale.sellerEmail || '').toLowerCase().trim();
+      if (saleOwner && saleOwner !== effectiveEmail.toLowerCase().trim()) {
+        throw new Error('Permission denied: You cannot delete a sale that belongs to another user.');
+      }
+    }
+
+    // Recalculate screen occupancy from remaining valid sales
+    const targetAccountId = sale.inventoryId;
+    const targetAccountEmail = (sale.accountEmail || '').toLowerCase().trim();
+    const targetScreenNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
+
+    // Find any remaining valid sales for the exact same account screen
+    const remainingSalesForScreen = (local.sales || []).filter(s => {
+      if (!s || s.id === id || s.isDeleted || s.status === 'Deleted' || s.status === 'deleted') return false;
+      const sameAcc = (targetAccountId && s.inventoryId === targetAccountId) ||
+                      (targetAccountEmail && String(s.accountEmail || '').toLowerCase().trim() === targetAccountEmail);
+      if (!sameAcc) return false;
+      const sNum = parseInt(String(s.screenNumber).replace(/\D/g, '') || '1', 10);
+      return sNum === targetScreenNum;
+    });
+
+    let newestSale = null;
+    if (remainingSalesForScreen.length > 0) {
+      remainingSalesForScreen.sort((a, b) => {
+        const dateA = parseDate(a.expiryDate || a.activationDate)?.getTime() || 0;
+        const dateB = parseDate(b.expiryDate || b.activationDate)?.getTime() || 0;
+        return dateB - dateA;
+      });
+      newestSale = remainingSalesForScreen[0];
+    }
+
+    // Direct Supabase delete with strict ownership enforcement
+    try {
+      let delQuery = supabase.from('sales').delete().eq('id', id);
+      if (!isAdmin && effectiveEmail) {
+        delQuery = delQuery.or(`owner_email.eq.${effectiveEmail},seller_email.eq.${effectiveEmail}`);
+      }
+      const { error: sbDelErr } = await delQuery;
+      if (sbDelErr) {
+        console.warn('[Supabase Sale Delete Error]:', sbDelErr.message);
+        throw new Error(sbDelErr.message);
+      }
+
+      // Update Supabase screens table according to recalculated occupancy
+      if (targetAccountId) {
+        if (newestSale) {
+          await supabase.from('screens').update({
+            status: 'occupied',
+            sale_id: newestSale.id,
+            expiry_date: newestSale.expiryDate,
+            updated_at: new Date().toISOString()
+          }).match({ account_id: targetAccountId, screen_number: targetScreenNum });
+        } else {
+          // No other active sale: mark screen free while preserving PIN & device_type
+          await supabase.from('screens').update({
+            status: 'empty',
+            sale_id: null,
+            expiry_date: null,
+            updated_at: new Date().toISOString()
+          }).match({ account_id: targetAccountId, screen_number: targetScreenNum });
+        }
+      }
+    } catch (sbErr) {
+      console.error('[Supabase Delete Failed]:', sbErr);
+      throw sbErr; // Propagate error so UI keeps the record and alerts user!
+    }
+
+    // Only after database confirmation: update local storage
     local.sales = (local.sales || []).filter(s => s.id !== id);
 
-    // Free the screen in inventory
     const inv = (local.inventory || []).find(i =>
-      (sale.inventoryId && i.id === sale.inventoryId) ||
-      (sale.accountEmail && String(i?.email || '').toLowerCase() === String(sale.accountEmail).toLowerCase())
+      (targetAccountId && i.id === targetAccountId) ||
+      (targetAccountEmail && String(i?.email || '').toLowerCase() === targetAccountEmail)
     );
     if (inv && inv.screens) {
-      const sNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
-      const screen = inv.screens.find(s => s.screenNumber === sNum);
+      const screen = inv.screens.find(s => s.screenNumber === targetScreenNum);
       if (screen) {
-        screen.status = 'empty';
-        screen.saleId = null;
-        screen.expiryDate = null;
+        if (newestSale) {
+          screen.status = 'occupied';
+          screen.saleId = newestSale.id;
+          screen.expiryDate = newestSale.expiryDate;
+          screen.customerName = newestSale.customerName;
+          screen.customerNumber = newestSale.customerNumber;
+          if (newestSale.screenPin) screen.pin = newestSale.screenPin;
+          if (newestSale.deviceName) screen.deviceType = newestSale.deviceName;
+        } else {
+          screen.status = 'empty';
+          screen.saleId = null;
+          screen.expiryDate = null;
+          screen.customerName = null;
+          screen.customerNumber = null;
+        }
         inv.updatedAt = Date.now();
       }
     }
 
     saveLocalData(local);
 
-    // Direct Supabase delete & screen free
     try {
-      await supabase.from('sales').delete().eq('id', id);
-      if (sale.inventoryId) {
-        const sNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || '1', 10);
-        await supabase.from('screens').update({
-          status: 'empty',
-          sale_id: null,
-          expiry_date: null,
-          updated_at: new Date().toISOString()
-        }).match({ account_id: sale.inventoryId, screen_number: sNum });
+      localStorage.setItem('accounts_manager_cached_sales', JSON.stringify(local.sales || []));
+      if (effectiveEmail) {
+        localStorage.setItem(`accounts_manager_cached_sales_${effectiveEmail}`, JSON.stringify(local.sales || []));
       }
-    } catch (e) {
-      console.warn('[Supabase Sale Delete Warning]:', e.message);
-    }
+    } catch (e) {}
 
     // Real-time sync sale deletion to Google Sheets
     this.getSheetsConfig().then(cfg => {

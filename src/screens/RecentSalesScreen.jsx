@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Unlock, Save, Tv,
-  Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertCircle, Plus, X, FileText,
-  RefreshCw, CheckCircle2
+  Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertTriangle, Plus, X, FileText,
+  RefreshCw, CheckCircle2, Trash2
 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDate, parseDate, calculateExpiryDate, formatTimelineDateBadge } from '../utils/dateUtils';
 import DatePickerModal from '../components/DatePickerModal';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
+import DeleteSaleModal from '../components/DeleteSaleModal';
 
 export default function RecentSalesScreen({
   brands = [],
@@ -66,9 +67,19 @@ export default function RecentSalesScreen({
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  // Sorting Direction: 'asc' (WhatsApp Style: Oldest at Top, Newest at Bottom) vs 'desc'
   const [sortDirection, setSortDirection] = useState('asc');
   const [isSyncingSheet, setIsSyncingSheet] = useState(false);
+
+  // Delete sale modal state
+  const [saleToDelete, setSaleToDelete] = useState(null);
+
+  const handleConfirmDeleteSale = async (sale) => {
+    const saleId = sale.id;
+    if (!saleId) throw new Error('Invalid sale identifier');
+    await api.deleteSale(saleId);
+    setSales(prev => prev.filter(s => s.id !== saleId));
+    if (showToast) showToast('Sale successfully deleted');
+  };
 
   // Auto-scroll ref to scroll to latest sale at bottom of timeline
   const timelineBottomRef = useRef(null);
@@ -580,35 +591,66 @@ Device: ${sale.deviceName || 'Personal TV'}`;
             <span>{bName}</span>
           </div>
 
-          {/* Lock / Unlock button: height 34px aligned */}
-          <button
-            type="button"
-            onClick={() => handleToggleSaleLock(sale)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '5px',
-              height: '34px',
-              minHeight: '34px',
-              padding: '0 14px',
-              borderRadius: '8px',
-              fontSize: '13px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              border: '1.5px solid',
-              background: isEditing ? '#fef2f2' : '#f0fdf4',
-              color: isEditing ? '#dc2626' : '#16a34a',
-              borderColor: isEditing ? '#f87171' : '#4ade80',
-              boxShadow: isEditing ? '0 2px 6px rgba(220, 38, 38, 0.25)' : '0 2px 6px rgba(22, 163, 74, 0.25)',
-              transition: 'all 0.15s ease',
-              boxSizing: 'border-box'
-            }}
-            title={isEditing ? 'Currently Unlocked. Click to lock' : 'Currently Locked. Click to edit'}
-          >
-            {isEditing ? <Unlock size={15} strokeWidth={2.5} /> : <Lock size={15} strokeWidth={2.5} />}
-            <span>{isEditing ? 'UnLock' : 'Lock'}</span>
-          </button>
+          {/* Action Buttons: Lock/Unlock + Compact Red Trash Delete Button */}
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => handleToggleSaleLock(sale)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                height: '34px',
+                minHeight: '34px',
+                padding: '0 12px',
+                borderRadius: '8px',
+                fontSize: '13px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: '1.5px solid',
+                background: isEditing ? '#fef2f2' : '#f0fdf4',
+                color: isEditing ? '#dc2626' : '#16a34a',
+                borderColor: isEditing ? '#f87171' : '#4ade80',
+                boxShadow: isEditing ? '0 2px 6px rgba(220, 38, 38, 0.25)' : '0 2px 6px rgba(22, 163, 74, 0.25)',
+                transition: 'all 0.15s ease',
+                boxSizing: 'border-box'
+              }}
+              title={isEditing ? 'Currently Unlocked. Click to lock' : 'Currently Locked. Click to edit'}
+            >
+              {isEditing ? <Unlock size={15} strokeWidth={2.5} /> : <Lock size={15} strokeWidth={2.5} />}
+              <span>{isEditing ? 'UnLock' : 'Lock'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setSaleToDelete(sale);
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '34px',
+                minWidth: '34px',
+                height: '34px',
+                borderRadius: '8px',
+                background: '#fee2e2',
+                border: '1.5px solid #ef4444',
+                color: '#dc2626',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(239, 68, 68, 0.2)',
+                transition: 'all 0.15s ease',
+                boxSizing: 'border-box'
+              }}
+              title="Delete sale"
+              aria-label="Delete sale"
+              id={`recent-sale-delete-btn-${sale.id || sIdx}`}
+            >
+              <Trash2 size={16} strokeWidth={2.4} />
+            </button>
+          </div>
         </div>
 
         {/* Row 1: Customer Name & Number with Headings ABOVE and thicker borders */}
@@ -1256,7 +1298,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
         <div className="empty-state-card" style={{ textAlign: 'center', padding: '36px 16px', background: '#f8fafc', borderRadius: '16px', border: '1.5px dashed #cbd5e1' }}>
           <Calendar size={36} color="#94a3b8" style={{ margin: '0 auto 10px auto', display: 'block' }} />
           <p style={{ fontWeight: 800, color: '#334155', fontSize: '15px', marginBottom: '6px' }}>
-            No sales recorded for {filterDateRange ? `${filterDateRange.start} → ${filterDateRange.end}` : (filterDate ? filterDate : activeBrand.displayName)}.
+            {sales.length === 0 ? 'No sales yet' : `No sales recorded for ${filterDateRange ? `${filterDateRange.start} → ${filterDateRange.end}` : (filterDate ? filterDate : activeBrand.displayName)}.`}
           </p>
           <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '16px' }}>
             Click "+ Add Sale" to register a new screen sale.
@@ -1825,6 +1867,15 @@ Device: ${sale.deviceName || 'Personal TV'}`;
           </div>
         </div>
       )}
+
+      {/* Delete Sale Confirmation Modal */}
+      <DeleteSaleModal
+        isOpen={!!saleToDelete}
+        sale={saleToDelete}
+        origin="recent-sales"
+        onClose={() => setSaleToDelete(null)}
+        onConfirm={handleConfirmDeleteSale}
+      />
     </div>
   );
 }
