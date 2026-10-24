@@ -437,9 +437,25 @@ export const api = {
 
     const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
     if (!isAdmin) {
+      const local = getLocalData();
+      const activeShares = (local.sharedBrands || []).filter(s =>
+        s.status !== 'revoked' &&
+        s.status !== 'disabled' &&
+        s.receiverEmail && s.receiverEmail.trim().toLowerCase() === effectiveEmail?.toLowerCase()
+      );
+      const authorizedBrandIds = new Set();
+      activeShares.forEach(s => {
+        (s.brandIds || []).forEach(bId => authorizedBrandIds.add(bId));
+      });
+
       items = items.filter(item => {
         const owner = (item.ownerEmail || '').trim().toLowerCase();
-        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && item.userId === effectiveUserId);
+        const isOwn = (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && item.userId === effectiveUserId);
+        if (isOwn) return true;
+        if (authorizedBrandIds.has(item.brandId)) {
+          return true;
+        }
+        return false;
       });
     }
 
@@ -976,8 +992,11 @@ export const api = {
 
     let sales = Array.from(salesMap.values());
     const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
+    const targetSeller = params.sellerEmail || (params.isPersonalOnly ? effectiveEmail : null);
 
-    if (!isAdmin) {
+    if (targetSeller) {
+      sales = sales.filter(s => (s.sellerEmail || '').trim().toLowerCase() === targetSeller.trim().toLowerCase());
+    } else if (!isAdmin) {
       sales = sales.filter(s => {
         const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
         return (sEmail && sEmail === effectiveEmail?.toLowerCase()) || (effectiveUserId && s.userId === effectiveUserId);
@@ -1107,7 +1126,7 @@ export const api = {
       assignedScreen.customerName = saleData.customerName;
       assignedScreen.customerNumber = saleData.customerNumber;
       if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
-      if (saleData.deviceName) assignedScreen.deviceType = saleData.deviceName;
+      assignedScreen.deviceName = saleData.deviceName ? String(saleData.deviceName).trim() : '';
       assignedAccount.updatedAt = Date.now();
     }
 
@@ -1130,7 +1149,7 @@ export const api = {
       activationDate: saleData.activationDate,
       expiryDate: calculatedExpiry,
       amount: Number(saleData.amount) || brand?.prices?.[saleData.validity] || 199,
-      deviceName: saleData.deviceName || 'Personal TV',
+      deviceName: saleData.deviceName ? String(saleData.deviceName).trim() : '',
       saleDate: saleData.activationDate,
       note: saleData.note || '',
       status: 'Active',
@@ -1241,7 +1260,7 @@ export const api = {
           if (screen) {
             if (updates.expiryDate !== undefined) screen.expiryDate = updates.expiryDate;
             if (updates.screenPin !== undefined) screen.pin = updates.screenPin;
-            if (updates.deviceName !== undefined) screen.deviceType = updates.deviceName;
+            if (updates.deviceName !== undefined) screen.deviceName = String(updates.deviceName).trim();
             inv.updatedAt = Date.now();
           }
         }
@@ -1261,7 +1280,7 @@ export const api = {
         if (updates.validity !== undefined) sbUpdatePayload.validity = updates.validity;
         if (updates.screenNumber !== undefined) sbUpdatePayload.screen_number = updates.screenNumber;
         if (updates.screenPin !== undefined) sbUpdatePayload.screen_pin = updates.screenPin;
-        if (updates.deviceName !== undefined) sbUpdatePayload.device_name = updates.deviceName;
+        if (updates.deviceName !== undefined) sbUpdatePayload.device_name = String(updates.deviceName).trim();
         if (updates.activationDate !== undefined) sbUpdatePayload.activation_date = updates.activationDate;
         if (updates.expiryDate !== undefined) sbUpdatePayload.expiry_date = updates.expiryDate;
         if (updates.amount !== undefined) sbUpdatePayload.amount = Number(updates.amount);
@@ -1270,12 +1289,13 @@ export const api = {
 
         await supabase.from('sales').update(sbUpdatePayload).eq('id', id);
 
-        if (updated.inventoryId && updates.expiryDate) {
+        if (updated.inventoryId) {
           const sNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
-          await supabase.from('screens').update({
-            expiry_date: updates.expiryDate,
-            updated_at: new Date().toISOString()
-          }).match({ account_id: updated.inventoryId, screen_number: sNum });
+          const screenUpd = { updated_at: new Date().toISOString() };
+          if (updates.expiryDate !== undefined) screenUpd.expiry_date = updates.expiryDate;
+          if (updates.deviceName !== undefined) screenUpd.device_name = String(updates.deviceName).trim();
+          if (updates.screenPin !== undefined) screenUpd.pin = updates.screenPin;
+          await supabase.from('screens').update(screenUpd).match({ account_id: updated.inventoryId, screen_number: sNum });
         }
       } catch (e) {
         console.warn('[Supabase Sale Update Warning]:', e.message);
@@ -2558,6 +2578,65 @@ export const api = {
     local.sharedBrands = (local.sharedBrands || []).filter(s => s.id !== id);
     saveLocalData(local);
     return true;
+  },
+
+  async updateShare(id, updates) {
+    let updated = null;
+    try {
+      const res = await fetch(`/api/shares/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (res.ok) updated = await res.json();
+    } catch (e) {}
+    const local = getLocalData();
+    if (!local.sharedBrands) local.sharedBrands = [];
+    const idx = local.sharedBrands.findIndex(s => s.id === id);
+    if (idx !== -1) {
+      local.sharedBrands[idx] = { ...local.sharedBrands[idx], ...updates };
+      saveLocalData(local);
+    }
+    return updated || (idx !== -1 ? local.sharedBrands[idx] : null);
+  },
+
+  async revokeShareBrand(shareId, brandId) {
+    try {
+      await fetch(`/api/shares/${shareId}/brands/${brandId}`, { method: 'DELETE' });
+    } catch (e) {}
+    const local = getLocalData();
+    const share = (local.sharedBrands || []).find(s => s.id === shareId);
+    if (share) {
+      share.brandIds = (share.brandIds || []).filter(id => id !== brandId);
+      if (share.brandDetails && share.brandDetails[brandId]) {
+        delete share.brandDetails[brandId];
+      }
+      if (share.brandIds.length === 0) {
+        local.sharedBrands = local.sharedBrands.filter(s => s.id !== shareId);
+      }
+      saveLocalData(local);
+    }
+    return true;
+  },
+
+  async adminResetPassword(userId, newPassword) {
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword })
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    const user = (local.users || []).find(u => u.id === userId);
+    if (user) {
+      user.password = newPassword;
+      saveLocalData(local);
+    }
+    return { success: true, message: 'Password reset successfully!' };
   },
 
   // --- MULTI-USER ADMIN PANEL & PERMISSIONS ---

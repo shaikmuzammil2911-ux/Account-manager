@@ -38,8 +38,9 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
     screenNumber: '02',
     screenPin: '2468',
     amount: '899',
-    deviceName: 'Smart TV',
+    deviceName: 'Samsung TV',
     validity: '03 Months',
+    activationDate: '24-Oct-2026',
     expiryDate: '17-Jan-2027',
     referenceName: 'Sunil',
     referenceNumber: '9123456780'
@@ -232,9 +233,10 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
     { label: 'Screen No', tag: 'screenNumber' },
     { label: 'Screen PIN', tag: 'screenPin' },
     { label: 'Amount', tag: 'amount' },
-    { label: 'Validity', tag: 'validity' },
-    { label: 'Expiry Date', tag: 'expiryDate' },
     { label: 'Device Name', tag: 'deviceName' },
+    { label: 'Validity', tag: 'validity' },
+    { label: 'Activation Date', tag: 'activationDate' },
+    { label: 'Expiry Date', tag: 'expiryDate' },
     { label: 'Ref Name', tag: 'referenceName' }
   ];
 
@@ -478,7 +480,7 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
             </div>
 
             {/* Clickable Variable Chips */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', maxHeight: '110px', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
               {saleTags.map(item => (
                 <button
                   key={item.tag}

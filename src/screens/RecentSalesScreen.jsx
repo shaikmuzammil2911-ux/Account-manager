@@ -132,7 +132,7 @@ export default function RecentSalesScreen({
     activationDate: formatDate(new Date()),
     expiryDate: calculateExpiryDate(formatDate(new Date()), '01 Month'),
     amount: '',
-    deviceName: 'Personal TV',
+    deviceName: '',
     note: ''
   });
 
@@ -172,7 +172,7 @@ export default function RecentSalesScreen({
           activationDate: sale.activationDate || '',
           expiryDate: sale.expiryDate || '',
           amount: sale.amount !== undefined ? String(sale.amount) : '',
-          deviceName: sale.deviceName || 'Personal TV',
+          deviceName: sale.deviceName || '',
           note: sale.note || ''
         }
       }));
@@ -305,7 +305,7 @@ export default function RecentSalesScreen({
         activationDate: formatDate(new Date()),
         expiryDate: calculateExpiryDate(formatDate(new Date()), '01 Month'),
         amount: String(defaultPrice),
-        deviceName: 'Personal TV',
+        deviceName: '',
         note: ''
       });
     }
@@ -356,8 +356,11 @@ Password: ${sale.accountPassword}
 Screen: ${sale.screenNumber} | PIN: ${sale.screenPin}
 Validity: ${sale.validity}
 Activation: ${sale.activationDate}
-Expiry: ${sale.expiryDate}
-Device: ${sale.deviceName || 'Personal TV'}`;
+Expiry: ${sale.expiryDate}`;
+
+    if (sale.deviceName && sale.deviceName.trim()) {
+      text += `\nDevice: ${sale.deviceName.trim()}`;
+    }
 
     if (sale.note) {
       text += `\nNote: ${sale.note}`;
@@ -374,14 +377,20 @@ Device: ${sale.deviceName || 'Personal TV'}`;
     const cleanPhone = (sale.customerNumber || '').replace(/\D/g, '');
     const phoneParam = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
 
-    const credentialsMessage = `*${sale.brandName} Subscription Details*
+    let credentialsMessage = `*${sale.brandName} Subscription Details*
 👤 ID: ${sale.accountEmail}
 🔒 Password: ${sale.accountPassword}
 📺 Screen: ${sale.screenNumber}
 🔑 PIN: ${sale.screenPin}
 📅 Validity: ${sale.validity}
-⏳ Expiry: ${sale.expiryDate}
-📱 Device: ${sale.deviceName || 'Personal TV'}${sale.note ? `\n📝 Note: ${sale.note}` : ''}`;
+⏳ Expiry: ${sale.expiryDate}`;
+
+    if (sale.deviceName && sale.deviceName.trim()) {
+      credentialsMessage += `\n📱 Device: ${sale.deviceName.trim()}`;
+    }
+    if (sale.note) {
+      credentialsMessage += `\n📝 Note: ${sale.note}`;
+    }
 
     try {
       navigator.clipboard.writeText(credentialsMessage);
@@ -442,7 +451,7 @@ Device: ${sale.deviceName || 'Personal TV'}`;
         activationDate: addSaleForm.activationDate,
         expiryDate: addSaleForm.expiryDate,
         amount: Number(addSaleForm.amount) || activeBrand.prices?.[addSaleForm.validity] || 199,
-        deviceName: addSaleForm.deviceName.trim() || 'Personal TV',
+        deviceName: addSaleForm.deviceName.trim(),
         note: addSaleForm.note.trim()
       };
 
@@ -933,8 +942,8 @@ Device: ${sale.deviceName || 'Personal TV'}`;
                   style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 800, color: '#0f172a', outline: 'none' }}
                 />
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {sale.deviceName || 'Personal TV'}
+                <span style={{ fontSize: '13px', fontWeight: 800, color: sale.deviceName ? '#0f172a' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {sale.deviceName || '-'}
                 </span>
               )}
             </div>

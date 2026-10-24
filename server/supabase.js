@@ -104,7 +104,7 @@ export async function syncSaleToSupabase(sale) {
       pricing_plan: sale.pricingPlan || 'General',
       screen_number: sale.screenNumber || '01',
       screen_pin: sale.screenPin || '1234',
-      device_name: sale.deviceName || 'Personal TV',
+      device_name: sale.deviceName || '',
       activation_date: sale.activationDate,
       expiry_date: sale.expiryDate,
       amount: Number(sale.amount) || 199,

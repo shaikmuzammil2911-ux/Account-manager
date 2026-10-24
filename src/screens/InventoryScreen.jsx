@@ -114,12 +114,49 @@ export default function InventoryScreen({
   const [visiblePasswords, setVisiblePasswords] = useState({});
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
   const [deleteConfirmItem, setDeleteConfirmItem] = useState(null);
-  const [expandedAccounts, setExpandedAccounts] = useState({});
+  const [expandedAccounts, setExpandedAccounts] = useState(() => {
+    try {
+      const saved = localStorage.getItem('accounts_manager_expanded_accounts_state');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {};
+  });
+
+  const handleToggleAccountExpand = (accountId) => {
+    setExpandedAccounts(prev => {
+      const current = prev[accountId] !== undefined ? prev[accountId] : true;
+      const next = !current;
+      const updated = { ...prev, [accountId]: next };
+      try {
+        localStorage.setItem('accounts_manager_expanded_accounts_state', JSON.stringify(updated));
+      } catch (e) {}
+      return updated;
+    });
+  };
+
+  const getComputedAccountStatus = (account, editStatus) => {
+    if (editStatus !== undefined && editStatus !== null) {
+      return editStatus;
+    }
+    if (account?.manualStatus) {
+      return account.manualStatus;
+    }
+    const expiryStr = account?.sellerDetails?.accountExpiryDate || account?.accountExpiryDate;
+    if (expiryStr && String(expiryStr).trim()) {
+      const parsed = parseDate(expiryStr) || new Date(expiryStr);
+      if (parsed && !isNaN(parsed.getTime())) {
+        const endOfDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 23, 59, 59, 999);
+        return new Date().getTime() > endOfDay.getTime() ? 'Expired' : 'Active';
+      }
+    }
+    return 'Active';
+  };
 
   // Seller Details Modal State
   const [sellerModalItem, setSellerModalItem] = useState(null);
   const [sellerFormData, setSellerFormData] = useState({
     purchaseDate: '',
+    accountExpiryDate: '',
     sellerName: '',
     sellerNumber: '',
     referenceDate: '',
@@ -139,6 +176,7 @@ export default function InventoryScreen({
     const existing = item.sellerDetails || {};
     setSellerFormData({
       purchaseDate: existing.purchaseDate || '',
+      accountExpiryDate: existing.accountExpiryDate || item.accountExpiryDate || '',
       sellerName: existing.sellerName || '',
       sellerNumber: existing.sellerNumber || '',
       referenceDate: existing.referenceDate || '',
@@ -160,11 +198,12 @@ export default function InventoryScreen({
     if (
       !sellerFormData.sellerName?.trim() &&
       !sellerFormData.purchaseDate &&
+      !sellerFormData.accountExpiryDate &&
       !sellerFormData.sellerNumber?.trim() &&
       !sellerFormData.card?.trim() &&
       !sellerFormData.reference?.trim()
     ) {
-      setSellerError('Please fill at least Seller Name, Purchase Date, or Reference.');
+      setSellerError('Please fill at least Seller Name, Purchase Date, Account Expiry Date, or Reference.');
       return;
     }
 
@@ -175,6 +214,7 @@ export default function InventoryScreen({
       // Prepare payload - DO NOT store actual CVV values to ensure PCI-DSS security compliance
       const cleanSellerDetails = {
         purchaseDate: sellerFormData.purchaseDate || '',
+        accountExpiryDate: sellerFormData.accountExpiryDate || '',
         sellerName: sellerFormData.sellerName?.trim() || '',
         sellerNumber: sellerFormData.sellerNumber?.trim() || '',
         referenceDate: sellerFormData.referenceDate || '',
@@ -187,13 +227,15 @@ export default function InventoryScreen({
         updatedAt: new Date().toISOString()
       };
 
+      // Clear manual override so status is dynamically calculated from the new account expiry date
       await api.updateInventory(sellerModalItem.id, {
-        sellerDetails: cleanSellerDetails
+        sellerDetails: cleanSellerDetails,
+        manualStatus: null
       });
 
       // Update state locally
       setItems(prev =>
-        prev.map(it => (it.id === sellerModalItem.id ? { ...it, sellerDetails: cleanSellerDetails } : it))
+        prev.map(it => (it.id === sellerModalItem.id ? { ...it, sellerDetails: cleanSellerDetails, manualStatus: null } : it))
       );
 
       showToast(`Seller details saved for Account #${sellerModalItem.recordNumber || ''}`, 'success');
@@ -522,11 +564,21 @@ export default function InventoryScreen({
         validity: editState.validity,
         planVariant: editState.planVariant || item.planVariant || 'General',
         passwordChangeRequired: false,
+        manualStatus: editState.status !== undefined ? editState.status : (item.manualStatus || null),
         screens: updatedScreens
       };
 
+      // Also atomically update linked sales for any screens whose device name was edited
+      (item.screens || []).forEach((sc, sIdx) => {
+        if (sc.saleId && editState.deviceNames?.[sIdx] !== undefined) {
+          api.updateSale(sc.saleId, {
+            deviceName: String(editState.deviceNames[sIdx] || '').trim()
+          }).catch(() => {});
+        }
+      });
+
       const result = await api.updateInventory(item.id, payload);
-      setItems(prev => prev.map(i => i.id === item.id ? result : i));
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, ...payload, ...result } : i));
       setEditingCards(prev => {
         const copy = { ...prev };
         delete copy[item.id];
@@ -929,41 +981,78 @@ export default function InventoryScreen({
                 </div>
 
                 <div className="card-top-right">
-                  {/* Default Expansion ON/OFF Toggle per Account (Feature One & Two) */}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleDefaultExpanded(item);
-                    }}
-                    style={{
-                      background: item.defaultExpanded ? '#dcfce7' : '#f8fafc',
-                      border: `1.5px solid ${item.defaultExpanded ? '#86efac' : '#cbd5e1'}`,
-                      color: item.defaultExpanded ? '#15803d' : '#64748b',
-                      borderRadius: '8px',
-                      padding: '3px 7px',
-                      fontSize: '10.5px',
-                      fontWeight: 800,
-                      cursor: 'pointer',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                      boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                      transition: 'all 0.15s ease'
-                    }}
-                    title={`Default view when opening page. Currently: ${item.defaultExpanded ? 'ON (Expanded)' : 'OFF (Compact)'}. Click to toggle.`}
-                    id={`account-${item.recordNumber}-default-toggle`}
-                  >
-                    <span>Default:</span>
-                    <strong style={{ color: item.defaultExpanded ? '#166534' : '#475569' }}>
-                      {item.defaultExpanded ? 'ON' : 'OFF'}
-                    </strong>
-                  </button>
+                  {/* Account Status Badge (Active / Expired) - Replaces Default ON/OFF */}
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!isEditing) return; // Read-only while locked
+                        const currentStat = getComputedAccountStatus(item, editState.status);
+                        const nextStat = currentStat === 'Active' ? 'Expired' : 'Active';
+                        setEditingCards(prev => ({
+                          ...prev,
+                          [item.id]: { ...prev[item.id], status: nextStat }
+                        }));
+                      }}
+                      style={{
+                        background: getComputedAccountStatus(item, editState.status) === 'Active' ? '#dcfce7' : '#fee2e2',
+                        border: `1.5px solid ${getComputedAccountStatus(item, editState.status) === 'Active' ? '#86efac' : '#fca5a5'}`,
+                        color: getComputedAccountStatus(item, editState.status) === 'Active' ? '#15803d' : '#b91c1c',
+                        borderRadius: '8px',
+                        padding: '3px 8px',
+                        fontSize: '11px',
+                        fontWeight: 800,
+                        cursor: isEditing ? 'pointer' : 'default',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                        transition: 'all 0.15s ease'
+                      }}
+                      title={isEditing ? `Click to switch status (Currently: ${getComputedAccountStatus(item, editState.status)})` : `Account Status: ${getComputedAccountStatus(item, editState.status)} (Unlock to edit)`}
+                      id={`account-${item.recordNumber}-status-badge`}
+                    >
+                      <span style={{
+                        width: '6px',
+                        height: '6px',
+                        borderRadius: '50%',
+                        backgroundColor: getComputedAccountStatus(item, editState.status) === 'Active' ? '#16a34a' : '#dc2626'
+                      }} />
+                      <span>{getComputedAccountStatus(item, editState.status)}</span>
+                    </button>
+
+                    {isEditing && (editState.status !== undefined || item.manualStatus) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingCards(prev => ({
+                            ...prev,
+                            [item.id]: { ...prev[item.id], status: null }
+                          }));
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: '0 2px',
+                          fontSize: '9.5px',
+                          color: '#2563eb',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          textDecoration: 'underline'
+                        }}
+                        title="Clear manual override and restore automatic calculation from Seller Details account expiry date"
+                      >
+                        Use expiry date
+                      </button>
+                    )}
+                  </div>
 
                   {/* Expand / Collapse Control Button (Section 9) */}
                   <button
                     type="button"
-                    onClick={() => setExpandedAccounts(p => ({ ...p, [item.id]: !isExpanded }))}
+                    onClick={() => handleToggleAccountExpand(item.id)}
                     style={{
                       background: isExpanded ? '#eff6ff' : '#f8fafc',
                       border: isExpanded ? '1.5px solid #93c5fd' : '1.5px solid #cbd5e1',
@@ -979,8 +1068,9 @@ export default function InventoryScreen({
                       boxShadow: '0 1px 2px rgba(0,0,0,0.04)'
                     }}
                     title={isExpanded ? 'Collapse screens' : 'Expand screens'}
+                    id={`account-${item.recordNumber}-expand-toggle`}
                   >
-                    <span>{freeCount > 0 ? `${totalScreens - freeCount}/${totalScreens}` : 'Full'}</span>
+                    <span>{totalScreens > 0 ? `${totalScreens - freeCount}/${totalScreens}` : 'Full'}</span>
                     {isExpanded ? <ChevronUp size={13} strokeWidth={2.5} /> : <ChevronDown size={13} strokeWidth={2.5} />}
                   </button>
 
@@ -1157,12 +1247,39 @@ export default function InventoryScreen({
                             ? (editState.deviceTypes?.[globalIdx] || screen.deviceType || 'tv')
                             : (screen.deviceType || 'tv');
 
+                          const currentExpDate = isEditing
+                            ? (editState.dates?.[globalIdx] !== undefined ? editState.dates[globalIdx] : screen.expiryDate)
+                            : screen.expiryDate;
+                          const isEmpty = isEditing
+                            ? (!currentExpDate || !String(currentExpDate).trim())
+                            : (screen.status === 'empty' && !currentExpDate);
+
                           return (
                             <div
                               key={globalIdx}
                               onClick={(e) => {
                                 if (isEditing) {
                                   handleCycleDeviceType(item.id, globalIdx, e);
+                                  return;
+                                }
+                                if (isEmpty && onNavigateToSaleWithSlot) {
+                                  const screenNumStr = String(globalIdx + 1).padStart(2, '0');
+                                  onNavigateToSaleWithSlot({
+                                    brandId: currentBrand?.id || item.brandId,
+                                    brandName: currentBrand?.displayName || currentBrand?.name || item.brandName,
+                                    inventoryId: item.id,
+                                    accountId: item.id,
+                                    email: item.email || '',
+                                    accountEmail: item.email || '',
+                                    password: item.password || '',
+                                    accountPassword: item.password || '',
+                                    screenNumber: screenNumStr,
+                                    screenName: `Screen-${screenNumStr}`,
+                                    pin: screen.pin !== undefined && screen.pin !== null ? String(screen.pin) : '',
+                                    screenPin: screen.pin !== undefined && screen.pin !== null ? String(screen.pin) : '',
+                                    deviceName: screen.deviceName || '',
+                                    validity: item.validity || ''
+                                  });
                                 }
                               }}
                               style={{
@@ -1177,12 +1294,12 @@ export default function InventoryScreen({
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 gap: '2px',
-                                cursor: isEditing ? 'pointer' : 'default',
+                                cursor: (isEditing || (isEmpty && onNavigateToSaleWithSlot)) ? 'pointer' : 'default',
                                 userSelect: 'none',
                                 lineHeight: 1,
                                 boxSizing: 'border-box'
                               }}
-                              title={isEditing ? `Click to cycle device icon (Current: ${devType.toUpperCase()})` : `Screen ${globalIdx + 1}`}
+                              title={isEditing ? `Click to cycle device icon (Current: ${devType.toUpperCase()})` : (isEmpty && onNavigateToSaleWithSlot ? `Screen-${String(globalIdx + 1).padStart(2, '0')}: Click to select for sale` : `Screen ${globalIdx + 1}`)}
                             >
                               <span style={{ fontSize: '10.5px', fontWeight: 800, whiteSpace: 'nowrap' }}>
                                 Screen-{String(globalIdx + 1).padStart(2, '0')}
@@ -1228,11 +1345,22 @@ export default function InventoryScreen({
                               onClick={() => {
                                 if (isEmpty && !isEditing) {
                                   if (onNavigateToSaleWithSlot) {
+                                    const screenNumStr = String(globalIdx + 1).padStart(2, '0');
                                     onNavigateToSaleWithSlot({
-                                      brandId: currentBrand.id,
+                                      brandId: currentBrand?.id || item.brandId,
+                                      brandName: currentBrand?.displayName || currentBrand?.name || item.brandName,
                                       inventoryId: item.id,
-                                      screenNumber: globalIdx + 1,
-                                      accountEmail: item.email
+                                      accountId: item.id,
+                                      email: item.email || '',
+                                      accountEmail: item.email || '',
+                                      password: item.password || '',
+                                      accountPassword: item.password || '',
+                                      screenNumber: screenNumStr,
+                                      screenName: `Screen-${screenNumStr}`,
+                                      pin: screen.pin !== undefined && screen.pin !== null ? String(screen.pin) : '',
+                                      screenPin: screen.pin !== undefined && screen.pin !== null ? String(screen.pin) : '',
+                                      deviceName: screen.deviceName || '',
+                                      validity: item.validity || ''
                                     });
                                     return;
                                   }
@@ -1266,13 +1394,22 @@ export default function InventoryScreen({
                                 border: isEmpty ? '2px dashed #64748b' : (isExpiredOrCritical ? '2px solid #b91c1c' : (isUpcoming ? '2px solid #c2410c' : '2px solid #166534')),
                                 boxShadow: isEmpty ? 'none' : '0 2px 4px rgba(0,0,0,0.14)',
                                 overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
                                 lineHeight: 1
                               }}
                               title={currentExpDate ? `Expires: ${currentExpDate}. Click to view or change.` : `Screen-${String(globalIdx + 1).padStart(2, '0')}: Click '+' to assign sale`}
                             >
-                              {isEmpty ? '+' : (currentExpDate || 'Active')}
+                              {isEmpty ? '+' : (() => {
+                                const parts = String(currentExpDate).split('-');
+                                if (parts.length === 3) {
+                                  return (
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', lineHeight: 1.08 }}>
+                                      <span style={{ fontSize: '9.5px', fontWeight: 900 }}>{parts[0]}-{parts[1]}</span>
+                                      <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.95 }}>{parts[2]}</span>
+                                    </div>
+                                  );
+                                }
+                                return currentExpDate;
+                              })()}
                             </div>
                           );
                         })}
@@ -1306,7 +1443,7 @@ export default function InventoryScreen({
                                       minHeight: '28px',
                                       width: '100%',
                                       boxSizing: 'border-box',
-                                      padding: '0 4px',
+                                      padding: '0 6px',
                                       borderRadius: '6px',
                                       fontSize: '10.5px',
                                       fontWeight: 700,
@@ -1314,7 +1451,7 @@ export default function InventoryScreen({
                                       color: '#0f172a',
                                       border: '1.5px solid #93c5fd',
                                       outline: 'none',
-                                      textAlign: 'center'
+                                      textAlign: 'left'
                                     }}
                                     title={`Screen-${String(globalIdx + 1).padStart(2, '0')} Device Name`}
                                   />
@@ -1324,11 +1461,11 @@ export default function InventoryScreen({
                                       height: '28px',
                                       minHeight: '28px',
                                       boxSizing: 'border-box',
-                                      padding: '0 4px',
+                                      padding: '0 6px',
                                       borderRadius: '6px',
                                       display: 'flex',
                                       alignItems: 'center',
-                                      justifyContent: 'center',
+                                      justifyContent: 'flex-start',
                                       fontSize: '10px',
                                       fontWeight: 700,
                                       background: devNameVal ? '#f0fdf4' : '#f8fafc',
@@ -1337,7 +1474,7 @@ export default function InventoryScreen({
                                       overflow: 'hidden',
                                       textOverflow: 'ellipsis',
                                       whiteSpace: 'nowrap',
-                                      textAlign: 'center'
+                                      textAlign: 'left'
                                     }}
                                     title={devNameVal ? `Device: ${devNameVal}` : 'No device name'}
                                   >

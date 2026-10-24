@@ -487,9 +487,27 @@ app.post('/api/shares', (req, res) => {
   }
 });
 
+app.patch('/api/shares/:id', (req, res) => {
+  try {
+    const updated = db.updateShare(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.delete('/api/shares/:id', (req, res) => {
   try {
     db.deleteShare(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/shares/:id/brands/:brandId', (req, res) => {
+  try {
+    db.revokeShareBrand(req.params.id, req.params.brandId);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: err.message });

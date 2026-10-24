@@ -1,15 +1,20 @@
+import { formatDate } from './dateUtils.js';
+
 export const DEFAULT_SALE_WHATSAPP_TEMPLATE = `Hello {customerName}! 🎬
 
 Thank you for your purchase! Here are your *{brandName}* subscription details:
 
+🎬 *Brand:* {brandName}
+📞 *Phone Number:* {customerNumber}
 📧 *ID / Email:* {accountEmail}
 🔒 *Password:* {accountPassword}
 📱 *Screen No:* {screenNumber}
 🔑 *Screen PIN:* {screenPin}
-💰 *Amount:* ₹{amount}
 📺 *Device:* {deviceName}
 ⏳ *Validity:* {validity}
+📅 *Activation Date:* {activationDate}
 📅 *Expiry Date:* {expiryDate}
+💰 *Amount:* ₹{amount}
 
 Enjoy uninterrupted streaming! For renewals or queries, kindly message us. 🍿
 
@@ -33,21 +38,38 @@ Regards,
  */
 export function fillTemplate(template, data = {}) {
   if (!template) return '';
-  return template.replace(/\{(\w+)\}/g, (match, key) => {
+  let processed = template;
+
+  // If deviceName is empty, omit lines containing {deviceName} entirely without leaving blank lines
+  const hasDevice = data.deviceName && String(data.deviceName).trim();
+  if (!hasDevice) {
+    processed = processed
+      .split('\n')
+      .filter(line => !line.includes('{deviceName}'))
+      .join('\n');
+  }
+
+  return processed.replace(/\{(\w+)\}/g, (match, key) => {
     if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
+      if (key === 'activationDate') {
+        const formatted = formatDate(data[key]);
+        return formatted || String(data[key]);
+      }
       return String(data[key]);
     }
-    // Specific fallbacks for nice display
+    // Specific clean fallbacks for nice display
     if (key === 'customerName') return 'Customer';
+    if (key === 'customerNumber') return '';
     if (key === 'brandName') return 'OTT';
     if (key === 'accountEmail') return 'N/A';
     if (key === 'accountPassword') return 'N/A';
     if (key === 'screenNumber') return '01';
     if (key === 'screenPin') return '----';
     if (key === 'validity') return '01 Month';
+    if (key === 'activationDate') return '';
     if (key === 'expiryDate') return 'N/A';
     if (key === 'amount') return '---';
-    if (key === 'deviceName') return 'Smart TV';
+    if (key === 'deviceName') return '';
     if (key === 'daysRemaining') return '0';
     return '';
   });
@@ -75,6 +97,7 @@ export function formatSaleConfirmationMessage({
   screenPin,
   deviceName,
   validity,
+  activationDate,
   expiryDate,
   amount,
   referenceName,
@@ -96,8 +119,9 @@ export function formatSaleConfirmationMessage({
     accountPassword,
     screenNumber,
     screenPin,
-    deviceName: deviceName || 'Smart TV',
+    deviceName: deviceName ? String(deviceName).trim() : '',
     validity,
+    activationDate,
     expiryDate,
     amount,
     referenceName,
@@ -132,3 +156,4 @@ export function formatCustomerMessage({
     renewalAmount: renewalAmount || ''
   });
 }
+

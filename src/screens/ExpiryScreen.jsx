@@ -13,6 +13,7 @@ import DatePickerModal from '../components/DatePickerModal';
 import DeleteSaleModal from '../components/DeleteSaleModal';
 
 export default function ExpiryScreen({
+  currentUser,
   brands = [],
   selectedBrand,
   onOpenNotifyModal,
@@ -21,13 +22,17 @@ export default function ExpiryScreen({
   onOpenDatePicker,
   onClearDateFilter
 }) {
-  const todayStr = formatDate(new Date());
+  const getKolkataDate = (d = new Date()) => {
+    return new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+  };
+  const todayStr = formatDate(getKolkataDate());
 
-  // Dynamic date selection: defaults to current date dynamically (not hardcoded)
+  // Dynamic date selection: defaults to current date dynamically
   const [selectedDate, setSelectedDate] = useState(dateFilter || todayStr);
   const [dateRange, setDateRange] = useState(null); // { start: 'DD-MMM-YYYY', end: 'DD-MMM-YYYY' }
   const [searchQuery, setSearchQuery] = useState('');
   const [filterBrand, setFilterBrand] = useState(selectedBrand?.id || 'all');
+  const [followupTab, setFollowupTab] = useState('pending'); // 'pending' | 'completed' | 'all'
   const [showBrandModal, setShowBrandModal] = useState(false);
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
@@ -69,8 +74,8 @@ export default function ExpiryScreen({
     try {
       setLoading(true);
       const [salesData, invData] = await Promise.all([
-        api.getSales({ brandId: 'all' }),
-        api.getInventory({ brandId: 'all' })
+        api.getSales({ brandId: 'all', sellerEmail: currentUser?.email }),
+        api.getInventory({ brandId: 'all', userEmail: currentUser?.email })
       ]);
       setItems(Array.isArray(salesData) ? salesData : []);
       setInventoryList(Array.isArray(invData) ? invData : []);
@@ -115,6 +120,9 @@ export default function ExpiryScreen({
   const allScreens = [];
   (items || []).forEach((sale, sIdx) => {
     if (!sale || sale.isDeleted || sale.status === 'Deleted' || sale.status === 'deleted') return;
+    if (currentUser?.email && sale.sellerEmail && sale.sellerEmail.trim().toLowerCase() !== currentUser.email.trim().toLowerCase()) {
+      return; // strictly personal sales for personal customer expiry reminders
+    }
     const diff = sale.daysRemaining !== undefined ? sale.daysRemaining : getDaysDiff(sale.expiryDate);
     const statusObj = getExpiryStatus(sale.expiryDate);
     const screenNum = parseInt(String(sale.screenNumber).replace(/\D/g, '') || String(sIdx + 1), 10);
@@ -169,14 +177,19 @@ export default function ExpiryScreen({
   // 2. HORIZONTAL DATE LIST GENERATION (-14 Days to +28 Days)
   // =========================================================================
   const daysList = [];
-  const baseDateObj = new Date();
+  const baseDateObj = getKolkataDate();
+  const kolkataTodayTime = new Date(baseDateObj.getFullYear(), baseDateObj.getMonth(), baseDateObj.getDate()).getTime();
+
   for (let offset = -14; offset <= 28; offset++) {
     const d = new Date(baseDateObj.getFullYear(), baseDateObj.getMonth(), baseDateObj.getDate() + offset);
-    const dStr = formatDate(d); // e.g. "20-Oct-2026"
+    const dStr = formatDate(d); // e.g. "24-Oct-2026"
     const dayNum = String(d.getDate()).padStart(2, '0');
-    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }); // "Mon", "Tue"
-    const monthName = d.toLocaleDateString('en-US', { month: 'short' }); // "Oct"
-    const isToday = offset === 0;
+    const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase(); // "SAT"
+    const monthYear = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() + '-' + d.getFullYear(); // "OCT-2026"
+    const dTime = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+    const isToday = dTime === kolkataTodayTime;
+    const isBeforeToday = dTime < kolkataTodayTime;
+    const isAfterToday = dTime > kolkataTodayTime;
 
     // Evaluate matching screens for this date to determine persistent status
     const matchingScreens = baseScreenRecords.filter(s => {
@@ -185,19 +198,37 @@ export default function ExpiryScreen({
       return parsed && formatDate(parsed) === dStr;
     });
 
-    const hasRecords = matchingScreens.length > 0;
-    const allNotified = hasRecords && matchingScreens.every(s => s.notificationSent);
+    // Count records still requiring follow-up (pending)
+    const pendingScreens = matchingScreens.filter(s => !s.notificationSent);
+    const pendingCount = pendingScreens.length;
+
+    // Strict Color Rules (Requirement 3):
+    // A. Pending count = 0: GREEN tile, whether past, today, or future. Display 0 clearly.
+    // B. Pending count > 0 AND date is before today: RED tile.
+    // C. Pending count > 0 AND date is today: RED tile.
+    // D. Pending count > 0 AND date is after today: GREEN tile with upcoming count.
+    let isRed = false;
+    if (pendingCount === 0) {
+      isRed = false;
+    } else if (isBeforeToday || isToday) {
+      isRed = true;
+    } else {
+      isRed = false;
+    }
 
     daysList.push({
       dateStr: dStr,
       dayNum,
       dayName,
-      monthName,
+      monthYear,
       isToday,
+      isBeforeToday,
+      isAfterToday,
       offset,
       recordCount: matchingScreens.length,
-      hasRecords,
-      allNotified
+      pendingCount,
+      allNotified: matchingScreens.length > 0 && pendingCount === 0,
+      isRed
     });
   }
 
@@ -255,21 +286,51 @@ export default function ExpiryScreen({
     return (a.screenNumber || 0) - (b.screenNumber || 0);
   });
 
+  // Counts for tabs
+  const pendingTotal = filteredScreens.filter(s => !s.notificationSent).length;
+  const completedTotal = filteredScreens.filter(s => s.notificationSent).length;
+  const allTotal = filteredScreens.length;
+
+  // Filtered screens for current followupTab
+  const displayedScreens = filteredScreens.filter(sub => {
+    if (followupTab === 'pending') return !sub.notificationSent;
+    if (followupTab === 'completed') return !!sub.notificationSent;
+    return true;
+  });
+
   // Handle WhatsApp Notify action directly
   const handleNotifyAction = async (sub) => {
     if (onOpenNotifyModal) {
       onOpenNotifyModal(sub);
       return;
     }
+  };
 
+  // Mark Notified / Done action (Requirement 5)
+  const handleMarkNotifiedDone = async (sub) => {
     try {
-      if (sub.saleId) {
-        await api.notifyCustomer(sub.saleId);
-      }
-      setItems(prev => prev.map(s => s.id === sub.id ? { ...s, notificationSent: true, lastNotifiedAt: new Date().toISOString() } : s));
-      if (showToast) showToast(`Notification sent for Screen-${sub.screenNumber}`, 'success');
+      await api.updateSale(sub.saleId, {
+        notificationSent: true,
+        lastNotifiedAt: new Date().toISOString()
+      });
+      setItems(prev => prev.map(s => (s.id === sub.id || s.saleId === sub.saleId) ? { ...s, notificationSent: true, lastNotifiedAt: new Date().toISOString() } : s));
+      if (showToast) showToast(`Screen-${String(sub.screenNumber).padStart(2, '0')} marked follow-up complete`, 'success');
     } catch (e) {
-      if (showToast) showToast('Failed to record notification', 'error');
+      if (showToast) showToast('Failed to mark follow-up complete', 'error');
+    }
+  };
+
+  // Restore to Pending action
+  const handleMarkPending = async (sub) => {
+    try {
+      await api.updateSale(sub.saleId, {
+        notificationSent: false,
+        lastNotifiedAt: null
+      });
+      setItems(prev => prev.map(s => (s.id === sub.id || s.saleId === sub.saleId) ? { ...s, notificationSent: false, lastNotifiedAt: null } : s));
+      if (showToast) showToast(`Screen-${String(sub.screenNumber).padStart(2, '0')} restored to pending`, 'info');
+    } catch (e) {
+      if (showToast) showToast('Failed to restore to pending', 'error');
     }
   };
 
@@ -523,34 +584,16 @@ export default function ExpiryScreen({
         {daysList.map((item) => {
           const isSelected = !dateRange && selectedDate === item.dateStr;
 
-          // Status colors based on actual persisted data:
-          // Green: All applicable expiry records for that date have been successfully processed and notified.
-          // Red: One or more applicable expiry records remain pending notification.
-          // Neutral: No applicable expiry records exist for that date.
-          let pillBg = '#ffffff';
-          let pillBorder = '#e2e8f0';
-          let textColor = '#334155';
-          let statusBadgeBg = '#f1f5f9';
-          let statusBadgeColor = '#64748b';
-          let statusLabel = item.recordCount > 0 ? `${item.recordCount}` : '0';
-
-          if (item.hasRecords) {
-            if (item.allNotified) {
-              pillBg = '#f0fdf4';
-              pillBorder = '#86efac';
-              textColor = '#15803d';
-              statusBadgeBg = '#dcfce7';
-              statusBadgeColor = '#166534';
-              statusLabel = `✓ ${item.recordCount}`;
-            } else {
-              pillBg = '#fef2f2';
-              pillBorder = '#fca5a5';
-              textColor = '#b91c1c';
-              statusBadgeBg = '#fee2e2';
-              statusBadgeColor = '#991b1b';
-              statusLabel = `${item.recordCount} Due`;
-            }
-          }
+          // Strict Color Rules (Requirement 3):
+          // A. Pending count = 0: GREEN tile, whether past, today, or future. Display 0 clearly.
+          // B. Pending count > 0 AND date is before today: RED tile.
+          // C. Pending count > 0 AND date is today: RED tile.
+          // D. Pending count > 0 AND date is after today: GREEN tile with upcoming count.
+          let pillBg = item.isRed ? '#fef2f2' : '#f0fdf4';
+          let pillBorder = item.isRed ? '#fca5a5' : '#86efac';
+          let textColor = item.isRed ? '#b91c1c' : '#15803d';
+          let statusBadgeBg = item.isRed ? '#fee2e2' : '#dcfce7';
+          let statusBadgeColor = item.isRed ? '#991b1b' : '#166534';
 
           return (
             <button
@@ -563,9 +606,9 @@ export default function ExpiryScreen({
               }}
               style={{
                 flexShrink: 0,
-                width: '54px',
-                minWidth: '54px',
-                height: '62px',
+                width: '56px',
+                minWidth: '56px',
+                height: '74px',
                 borderRadius: '12px',
                 display: 'flex',
                 flexDirection: 'column',
@@ -582,22 +625,34 @@ export default function ExpiryScreen({
                 position: 'relative',
                 transition: 'all 0.15s ease'
               }}
-              title={`${item.dateStr}${item.isToday ? ' (Today)' : ''}: ${item.recordCount} expiring (${item.hasRecords ? (item.allNotified ? 'All Notified' : 'Pending Notifications') : 'No records'})`}
+              title={`${item.dateStr}${item.isToday ? ' (Today)' : ''}: ${item.pendingCount} pending follow-up`}
             >
+              {/* Month-Year (Requirement 1: show month-year on every tile) */}
+              <div style={{
+                fontSize: '8.5px',
+                fontWeight: 900,
+                textTransform: 'uppercase',
+                letterSpacing: '0.2px',
+                lineHeight: 1,
+                opacity: 0.85
+              }}>
+                {item.monthYear}
+              </div>
+
               {/* Day of Week */}
               <div style={{
-                fontSize: '9.5px',
+                fontSize: '9px',
                 fontWeight: 800,
                 textTransform: 'uppercase',
                 letterSpacing: '0.2px',
                 color: item.isToday ? '#2563eb' : undefined
               }}>
-                {item.isToday ? 'Today' : item.dayName}
+                {item.isToday ? 'TODAY' : item.dayName}
               </div>
 
               {/* Big Day Number */}
               <div style={{
-                fontSize: '17px',
+                fontSize: '16px',
                 fontWeight: 900,
                 lineHeight: 1,
                 color: isSelected ? '#1d4ed8' : undefined
@@ -605,18 +660,18 @@ export default function ExpiryScreen({
                 {item.dayNum}
               </div>
 
-              {/* Status Indicator / Count Pill */}
+              {/* Remaining Pending Expiry Count */}
               <div style={{
-                fontSize: '9px',
-                fontWeight: 800,
-                padding: '1px 5px',
-                borderRadius: '6px',
+                fontSize: '9.5px',
+                fontWeight: 900,
+                padding: '1px 6px',
+                borderRadius: '5px',
                 background: statusBadgeBg,
                 color: statusBadgeColor,
                 lineHeight: 1.1,
                 whiteSpace: 'nowrap'
               }}>
-                {statusLabel}
+                {item.pendingCount}
               </div>
             </button>
           );
@@ -704,24 +759,147 @@ export default function ExpiryScreen({
       </div>
 
       {/* =================================================================== */}
+      {/* FILTER TABS: PENDING (Default), COMPLETED, ALL                       */}
+      {/* =================================================================== */}
+      <div style={{
+        display: 'flex',
+        gap: '6px',
+        marginBottom: '12px',
+        background: '#f1f5f9',
+        padding: '4px',
+        borderRadius: '10px'
+      }}>
+        <button
+          type="button"
+          onClick={() => setFollowupTab('pending')}
+          style={{
+            flex: 1,
+            padding: '7px 4px',
+            borderRadius: '8px',
+            border: 'none',
+            background: followupTab === 'pending' ? '#ffffff' : 'transparent',
+            color: followupTab === 'pending' ? '#b91c1c' : '#64748b',
+            fontWeight: 800,
+            fontSize: '12px',
+            cursor: 'pointer',
+            boxShadow: followupTab === 'pending' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '5px'
+          }}
+        >
+          <span>Pending</span>
+          <span style={{
+            background: followupTab === 'pending' ? '#fee2e2' : '#e2e8f0',
+            color: followupTab === 'pending' ? '#991b1b' : '#475569',
+            fontSize: '10px',
+            padding: '1px 6px',
+            borderRadius: '10px'
+          }}>
+            {pendingTotal}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFollowupTab('completed')}
+          style={{
+            flex: 1,
+            padding: '7px 4px',
+            borderRadius: '8px',
+            border: 'none',
+            background: followupTab === 'completed' ? '#ffffff' : 'transparent',
+            color: followupTab === 'completed' ? '#15803d' : '#64748b',
+            fontWeight: 800,
+            fontSize: '12px',
+            cursor: 'pointer',
+            boxShadow: followupTab === 'completed' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '5px'
+          }}
+        >
+          <span>Completed</span>
+          <span style={{
+            background: followupTab === 'completed' ? '#dcfce7' : '#e2e8f0',
+            color: followupTab === 'completed' ? '#166534' : '#475569',
+            fontSize: '10px',
+            padding: '1px 6px',
+            borderRadius: '10px'
+          }}>
+            {completedTotal}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setFollowupTab('all')}
+          style={{
+            flex: 1,
+            padding: '7px 4px',
+            borderRadius: '8px',
+            border: 'none',
+            background: followupTab === 'all' ? '#ffffff' : 'transparent',
+            color: followupTab === 'all' ? '#1d4ed8' : '#64748b',
+            fontWeight: 800,
+            fontSize: '12px',
+            cursor: 'pointer',
+            boxShadow: followupTab === 'all' ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '5px'
+          }}
+        >
+          <span>All</span>
+          <span style={{
+            background: followupTab === 'all' ? '#eff6ff' : '#e2e8f0',
+            color: followupTab === 'all' ? '#1d4ed8' : '#475569',
+            fontSize: '10px',
+            padding: '1px 6px',
+            borderRadius: '10px'
+          }}>
+            {allTotal}
+          </span>
+        </button>
+      </div>
+
+      {/* =================================================================== */}
       {/* ROW 4: INDEPENDENT SCREEN-LEVEL EXPIRY CARDS (Section 4)           */}
-      {/* Displays all screen records expiring on selected date               */}
       {/* =================================================================== */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748b' }}>
           Loading subscriptions...
         </div>
-      ) : filteredScreens.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '40px 16px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
-          <p style={{ fontWeight: 800, color: '#64748b', marginBottom: '4px', fontSize: '15px' }}>
-            {baseScreenRecords.length === 0 ? 'No expiry records' : `No screen expiries on ${selectedDate === 'ALL' ? 'selected filters' : selectedDate}.`}
+      ) : displayedScreens.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '36px 16px', background: '#ffffff', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <p style={{ fontWeight: 800, color: '#475569', marginBottom: '4px', fontSize: '14.5px' }}>
+            {followupTab === 'pending'
+              ? 'No pending expiry follow-ups for this date.'
+              : followupTab === 'completed'
+              ? 'No completed expiry follow-ups for this date.'
+              : 'No screen expiries on this date.'}
           </p>
-          <p style={{ fontSize: '12px', color: '#94a3b8' }}>
-            {baseScreenRecords.length === 0 ? 'No customer sales or expiry records found.' : 'Use the date strip above to select another date or click "All" to view all records.'}
+          <p style={{ fontSize: '12px', color: '#94a3b8', margin: '4px 0 10px 0' }}>
+            {followupTab === 'pending' && completedTotal > 0
+              ? `All ${completedTotal} customer(s) for this date have been marked notified.`
+              : 'Use the date strip above to select another date or view all records.'}
           </p>
+          {followupTab === 'pending' && completedTotal > 0 && (
+            <button
+              type="button"
+              className="glossy-btn glossy-btn-green"
+              style={{ fontSize: '12px', padding: '6px 14px', margin: '0 auto' }}
+              onClick={() => setFollowupTab('completed')}
+            >
+              View {completedTotal} Completed Record{completedTotal === 1 ? '' : 's'}
+            </button>
+          )}
         </div>
       ) : (
-        filteredScreens.map((sub, sIdx) => {
+        displayedScreens.map((sub, sIdx) => {
           const isSecondCard = sIdx % 2 === 1;
           const statusObj = getExpiryStatus(sub.expiryDate);
           const brandObj = getBrandObj(sub.brandId);
@@ -888,10 +1066,10 @@ export default function ExpiryScreen({
                 )}
               </div>
 
-              {/* Row 4: ACTIVATION, DEVICE, and NOTIFY BUTTON */}
+              {/* Row 4: ACTIVATION, DEVICE, and NOTIFY / DONE BUTTONS */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.2fr' : '1.2fr 1fr',
+                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.4fr' : '1.1fr 1.4fr',
                 gap: '6px',
                 alignItems: 'center'
               }}>
@@ -911,31 +1089,76 @@ export default function ExpiryScreen({
                   </div>
                 )}
 
-                {/* Big Red/Green Notify Button */}
-                <button
-                  type="button"
-                  className={`glossy-btn ${sub.notificationSent ? 'glossy-btn-green' : 'glossy-btn-red'}`}
-                  style={{
-                    padding: '8px 4px',
-                    fontSize: '13px',
-                    height: '100%',
-                    justifyContent: 'center',
-                    boxShadow: sub.notificationSent ? '0 2px 6px rgba(22, 163, 74, 0.25)' : '0 2px 6px rgba(220, 38, 38, 0.25)'
-                  }}
-                  onClick={() => handleNotifyAction(sub)}
-                  id={`notify-btn-${sIdx + 1}`}
-                  title={sub.notificationSent ? `Notified on ${sub.lastNotifiedAt?.slice(0, 10)}. Click to resend.` : 'Send WhatsApp Reminder'}
-                >
-                  {sub.notificationSent ? <Check size={14} strokeWidth={2.5} /> : <Bell size={15} />}
-                  <span>{sub.notificationSent ? 'Notified' : 'Notify'}</span>
-                </button>
+                {/* Notify & Done / Pending Action Buttons (Requirement 5) */}
+                <div style={{ display: 'flex', gap: '4px', height: '100%', alignItems: 'stretch' }}>
+                  <button
+                    type="button"
+                    className="glossy-btn glossy-btn-blue"
+                    style={{
+                      flex: 1,
+                      padding: '7px 4px',
+                      fontSize: '11.5px',
+                      justifyContent: 'center',
+                      borderRadius: '8px'
+                    }}
+                    onClick={() => handleNotifyAction(sub)}
+                    id={`notify-btn-${sIdx + 1}`}
+                    title="Open WhatsApp message preview"
+                  >
+                    <Bell size={13} />
+                    <span>Notify</span>
+                  </button>
+
+                  {!sub.notificationSent ? (
+                    <button
+                      type="button"
+                      className="glossy-btn glossy-btn-green"
+                      style={{
+                        flex: 1,
+                        padding: '7px 4px',
+                        fontSize: '11.5px',
+                        justifyContent: 'center',
+                        borderRadius: '8px'
+                      }}
+                      onClick={() => handleMarkNotifiedDone(sub)}
+                      id={`mark-done-btn-${sIdx + 1}`}
+                      title="Mark follow-up complete for this expiry date"
+                    >
+                      <Check size={13} strokeWidth={2.8} />
+                      <span>Done</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleMarkPending(sub)}
+                      style={{
+                        flex: 1,
+                        padding: '6px 4px',
+                        fontSize: '10.5px',
+                        background: '#f8fafc',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: '8px',
+                        color: '#475569',
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                      id={`mark-pending-btn-${sIdx + 1}`}
+                      title="Restore to pending follow-up"
+                    >
+                      <span>Undo</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Notification Status Badge if already sent */}
               {sub.notificationSent && (
                 <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: '#16a34a', fontWeight: 700 }}>
                   <Check size={12} strokeWidth={2.5} />
-                  <span>Notification sent on {sub.lastNotifiedAt?.slice(0, 10)}</span>
+                  <span>Follow-up complete (notified {sub.lastNotifiedAt?.slice(0, 10)})</span>
                 </div>
               )}
             </div>

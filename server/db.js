@@ -193,10 +193,13 @@ export const db = {
 
     if (userEmail) {
       shares.forEach(share => {
-        if (share.status !== 'revoked') {
+        if (share.status !== 'revoked' && share.status !== 'disabled') {
           const isReceiver = share.receiverEmail && share.receiverEmail.trim().toLowerCase() === normalizedUser;
           if (isReceiver) {
             (share.brandIds || []).forEach(bId => {
+              if (share.brandDetails && share.brandDetails[bId] && share.brandDetails[bId].status === 'disabled') {
+                return;
+              }
               const base = (data.brands || []).find(b => b.id === bId);
               if (base) {
                 const sharedId = `${base.id}__shared__${share.id}`;
@@ -293,10 +296,24 @@ export const db = {
     const isAdmin = userRole === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!userEmail && !userRole);
 
     if (!isAdmin) {
-      // Normal business user: strictly isolate accounts to records created by this user
+      const activeShares = (data.sharedBrands || []).filter(s =>
+        s.status !== 'revoked' &&
+        s.status !== 'disabled' &&
+        s.receiverEmail && s.receiverEmail.trim().toLowerCase() === normalizedUser
+      );
+      const authorizedBrandIds = new Set();
+      activeShares.forEach(s => {
+        (s.brandIds || []).forEach(bId => authorizedBrandIds.add(bId));
+      });
+
       items = items.filter(item => {
         const owner = (item.ownerEmail || '').trim().toLowerCase();
-        return (owner && owner === normalizedUser) || (userId && item.userId === userId);
+        const isOwn = (owner && owner === normalizedUser) || (userId && item.userId === userId);
+        if (isOwn) return true;
+        if (authorizedBrandIds.has(item.brandId)) {
+          return true;
+        }
+        return false;
       });
     }
 
@@ -578,9 +595,12 @@ export const db = {
     let sales = [...(data.sales || [])];
 
     const normalizedUser = (sellerEmail || '').trim().toLowerCase();
-    const isAdmin = userRole === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!sellerEmail && !userRole);
+    const isAdmin = userRole === 'admin' || (!sellerEmail && !userRole);
 
-    if (!isAdmin) {
+    if (sellerEmail) {
+      // Personal sales: strictly sales where the actual selling user was sellerEmail
+      sales = sales.filter(s => (s.sellerEmail || '').trim().toLowerCase() === normalizedUser);
+    } else if (!isAdmin) {
       sales = sales.filter(s => {
         const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
         return (sEmail && sEmail === normalizedUser) || (userId && s.userId === userId);
@@ -685,6 +705,10 @@ export const db = {
       assignedScreen = assignedAccount.screens.find(s => s.name?.toLowerCase() === saleData.screenNumber?.toString().toLowerCase());
     }
 
+    if (assignedScreen && assignedScreen.status === 'occupied') {
+      throw new Error('Screen already sold; select another screen');
+    }
+
     // If still not identified, pick first empty screen
     if (!assignedScreen) {
       assignedScreen = assignedAccount.screens.find(s => s.status === 'empty');
@@ -697,7 +721,8 @@ export const db = {
         name: `Screen-${sNum}`,
         status: 'empty',
         pin: saleData.screenPin || '1234',
-        deviceType: 'TV'
+        deviceType: 'TV',
+        deviceName: ''
       };
       assignedAccount.screens.push(assignedScreen);
     }
@@ -707,6 +732,7 @@ export const db = {
     assignedScreen.saleId = saleId;
     assignedScreen.expiryDate = saleData.expiryDate;
     if (saleData.screenPin) assignedScreen.pin = saleData.screenPin;
+    assignedScreen.deviceName = saleData.deviceName ? String(saleData.deviceName).trim() : '';
 
     const newSale = {
       id: saleId,
@@ -761,6 +787,39 @@ export const db = {
       ...updates,
       updatedAt: new Date().toISOString()
     };
+    const updated = data.sales[idx];
+
+    // Atomically synchronize linked screen in inventory
+    const targetAccountId = updated.inventoryId;
+    const targetAccountEmail = (updated.accountEmail || '').toLowerCase().trim();
+    const targetScreenNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
+
+    const inv = (data.inventory || []).find(i =>
+      (targetAccountId && i.id === targetAccountId) ||
+      (targetAccountEmail && String(i.email || '').toLowerCase().trim() === targetAccountEmail)
+    );
+    if (inv && Array.isArray(inv.screens)) {
+      const screen = inv.screens.find(s => s.screenNumber === targetScreenNum);
+      if (screen) {
+        if (updates.deviceName !== undefined) {
+          screen.deviceName = String(updates.deviceName).trim();
+        }
+        if (updates.expiryDate !== undefined) {
+          screen.expiryDate = updates.expiryDate;
+        }
+        if (updates.screenPin !== undefined) {
+          screen.pin = updates.screenPin;
+        }
+        if (updates.customerName !== undefined) {
+          screen.customerName = updates.customerName;
+        }
+        if (updates.customerNumber !== undefined) {
+          screen.customerNumber = updates.customerNumber;
+        }
+        inv.updatedAt = Date.now();
+      }
+    }
+
     writeDb(data);
 
     setTimeout(() => {
@@ -1127,7 +1186,7 @@ export const db = {
         String(sale.accountPassword || sale.password || ''),
         String(sale.screenNumber || 'Screen-1'),
         String(sale.screenPin || sale.pin || '1234'),
-        String(sale.deviceName || 'Personal TV'),
+        String(sale.deviceName || ''),
         String(sale.amount !== undefined ? sale.amount : '0')
       ];
 
@@ -1851,18 +1910,91 @@ export const db = {
   createShare(shareData) {
     const data = readDb();
     if (!data.sharedBrands) data.sharedBrands = [];
+    const senderEmail = (shareData.senderEmail || 'Fixyourmobiles10@gmail.com').trim().toLowerCase();
+    const receiverEmail = (shareData.receiverEmail || '').trim().toLowerCase();
+    const brandIds = Array.isArray(shareData.brandIds) ? shareData.brandIds : [];
+    const now = new Date().toISOString();
+
+    // Check if an existing share for this sender -> receiver already exists
+    let existing = data.sharedBrands.find(s =>
+      s.senderEmail.toLowerCase() === senderEmail &&
+      s.receiverEmail.toLowerCase() === receiverEmail
+    );
+
+    if (existing) {
+      if (!existing.brandDetails) existing.brandDetails = {};
+      brandIds.forEach(bId => {
+        if (!existing.brandIds.includes(bId)) {
+          existing.brandIds.push(bId);
+        }
+        // Preserve original timestamp if already exists!
+        if (!existing.brandDetails[bId]) {
+          existing.brandDetails[bId] = {
+            sharedAt: now,
+            status: 'active'
+          };
+        } else {
+          existing.brandDetails[bId].status = 'active';
+        }
+      });
+      existing.senderName = (shareData.senderName || existing.senderName || 'Bharath').trim();
+      existing.updatedAt = now;
+      existing.status = 'active';
+      writeDb(data);
+      return existing;
+    }
+
+    const brandDetails = {};
+    brandIds.forEach(bId => {
+      brandDetails[bId] = {
+        sharedAt: now,
+        status: 'active'
+      };
+    });
+
     const newShare = {
       id: `share_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      senderEmail: (shareData.senderEmail || 'Fixyourmobiles10@gmail.com').trim().toLowerCase(),
+      senderEmail,
       senderName: (shareData.senderName || 'Bharath').trim(),
-      receiverEmail: (shareData.receiverEmail || '').trim().toLowerCase(),
-      brandIds: Array.isArray(shareData.brandIds) ? shareData.brandIds : [],
+      receiverEmail,
+      brandIds,
+      brandDetails,
       status: 'active',
-      createdAt: new Date().toISOString()
+      createdAt: now
     };
     data.sharedBrands.push(newShare);
     writeDb(data);
     return newShare;
+  },
+
+  updateShare(id, updates = {}) {
+    const data = readDb();
+    if (!data.sharedBrands) data.sharedBrands = [];
+    const index = data.sharedBrands.findIndex(s => s.id === id);
+    if (index === -1) throw new Error(`Share not found with ID ${id}`);
+
+    data.sharedBrands[index] = {
+      ...data.sharedBrands[index],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    writeDb(data);
+    return data.sharedBrands[index];
+  },
+
+  revokeShareBrand(shareId, brandId) {
+    const data = readDb();
+    const share = (data.sharedBrands || []).find(s => s.id === shareId);
+    if (!share) return false;
+    share.brandIds = (share.brandIds || []).filter(id => id !== brandId);
+    if (share.brandDetails && share.brandDetails[brandId]) {
+      delete share.brandDetails[brandId];
+    }
+    if (share.brandIds.length === 0) {
+      data.sharedBrands = (data.sharedBrands || []).filter(s => s.id !== shareId);
+    }
+    writeDb(data);
+    return true;
   },
 
   deleteShare(id) {

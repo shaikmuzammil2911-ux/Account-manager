@@ -742,6 +742,7 @@ export default function App() {
         {currentScreen === 'expiry' && (
           isAllowed('expiry_management') ? (
             <ExpiryScreen
+              currentUser={currentUser}
               brands={brands}
               selectedBrand={selectedBrand}
               initialFilter={screenParams.filter || 'ALL'}

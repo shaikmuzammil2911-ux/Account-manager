@@ -125,21 +125,46 @@ export default function SaleScreen({
 
   // Step 2 & 3: When user selects a brand in Select OTT Grid -> immediately open that brand's accounts!
   const handleSelectBrandInGrid = (brand) => {
-    setBrandId(brand.id);
+    if (brand.id !== brandId) {
+      setBrandId(brand.id);
+      setAccountEmail('');
+      setAccountPassword('');
+      setScreenNumber('');
+      setScreenPin('');
+      setDeviceName('');
+      setSelectedInventoryId(null);
+    }
     if (onSelectBrand) onSelectBrand(brand);
     // Automatically navigate to that brand's database accounts list!
     setSelectingBrandAccounts(brand);
   };
 
-  // Step 4: When an empty screen '+' is clicked in database accounts list
+  // Step 4: When an empty screen is clicked in database accounts list
   const handleSlotSelectedFromDatabase = (slotData) => {
+    if (!slotData) return;
     const selectedBId = slotData.brandId || selectingBrandAccounts?.id || brandId;
     setBrandId(selectedBId);
-    setAccountEmail(slotData.email || '');
-    setAccountPassword(slotData.password || '');
-    setScreenNumber(slotData.screenName || '');
-    setScreenPin(slotData.pin || '');
-    setSelectedInventoryId(slotData.inventoryId || null);
+
+    const emailVal = slotData.accountEmail || slotData.email || '';
+    const passVal = slotData.accountPassword || slotData.password || '';
+
+    const rawScreenNum = slotData.screenNumber !== undefined && slotData.screenNumber !== null ? String(slotData.screenNumber) : '';
+    const cleanNum = rawScreenNum.replace(/\D/g, '');
+    const screenNumStr = cleanNum ? cleanNum.padStart(2, '0') : (slotData.screenName ? slotData.screenName.replace(/\D/g, '').padStart(2, '0') : '01');
+    const screenDisplay = slotData.screenName || `Screen-${screenNumStr}`;
+
+    const rawPin = slotData.screenPin !== undefined && slotData.screenPin !== null ? slotData.screenPin : slotData.pin;
+    const pinVal = rawPin !== undefined && rawPin !== null ? String(rawPin) : '';
+    const devVal = slotData.deviceName || '';
+
+    setAccountEmail(emailVal);
+    setAccountPassword(passVal);
+    setScreenNumber(screenNumStr);
+    setScreenPin(pinVal);
+    if (devVal) {
+      setDeviceName(devVal);
+    }
+    setSelectedInventoryId(slotData.inventoryId || slotData.accountId || null);
 
     const b = brands.find(x => x.id === selectedBId);
     const chosenValidity = slotData.validity || validity || (b?.plans?.[0] || '12 Months');
@@ -152,7 +177,7 @@ export default function SaleScreen({
     // Close both database accounts view and brand picker -> returns DIRECTLY to SaleScreen!
     setSelectingBrandAccounts(null);
     setIsPickingBrand(false);
-    showToast(`Loaded ${slotData.screenName} from ${slotData.email}`, 'success');
+    showToast(`${screenDisplay} selected successfully`, 'success');
   };
 
   // When user picks an account from dropdown
@@ -163,8 +188,14 @@ export default function SaleScreen({
 
     const emptyScreen = (account.screens || []).find(s => s.status === 'empty') || (account.screens || [])[0];
     if (emptyScreen) {
-      setScreenNumber(emptyScreen.name || `Screen-${emptyScreen.screenNumber}`);
-      setScreenPin(emptyScreen.pin || '');
+      const cleanNum = String(emptyScreen.screenNumber || emptyScreen.name || '01').replace(/\D/g, '');
+      const screenNumStr = cleanNum ? cleanNum.padStart(2, '0') : '01';
+      setScreenNumber(screenNumStr);
+      const rawPin = emptyScreen.pin !== undefined && emptyScreen.pin !== null ? emptyScreen.pin : '';
+      setScreenPin(String(rawPin));
+      if (emptyScreen.deviceName) {
+        setDeviceName(emptyScreen.deviceName);
+      }
     }
 
     if (account.validity) {
@@ -172,7 +203,7 @@ export default function SaleScreen({
     }
 
     setShowAccountMenu(false);
-    showToast(`Auto-filled account credentials`, 'success');
+    showToast(`Account credentials loaded successfully`, 'success');
   };
 
   const handleSubmit = async (e) => {
@@ -187,7 +218,15 @@ export default function SaleScreen({
       return;
     }
     if (!accountEmail.trim()) {
-      showToast('Please enter Account ID / Email', 'error');
+      showToast('Please enter or select Account ID / Email', 'error');
+      return;
+    }
+    if (!accountPassword.trim()) {
+      showToast('Please enter or select Account Password', 'error');
+      return;
+    }
+    if (!screenNumber.trim()) {
+      showToast('Please select an available Screen', 'error');
       return;
     }
 
@@ -222,9 +261,13 @@ export default function SaleScreen({
         inventoryId: selectedInventoryId || null
       };
 
-      // 1). Format WhatsApp confirmation message and DIRECTLY open WhatsApp
+      // 1). First save to Database - ensures availability and atomic validation
+      await onSaleSuccess(salePayload);
+
+      // 2). Format WhatsApp confirmation message and open WhatsApp
       const waMsg = formatSaleConfirmationMessage({
         customerName: customerName.trim(),
+        customerNumber: customerNumber.trim(),
         brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
         pricingPlan: enabledPlans.find(p => p.key === selectedPricingPlan)?.label || 'General',
         accountEmail: accountEmail.trim(),
@@ -233,16 +276,13 @@ export default function SaleScreen({
         screenPin: showPin ? (screenPin.trim() || '1111') : '',
         deviceName: showDev ? deviceName.trim() : '',
         validity,
+        activationDate,
         expiryDate,
         amount
       });
 
       const waLink = buildWhatsAppLink(customerNumber.trim(), waMsg);
-      // Immediately open WhatsApp in new window/app
       window.open(waLink, '_blank');
-
-      // 2). Saves on DataBase
-      await onSaleSuccess(salePayload);
 
       confetti({
         particleCount: 80,
