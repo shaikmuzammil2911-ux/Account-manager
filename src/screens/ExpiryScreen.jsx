@@ -31,7 +31,15 @@ export default function ExpiryScreen({
   const [showCalendarModal, setShowCalendarModal] = useState(false);
 
   const [items, setItems] = useState([]);
-  const [inventoryList, setInventoryList] = useState([]);
+  const [inventoryList, setInventoryList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_inventory');
+      if (cached) return JSON.parse(cached);
+      const local = JSON.parse(localStorage.getItem('accounts_manager_app_data_v7') || '{}');
+      if (Array.isArray(local.inventory) && local.inventory.length > 0) return local.inventory;
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
 

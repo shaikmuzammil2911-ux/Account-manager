@@ -75,9 +75,23 @@ export default function App() {
   const [screenParams, setScreenParams] = useState({});
   const [history, setHistory] = useState(['home']);
 
-  const [brands, setBrands] = useState([]);
+  const [brands, setBrands] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_brands');
+      if (cached) return JSON.parse(cached);
+      const local = JSON.parse(localStorage.getItem('accounts_manager_app_data_v7') || '{}');
+      if (Array.isArray(local.brands) && local.brands.length > 0) return local.brands;
+    } catch (e) {}
+    return [];
+  });
   const [selectedBrand, setSelectedBrand] = useState(null);
-  const [stats, setStats] = useState(null);
+  const [stats, setStats] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_stats');
+      if (cached) return JSON.parse(cached);
+    } catch (e) {}
+    return null;
+  });
 
   const [showBrandSelector, setShowBrandSelector] = useState(false);
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
@@ -152,10 +166,16 @@ export default function App() {
       // 3. Load brands (Do not auto-default to Netflix; start with null / All Brands per user requirement)
       const brandsList = await api.getBrands(activeUser?.email);
       setBrands(brandsList);
+      try {
+        localStorage.setItem('accounts_manager_cached_brands', JSON.stringify(brandsList));
+      } catch (e) {}
 
       // 4. Load stats
       const liveStats = await api.getStats();
       setStats(liveStats);
+      try {
+        localStorage.setItem('accounts_manager_cached_stats', JSON.stringify(liveStats));
+      } catch (e) {}
 
       // Extract latest live data from Google Sheets if configured
       api.pullFromGoogleSheet().then(res => {

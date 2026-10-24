@@ -21,7 +21,18 @@ export default function InventoryScreen({
 }) {
   // If no brand selected yet, start with selectedBrand or null (opens Brands list)
   const [currentBrand, setCurrentBrand] = useState(selectedBrand || null);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_inventory');
+      if (cached && selectedBrand) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(i => !i.isDeleted && (i.brandId === selectedBrand.id || selectedBrand.id === 'all'));
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
   const [userDetailsModal, setUserDetailsModal] = useState(null); // { name, number, sold, plan, activation, expiry, amount, device, refName, refNumber }
@@ -239,7 +250,16 @@ export default function InventoryScreen({
         validity: selectedValidity,
         sortOrder
       });
-      setItems(data);
+      setItems(data || []);
+      try {
+        const cached = localStorage.getItem('accounts_manager_cached_inventory');
+        let fullList = cached ? JSON.parse(cached) : [];
+        if (Array.isArray(fullList)) {
+          const map = new Map(fullList.map(i => [i.id, i]));
+          (data || []).forEach(it => map.set(it.id, it));
+          localStorage.setItem('accounts_manager_cached_inventory', JSON.stringify(Array.from(map.values())));
+        }
+      } catch (e) {}
     } catch (err) {
       showToast('Failed to load inventory', 'error');
     } finally {
@@ -253,6 +273,21 @@ export default function InventoryScreen({
       setNewScreenCount(brandScreens);
       setNewScreenPins(Array.from({ length: brandScreens }, (_, i) => `${(i + 1) * 1111}`.slice(0, 4)));
       setNewDeviceNames(Array.from({ length: brandScreens }, () => ''));
+
+      // Immediate pre-population from cached inventory if available
+      try {
+        const cached = localStorage.getItem('accounts_manager_cached_inventory');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            const matched = parsed.filter(i => !i.isDeleted && (i.brandId === currentBrand.id || currentBrand.id === 'all'));
+            if (matched.length > 0) {
+              setItems(matched);
+            }
+          }
+        }
+      } catch (e) {}
+
       fetchInventory();
     }
   }, [currentBrand, filterSelectedOnly, filterEmptyOnly, selectedValidity, sortOrder]);

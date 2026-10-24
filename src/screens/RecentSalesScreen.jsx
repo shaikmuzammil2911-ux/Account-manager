@@ -40,7 +40,15 @@ export default function RecentSalesScreen({
 
   // Sales Data
   const [sales, setSales] = useState([]);
-  const [allSales, setAllSales] = useState([]);
+  const [allSales, setAllSales] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_sales');
+      if (cached) return JSON.parse(cached);
+      const local = JSON.parse(localStorage.getItem('accounts_manager_app_data_v7') || '{}');
+      if (Array.isArray(local.sales) && local.sales.length > 0) return local.sales;
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState(false);
   const [inventoryAccounts, setInventoryAccounts] = useState([]);
 

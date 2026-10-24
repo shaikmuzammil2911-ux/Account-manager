@@ -20,8 +20,24 @@ export default function HomeScreen({
   const isAdmin = currentUser?.role === 'admin';
   const [activeDate, setActiveDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [allSales, setAllSales] = useState([]);
-  const [inventoryList, setInventoryList] = useState([]);
+  const [allSales, setAllSales] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_sales');
+      if (cached) return JSON.parse(cached);
+      const local = JSON.parse(localStorage.getItem('accounts_manager_app_data_v7') || '{}');
+      if (Array.isArray(local.sales) && local.sales.length > 0) return local.sales;
+    } catch (e) {}
+    return [];
+  });
+  const [inventoryList, setInventoryList] = useState(() => {
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_inventory');
+      if (cached) return JSON.parse(cached);
+      const local = JSON.parse(localStorage.getItem('accounts_manager_app_data_v7') || '{}');
+      if (Array.isArray(local.inventory) && local.inventory.length > 0) return local.inventory;
+    } catch (e) {}
+    return [];
+  });
   const [loadingData, setLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -71,6 +87,10 @@ export default function HomeScreen({
       ]);
       setAllSales(sales || []);
       setInventoryList(inv || []);
+      try {
+        localStorage.setItem('accounts_manager_cached_sales', JSON.stringify(sales || []));
+        localStorage.setItem('accounts_manager_cached_inventory', JSON.stringify(inv || []));
+      } catch (e) {}
     } catch (e) {
       console.warn('Failed to load dashboard detailed data:', e);
     } finally {
@@ -206,6 +226,8 @@ export default function HomeScreen({
     };
   }, [activeDate, allSales, inventoryList, stats]);
 
+  const isInitialLoading = loadingData && allSales.length === 0 && inventoryList.length === 0 && !stats;
+
   return (
     <div className="screen-content" style={{ paddingBottom: '110px', paddingTop: '14px' }}>
       {/* Container with max-width for Desktop SaaS perfection */}
@@ -340,7 +362,7 @@ export default function HomeScreen({
               <span>Expired A/C</span>
             </div>
             <div style={{ fontSize: '24px', fontWeight: 900, lineHeight: 1.1 }}>
-              {expiredCount}
+              {isInitialLoading ? '—' : expiredCount}
             </div>
           </div>
 
@@ -375,7 +397,7 @@ export default function HomeScreen({
               <span>Sold A/C</span>
             </div>
             <div style={{ fontSize: '24px', fontWeight: 900, lineHeight: 1.1 }}>
-              {dateSoldAC}
+              {isInitialLoading ? '—' : dateSoldAC}
             </div>
           </div>
 
@@ -410,7 +432,7 @@ export default function HomeScreen({
               <span>Amount</span>
             </div>
             <div style={{ fontSize: '20px', fontWeight: 900, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              ₹{Number(dateAmount).toLocaleString('en-IN')}
+              {isInitialLoading ? '—' : `₹${Number(dateAmount).toLocaleString('en-IN')}`}
             </div>
           </div>
         </div>
@@ -429,7 +451,7 @@ export default function HomeScreen({
               </div>
               <div>
                 <div className="stat-card-label">Total Sales</div>
-                <div className="stat-card-value text-blue">{totalSalesCount}</div>
+                <div className="stat-card-value text-blue">{isInitialLoading ? '—' : totalSalesCount}</div>
               </div>
             </div>
 
@@ -444,7 +466,7 @@ export default function HomeScreen({
               </div>
               <div>
                 <div className="stat-card-label">Free Screens</div>
-                <div className="stat-card-value text-green">{freeScreensCount}</div>
+                <div className="stat-card-value text-green">{isInitialLoading ? '—' : freeScreensCount}</div>
               </div>
             </div>
 
@@ -459,7 +481,7 @@ export default function HomeScreen({
               </div>
               <div>
                 <div className="stat-card-label">Expiring Today</div>
-                <div className="stat-card-value text-orange">{todayCount}</div>
+                <div className="stat-card-value text-orange">{isInitialLoading ? '—' : todayCount}</div>
               </div>
             </div>
 
@@ -474,7 +496,7 @@ export default function HomeScreen({
               </div>
               <div>
                 <div className="stat-card-label">Expired</div>
-                <div className="stat-card-value text-red">{expiredCount}</div>
+                <div className="stat-card-value text-red">{isInitialLoading ? '—' : expiredCount}</div>
               </div>
             </div>
           </div>

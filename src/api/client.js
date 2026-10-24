@@ -1340,38 +1340,21 @@ export const api = {
     const effectiveRole = activeUser?.role || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com' ? 'admin' : 'user');
     const effectiveUserId = activeUser?.id;
 
+    let sales = [];
+    let inventory = [];
+    let brands = [];
+
     try {
-      const q = new URLSearchParams();
-      if (effectiveEmail) q.set('userEmail', effectiveEmail);
-      if (effectiveRole) q.set('userRole', effectiveRole);
-      if (effectiveUserId) q.set('userId', effectiveUserId);
-
-      const res = await fetch(`/api/stats?${q.toString()}`);
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (e) {}
-
-    const local = getLocalData();
-    const isAdmin = effectiveRole === 'admin' || (effectiveEmail?.toLowerCase() === 'fixyourmobiles10@gmail.com');
-
-    let sales = [...(local.sales || [])];
-    let inventory = [...(local.inventory || [])].filter(i => !i.isDeleted);
-    let brands = [...(local.brands || [])];
-
-    if (!isAdmin) {
-      sales = sales.filter(s => {
-        const sEmail = (s.sellerEmail || s.ownerEmail || '').trim().toLowerCase();
-        return (sEmail && sEmail === effectiveEmail?.toLowerCase()) || (effectiveUserId && s.userId === effectiveUserId);
-      });
-      inventory = inventory.filter(i => {
-        const owner = (i.ownerEmail || '').trim().toLowerCase();
-        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && i.userId === effectiveUserId);
-      });
-      brands = brands.filter(b => {
-        const owner = (b.ownerEmail || '').trim().toLowerCase();
-        return (owner && owner === effectiveEmail?.toLowerCase()) || (effectiveUserId && b.userId === effectiveUserId);
-      });
+      [sales, inventory, brands] = await Promise.all([
+        this.getSales({ brandId: 'all', userEmail: effectiveEmail, userRole: effectiveRole, userId: effectiveUserId }),
+        this.getInventory({ brandId: 'all', userEmail: effectiveEmail, userRole: effectiveRole, userId: effectiveUserId }),
+        this.getBrands(effectiveEmail)
+      ]);
+    } catch (e) {
+      const local = getLocalData();
+      sales = local.sales || [];
+      inventory = (local.inventory || []).filter(i => !i.isDeleted);
+      brands = local.brands || [];
     }
 
     const now = new Date();
@@ -1399,7 +1382,7 @@ export const api = {
 
     const totalRevenue = sales.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-    return {
+    const liveStats = {
       totalBrands: brands.length,
       totalSales: sales.length,
       totalRevenue,
@@ -1411,6 +1394,12 @@ export const api = {
       todayCount,
       inTwoDaysCount
     };
+
+    try {
+      localStorage.setItem('accounts_manager_cached_stats', JSON.stringify(liveStats));
+    } catch (e) {}
+
+    return liveStats;
   },
 
   async getExpiry(params = {}) {
