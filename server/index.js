@@ -432,7 +432,8 @@ app.post('/api/inventory', (req, res) => {
 
 app.put('/api/inventory/:id', (req, res) => {
   try {
-    const updated = db.updateInventory(req.params.id, req.body);
+    const actor = req.query.userEmail || req.body.userEmail || req.body.changedBy;
+    const updated = db.updateInventory(req.params.id, req.body, actor);
     if (!updated) return res.status(404).json({ error: 'Inventory item not found' });
     res.json(updated);
   } catch (err) {

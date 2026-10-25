@@ -91,6 +91,93 @@ export function getDaysDiff(targetDateStr, refDate = new Date()) {
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
+/**
+ * Format timestamp into exact Indian Standard Time with seconds:
+ * e.g., "25-Oct-2026, 12:42:18 PM IST"
+ */
+export function formatISTDateTime(isoOrDate = new Date()) {
+  if (!isoOrDate) return '-';
+  try {
+    const d = isoOrDate instanceof Date ? isoOrDate : new Date(isoOrDate);
+    if (isNaN(d.getTime())) return String(isoOrDate);
+    const dateFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).format(d).replace(/ /g, '-');
+
+    const timeFormatted = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(d);
+
+    return `${dateFormatted}, ${timeFormatted.toUpperCase()} IST`;
+  } catch (e) {
+    return String(isoOrDate);
+  }
+}
+
+/**
+ * Dynamically calculate remaining days, overdue days, and expiry status
+ * based on calendar day differences in Asia/Kolkata timezone.
+ *
+ * Rules:
+ * - Future: remainingDays = positive count, overdueDays = 0, expiryStatus = "N days remaining"
+ * - Today: remainingDays = 0, overdueDays = 0, expiryStatus = "Expires today"
+ * - Past: remainingDays = 0, overdueDays = elapsed days, expiryStatus = "Expired N days ago"
+ */
+export function calculateExpiryCountdown(expiryDateStr, refDate = new Date()) {
+  if (!isValidDateStr(expiryDateStr)) {
+    return {
+      remainingDays: 0,
+      overdueDays: 0,
+      expiryStatus: ''
+    };
+  }
+  const target = parseDate(expiryDateStr);
+  if (!target || isNaN(target.getTime())) {
+    return {
+      remainingDays: 0,
+      overdueDays: 0,
+      expiryStatus: ''
+    };
+  }
+
+  const diffDays = getDaysDiff(expiryDateStr, refDate);
+  if (diffDays === null) {
+    return {
+      remainingDays: 0,
+      overdueDays: 0,
+      expiryStatus: ''
+    };
+  }
+
+  if (diffDays > 0) {
+    return {
+      remainingDays: diffDays,
+      overdueDays: 0,
+      expiryStatus: `${diffDays} days remaining`
+    };
+  } else if (diffDays === 0) {
+    return {
+      remainingDays: 0,
+      overdueDays: 0,
+      expiryStatus: 'Expires today'
+    };
+  } else {
+    const elapsed = Math.abs(diffDays);
+    return {
+      remainingDays: 0,
+      overdueDays: elapsed,
+      expiryStatus: `Expired ${elapsed} ${elapsed === 1 ? 'day' : 'days'} ago`
+    };
+  }
+}
+
 // Color Codings Settings (localStorage persistent)
 const COLOR_CODINGS_STORAGE_KEY = 'accounts_manager_color_codings';
 

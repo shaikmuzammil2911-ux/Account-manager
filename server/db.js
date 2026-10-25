@@ -183,6 +183,31 @@ function dateDiffInDays(targetDate, referenceDate = new Date()) {
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
+// Helper: Format exact timestamp in Asia/Kolkata with seconds: e.g. "25-Oct-2026, 12:42:18 PM IST"
+export function formatISTDateAndTimeString(dateObj = new Date()) {
+  try {
+    const d = dateObj instanceof Date ? dateObj : new Date(dateObj);
+    const dateParts = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    }).format(d).replace(/ /g, '-');
+
+    const timeParts = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(d);
+
+    return `${dateParts}, ${timeParts.toUpperCase()} IST`;
+  } catch (e) {
+    return new Date().toISOString();
+  }
+}
+
 export const db = {
   getBrands(userEmail, userRole, userId) {
     const data = readDb();
@@ -323,6 +348,19 @@ export const db = {
           return true;
         }
         return false;
+      }).map(item => {
+        const owner = (item.ownerEmail || '').trim().toLowerCase();
+        const isOwn = (owner && owner === normalizedUser) || (userId && item.userId === userId);
+        if (!isOwn) {
+          // Strictly protect private credentials and seller details from shared inventory viewers
+          return {
+            ...item,
+            sellerDetails: null,
+            entries: [],
+            credentialHistory: []
+          };
+        }
+        return item;
       });
     }
 
@@ -509,12 +547,15 @@ export const db = {
     return newItem;
   },
 
-  updateInventory(id, updates) {
+  updateInventory(id, updates, actorEmail) {
     const data = readDb();
     const idx = data.inventory.findIndex(i => i.id === id);
     if (idx === -1) return null;
 
     const existing = data.inventory[idx];
+    const nowIso = new Date().toISOString();
+    const formattedNow = formatISTDateAndTimeString(new Date());
+    const actor = actorEmail || updates.changedBy || 'Authorized Admin';
 
     // Carefully merge screens to preserve existing sales, occupancies, and deviceTypes
     let mergedScreens = existing.screens;
@@ -527,13 +568,138 @@ export const db = {
           pin: newScreen.pin !== undefined ? String(newScreen.pin) : (oldScreen?.pin || '1234'),
           deviceType: newScreen.deviceType || oldScreen?.deviceType || 'tv',
           deviceName: newScreen.deviceName !== undefined ? String(newScreen.deviceName).trim() : (oldScreen?.deviceName || ''),
-          // Preserve existing saleId and occupancy status unless explicitly changed
           status: newScreen.status || oldScreen?.status || 'empty',
           saleId: newScreen.saleId !== undefined ? newScreen.saleId : (oldScreen?.saleId || null),
           expiryDate: newScreen.expiryDate !== undefined ? newScreen.expiryDate : (oldScreen?.expiryDate || null)
         };
       });
     }
+
+    // Determine existing entries array (preserve all previous entries)
+    let existingEntries = Array.isArray(existing.entries)
+      ? [...existing.entries]
+      : (Array.isArray(existing.credentialHistory) ? [...existing.credentialHistory] : []);
+
+    const changeEventId = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newChangeEntries = [];
+
+    // 1. Mail ID / Login ID
+    if (updates.email !== undefined) {
+      const oldEmail = (existing.email || '').trim();
+      const newEmail = String(updates.email || '').trim();
+      if (oldEmail !== newEmail) {
+        newChangeEntries.push({
+          id: `ent_${Date.now()}_email`,
+          field: 'Mail ID changed',
+          fieldName: 'email',
+          screenNumber: null,
+          oldValue: oldEmail || 'Empty',
+          newValue: newEmail || 'Empty',
+          isPassword: false
+        });
+      }
+    }
+
+    // 2. OTT Account Password (store plaintext, unmasked for authorized owners)
+    if (updates.password !== undefined) {
+      const oldPw = (existing.password || '').trim();
+      const newPw = String(updates.password || '').trim();
+      if (oldPw !== newPw) {
+        newChangeEntries.push({
+          id: `ent_${Date.now()}_pw`,
+          field: 'Password changed',
+          fieldName: 'password',
+          screenNumber: null,
+          oldValue: oldPw || 'Empty',
+          newValue: newPw || 'Empty',
+          isPassword: true
+        });
+      }
+    }
+
+    // 3. Screen PINs (with exact Screen-XX and preserving leading zeros)
+    if (updates.screens && Array.isArray(updates.screens)) {
+      updates.screens.forEach((newS, sIdx) => {
+        const oldS = existing.screens ? existing.screens[sIdx] : null;
+        if (newS.pin !== undefined && oldS) {
+          const oldPin = oldS.pin !== undefined ? String(oldS.pin) : '';
+          const newPin = String(newS.pin);
+          if (oldPin !== newPin) {
+            const screenLabel = `Screen-${String(sIdx + 1).padStart(2, '0')}`;
+            newChangeEntries.push({
+              id: `ent_${Date.now()}_pin_${sIdx + 1}`,
+              field: `${screenLabel} PIN changed`,
+              fieldName: 'screen_pin',
+              screenNumber: sIdx + 1,
+              oldValue: oldPin || 'Empty',
+              newValue: newPin || 'Empty',
+              isPassword: false
+            });
+          }
+        }
+      });
+    }
+
+    // 4. Star-Button Seller & Account Details popup fields
+    if (updates.sellerDetails !== undefined) {
+      const oldS = existing.sellerDetails || {};
+      const newS = updates.sellerDetails || {};
+
+      const sellerFields = [
+        { key: 'sellerName', label: 'Seller Name changed' },
+        { key: 'sellerNumber', label: 'Seller Number changed' },
+        { key: 'purchaseDate', altKey: 'referenceDate', label: 'Purchase Date changed' },
+        { key: 'expiry', altKey: 'expiryDate', label: 'Account Expiry changed' },
+        { key: 'reference', label: 'Reference changed' },
+        { key: 'link', label: 'Link changed' },
+        { key: 'amount', label: 'Amount changed' },
+        { key: 'card', label: 'Card Reference changed', isCard: true },
+        { key: 'notes', label: 'Notes changed' }
+      ];
+
+      sellerFields.forEach(f => {
+        const oldVal = String(oldS[f.key] ?? (f.altKey ? oldS[f.altKey] : '') ?? '').trim();
+        const newVal = String(newS[f.key] ?? (f.altKey ? newS[f.altKey] : '') ?? '').trim();
+        if (oldVal !== newVal) {
+          let displayOld = oldVal || 'Empty';
+          let displayNew = newVal || 'Empty';
+          if (f.isCard) {
+            // Mask full card numbers if entered, never include CVV
+            if (displayOld !== 'Empty' && displayOld.length >= 12) {
+              displayOld = `•••• •••• •••• ${displayOld.slice(-4)}`;
+            }
+            if (displayNew !== 'Empty' && displayNew.length >= 12) {
+              displayNew = `•••• •••• •••• ${displayNew.slice(-4)}`;
+            }
+          }
+          newChangeEntries.push({
+            id: `ent_${Date.now()}_seller_${f.key}`,
+            field: f.label,
+            fieldName: f.key,
+            screenNumber: null,
+            oldValue: displayOld,
+            newValue: displayNew,
+            isPassword: false
+          });
+        }
+      });
+    }
+
+    // Assign sequential Entry XX and deterministic order
+    const startingCount = existingEntries.length;
+    const finalizedEntries = newChangeEntries.map((ent, idx) => ({
+      ...ent,
+      entryNumber: `Entry ${String(startingCount + idx + 1).padStart(2, '0')}`,
+      changeEventId,
+      status: 'Confirmed',
+      changedBy: actor,
+      timestamp: nowIso,
+      formattedTime: formattedNow,
+      accountId: id
+    }));
+
+    // WhatsApp-style order: oldest at top, newest appended at bottom!
+    const combinedEntries = [...existingEntries, ...finalizedEntries];
 
     let finalRecordNumber = existing.recordNumber || '01';
     if (updates.recordNumber !== undefined) {
@@ -548,7 +714,9 @@ export const db = {
       ...updates,
       recordNumber: finalRecordNumber,
       screens: mergedScreens,
-      updatedAt: new Date().toISOString().slice(0, 10),
+      entries: combinedEntries,
+      credentialHistory: combinedEntries, // sync for backward compatibility
+      updatedAt: nowIso,
       id // preserve immutable ID
     };
 
@@ -1024,36 +1192,186 @@ export const db = {
 
   getSettings(userEmail) {
     const data = readDb();
-    const settings = { ...(data.settings || {}) };
-    if (userEmail) {
-      const normalized = String(userEmail).trim().toLowerCase();
-      if (data.settings?.userTemplates?.[normalized]) {
-        const u = data.settings.userTemplates[normalized];
-        if (u.whatsappSaleTemplate) settings.whatsappSaleTemplate = u.whatsappSaleTemplate;
-        if (u.whatsappExpiryTemplate) settings.whatsappExpiryTemplate = u.whatsappExpiryTemplate;
-        if (u.whatsappExpiryImage) settings.whatsappExpiryImage = u.whatsappExpiryImage;
+    const globalSettings = { ...(data.settings || {}) };
+    const normalizedUser = (userEmail || '').trim().toLowerCase();
+
+    const defaultCategories = [
+      { id: 'sale', name: 'Sale Message', description: 'Login credentials & purchase confirmation sent to customers upon sale' },
+      { id: 'expiry', name: 'Expiry / Renewal Message', description: 'Approaching subscription renewal & reminder notices sent before expiry' }
+    ];
+
+    const defaultSaleTemplate = globalSettings.whatsappSaleTemplate && !globalSettings.whatsappSaleTemplate.includes('Custom template from test')
+      ? globalSettings.whatsappSaleTemplate
+      : `Hello {customerName}! 🍿\n\n🥰 Thank you for your purchase!\nHere are your *{brandName}* subscription details:\n\n⏳ *Validity:* {validity}\n🗓️ *From Date:* {activationDate}\n🗓️ *Expiry Date:* {expiryDate}\n\n📧 *ID / Email:* {accountEmail}\n🔒 *Password:* {accountPassword}\n🎴 *Screen No:* {screenNumber}\n🪄 *Screen PIN:* {screenPin}\n🔥 *Amount:* ₹{amount}\n📱 *Device:* {deviceName}\n\n------------------------------------\n👤 *User Name:* {customerName}\n📞 *Number:* {customerNumber}\n👥 *Ref Name:* {referenceName}\n📞 *Ref Number:* {referenceNumber}\n\nEnjoy uninterrupted streaming! For renewals or queries, kindly message us. 🍿\n\nRegards,\n*OTTMoneySaver.Com*\n*+91 6305151531*`;
+
+    const defaultExpiryTemplate = globalSettings.whatsappExpiryTemplate || `Hello {customerName}! 🎬\n\nYour *{brandName}* subscription details:\n📱 *Screen No:* {screenNumber}\n🔑 *Screen PIN:* {screenPin}\n⏳ *Expiry Date:* {expiryDate}\n\nYour plan is approaching renewal ({daysRemaining} days remaining). Kindly renew today to extend your subscription and continue non-stop streaming! 🍿\n\nRegards,\n*OTTMoneySaver.Com*\n*+91 6305151531*`;
+
+    const defaultTemplates = [
+      {
+        id: 'tpl_sale_default',
+        categoryId: 'sale',
+        name: 'Standard Sale Confirmation',
+        content: defaultSaleTemplate,
+        isActive: true,
+        imageUrl: null,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        updatedAt: '2026-10-25T00:00:00.000Z'
+      },
+      {
+        id: 'tpl_expiry_1',
+        categoryId: 'expiry',
+        name: 'Template 01 — Friendly Reminder',
+        content: defaultExpiryTemplate,
+        isActive: true,
+        imageUrl: globalSettings.whatsappExpiryImage || null,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        updatedAt: '2026-10-25T00:00:00.000Z'
+      },
+      {
+        id: 'tpl_expiry_2',
+        categoryId: 'expiry',
+        name: 'Template 02 — Renewal Notice',
+        content: `Hello {customerName},\n\nYour {brandName} subscription has {remainingDays} days left before renewal.\n\nExpiry Date: {expiryDate}\n\nPlease contact us to renew your subscription.\n\nRegards,\n*OTTMoneySaver.Com*`,
+        isActive: false,
+        imageUrl: null,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        updatedAt: '2026-10-25T00:00:00.000Z'
+      },
+      {
+        id: 'tpl_expiry_3',
+        categoryId: 'expiry',
+        name: 'Template 03 — Short Reminder',
+        content: `Hi {customerName}! Quick reminder that your {brandName} subscription expires on *{expiryDate}* ({expiryStatus}). Reply to this message to renew right away! 🍿\n\nRegards,\n*OTTMoneySaver.Com*`,
+        isActive: false,
+        imageUrl: null,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        updatedAt: '2026-10-25T00:00:00.000Z'
+      },
+      {
+        id: 'tpl_expiry_4',
+        categoryId: 'expiry',
+        name: 'Template 04 — Picture + Text Reminder',
+        content: `🎬 *SUBSCRIPTION RENEWAL NOTICE*\n\nHello {customerName}!\nYour {brandName} access expires on *{expiryDate}* ({remainingDays} days remaining).\n\n📱 Screen: {screenNumber}\n🪄 PIN: {screenPin}\n\nRenew today to keep watching uninterrupted! 🍿\n\nRegards,\n*OTTMoneySaver.Com*`,
+        isActive: false,
+        imageUrl: null,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        updatedAt: '2026-10-25T00:00:00.000Z'
       }
+    ];
+
+    if (!userEmail) {
+      const activeSale = defaultTemplates.find(t => t.categoryId === 'sale' && t.isActive) || defaultTemplates[0];
+      const activeExpiry = defaultTemplates.find(t => t.categoryId === 'expiry' && t.isActive) || defaultTemplates[1];
+      return {
+        ...globalSettings,
+        whatsappCategories: globalSettings.whatsappCategories || defaultCategories,
+        whatsappTemplates: globalSettings.whatsappTemplates || defaultTemplates,
+        whatsappSaleTemplate: activeSale.content,
+        whatsappExpiryTemplate: activeExpiry.content,
+        whatsappExpiryImage: activeExpiry.imageUrl || ''
+      };
     }
-    return settings;
+
+    const userEntry = data.userSettings?.[normalizedUser] || {};
+    const categories = userEntry.whatsappCategories || globalSettings.whatsappCategories || defaultCategories;
+    let templates = userEntry.whatsappTemplates;
+
+    if (!templates || !Array.isArray(templates) || templates.length === 0) {
+      // Migrate from single legacy template fields if present
+      templates = defaultTemplates.map(t => {
+        if (t.categoryId === 'sale' && t.isActive && userEntry.whatsappSaleTemplate && !userEntry.whatsappSaleTemplate.includes('Custom template from test')) {
+          return { ...t, content: userEntry.whatsappSaleTemplate };
+        }
+        if (t.categoryId === 'expiry' && t.isActive && userEntry.whatsappExpiryTemplate) {
+          return {
+            ...t,
+            content: userEntry.whatsappExpiryTemplate,
+            imageUrl: userEntry.whatsappExpiryImage || t.imageUrl
+          };
+        }
+        return t;
+      });
+    }
+
+    const activeSale = templates.find(t => t.categoryId === 'sale' && t.isActive) || templates.find(t => t.categoryId === 'sale') || defaultTemplates[0];
+    const activeExpiry = templates.find(t => t.categoryId === 'expiry' && t.isActive) || templates.find(t => t.categoryId === 'expiry') || defaultTemplates[1];
+
+    return {
+      ...globalSettings,
+      ...userEntry,
+      whatsappCategories: categories,
+      whatsappTemplates: templates,
+      whatsappSaleTemplate: activeSale?.content || defaultSaleTemplate,
+      whatsappExpiryTemplate: activeExpiry?.content || defaultExpiryTemplate,
+      whatsappExpiryImage: activeExpiry?.imageUrl || '',
+      updatedAt: userEntry.updatedAt || globalSettings.updatedAt || new Date().toISOString()
+    };
   },
 
   updateSettings(newSettings = {}, userEmail) {
     const data = readDb();
-    if (!data.settings) data.settings = {};
-    data.settings = { ...data.settings, ...newSettings };
-    if (userEmail) {
-      const normalized = String(userEmail).trim().toLowerCase();
-      if (!data.settings.userTemplates) data.settings.userTemplates = {};
-      data.settings.userTemplates[normalized] = {
-        ...(data.settings.userTemplates[normalized] || {}),
-        whatsappSaleTemplate: newSettings.whatsappSaleTemplate !== undefined ? newSettings.whatsappSaleTemplate : data.settings.userTemplates[normalized]?.whatsappSaleTemplate,
-        whatsappExpiryTemplate: newSettings.whatsappExpiryTemplate !== undefined ? newSettings.whatsappExpiryTemplate : data.settings.userTemplates[normalized]?.whatsappExpiryTemplate,
-        whatsappExpiryImage: newSettings.whatsappExpiryImage !== undefined ? newSettings.whatsappExpiryImage : data.settings.userTemplates[normalized]?.whatsappExpiryImage,
-        updatedAt: new Date().toISOString()
+    const timestamp = new Date().toISOString();
+    const normalizedUser = (userEmail || '').trim().toLowerCase();
+
+    if (normalizedUser) {
+      if (!data.userSettings) data.userSettings = {};
+      const current = data.userSettings[normalizedUser] || {};
+
+      let updatedTemplates = newSettings.whatsappTemplates || current.whatsappTemplates;
+      // If updating sale template directly
+      if (newSettings.whatsappSaleTemplate !== undefined) {
+        if (!updatedTemplates) {
+          const loaded = this.getSettings(normalizedUser);
+          updatedTemplates = loaded.whatsappTemplates || [];
+        }
+        updatedTemplates = updatedTemplates.map(t => {
+          if (t.categoryId === 'sale' && t.isActive) {
+            return { ...t, content: newSettings.whatsappSaleTemplate, updatedAt: timestamp };
+          }
+          return t;
+        });
+      }
+
+      // If updating expiry template directly
+      if (newSettings.whatsappExpiryTemplate !== undefined || newSettings.whatsappExpiryImage !== undefined) {
+        if (!updatedTemplates) {
+          const loaded = this.getSettings(normalizedUser);
+          updatedTemplates = loaded.whatsappTemplates || [];
+        }
+        updatedTemplates = updatedTemplates.map(t => {
+          if (t.categoryId === 'expiry' && t.isActive) {
+            return {
+              ...t,
+              content: newSettings.whatsappExpiryTemplate !== undefined ? newSettings.whatsappExpiryTemplate : t.content,
+              imageUrl: newSettings.whatsappExpiryImage !== undefined ? newSettings.whatsappExpiryImage : t.imageUrl,
+              updatedAt: timestamp
+            };
+          }
+          return t;
+        });
+      }
+
+      data.userSettings[normalizedUser] = {
+        ...current,
+        ...newSettings,
+        whatsappTemplates: updatedTemplates || current.whatsappTemplates,
+        updatedAt: timestamp
       };
+
+      writeDb(data);
+      return this.getSettings(normalizedUser);
     }
+
+    // Global settings update (no userEmail)
+    if (!data.settings) data.settings = {};
+    data.settings = {
+      ...data.settings,
+      ...newSettings,
+      updatedAt: timestamp
+    };
+
     writeDb(data);
-    return this.getSettings(userEmail);
+    return this.getSettings();
   },
 
   getSheetsConfig() {
@@ -2041,46 +2359,5 @@ export const db = {
     data.sharedBrands = (data.sharedBrands || []).filter(s => s.id !== id);
     writeDb(data);
     return true;
-  },
-
-  // --- SETTINGS (WhatsApp Templates & Preferences) ---
-  getSettings(userEmail) {
-    const data = readDb();
-    if (!data.settings) data.settings = {};
-    if (userEmail) {
-      const emailKey = String(userEmail).toLowerCase().trim();
-      const userSettings = data.userSettings?.[emailKey] || {};
-      return {
-        whatsappSaleTemplate: userSettings.whatsappSaleTemplate || data.settings.whatsappSaleTemplate || '',
-        whatsappExpiryTemplate: userSettings.whatsappExpiryTemplate || data.settings.whatsappExpiryTemplate || '',
-        updatedAt: userSettings.updatedAt || data.settings.updatedAt || new Date().toISOString()
-      };
-    }
-    return data.settings;
-  },
-
-  updateSettings(newSettings, userEmail) {
-    const data = readDb();
-    if (!data.settings) data.settings = {};
-    const timestamp = new Date().toISOString();
-
-    if (userEmail) {
-      if (!data.userSettings) data.userSettings = {};
-      const emailKey = String(userEmail).toLowerCase().trim();
-      data.userSettings[emailKey] = {
-        ...(data.userSettings[emailKey] || {}),
-        ...newSettings,
-        updatedAt: timestamp
-      };
-    }
-
-    data.settings = {
-      ...data.settings,
-      ...newSettings,
-      updatedAt: timestamp
-    };
-
-    writeDb(data);
-    return userEmail ? data.userSettings[String(userEmail).toLowerCase().trim()] : data.settings;
   }
 };

@@ -864,6 +864,7 @@ export default function App() {
       <NotifyModal
         isOpen={!!notifySaleItem}
         sale={notifySaleItem}
+        currentUser={currentUser}
         onClose={() => setNotifySaleItem(null)}
         onConfirmSent={handleConfirmNotification}
       />

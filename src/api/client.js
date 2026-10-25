@@ -1,5 +1,5 @@
 import { getClientInitialData } from '../utils/initialData';
-import { parseDate, getDaysDiff, calculateExpiryDate } from '../utils/dateUtils';
+import { parseDate, getDaysDiff, calculateExpiryDate, formatISTDateTime } from '../utils/dateUtils';
 import { supabase } from '../utils/supabaseClient';
 import {
   testGoogleSheetConnection,
@@ -225,7 +225,8 @@ function mapSupabaseAccount(a) {
     ownerEmail: a.owner_email || '',
     userId: a.owner_user_id || '',
     defaultExpanded: Boolean(parsedNotes.defaultExpanded),
-    credentialHistory: Array.isArray(parsedNotes.credentialHistory) ? parsedNotes.credentialHistory : [],
+    entries: Array.isArray(parsedNotes.entries) ? parsedNotes.entries : (Array.isArray(parsedNotes.credentialHistory) ? parsedNotes.credentialHistory : []),
+    credentialHistory: Array.isArray(parsedNotes.credentialHistory) ? parsedNotes.credentialHistory : (Array.isArray(parsedNotes.entries) ? parsedNotes.entries : []),
     sellerDetails: parsedNotes.sellerDetails || null,
     notes: parsedNotes.userNotes || (typeof parsedNotes === 'string' ? parsedNotes : ''),
     createdAt: a.created_at,
@@ -244,9 +245,12 @@ function mapAccountToSupabase(item, userEmail, userId) {
     });
   }
 
+  const entriesList = Array.isArray(item.entries) ? item.entries : (Array.isArray(item.credentialHistory) ? item.credentialHistory : []);
+
   const notesObj = {
     defaultExpanded: Boolean(item.defaultExpanded),
-    credentialHistory: Array.isArray(item.credentialHistory) ? item.credentialHistory : [],
+    entries: entriesList,
+    credentialHistory: entriesList,
     sellerDetails: item.sellerDetails || null,
     screenDeviceNames,
     userNotes: typeof item.notes === 'string' ? item.notes : (item.notes?.userNotes || '')
@@ -680,54 +684,132 @@ export const api = {
       });
     }
 
-    // Record Credential Change Audit History
-    let existingHistory = Array.isArray(existing.credentialHistory) ? [...existing.credentialHistory] : [];
-    const nowIso = new Date().toISOString();
+    // Record Entry-wise Change Log
+    let existingEntries = Array.isArray(existing.entries)
+      ? [...existing.entries]
+      : (Array.isArray(existing.credentialHistory) ? [...existing.credentialHistory] : []);
 
-    // Check password change
-    if (updates.password !== undefined && updates.password !== existing.password) {
-      existingHistory.unshift({
-        id: `hist_${Date.now()}_pw`,
-        field: 'Password',
-        previous: maskCredential(existing.password),
-        current: maskCredential(updates.password),
-        timestamp: nowIso,
-        accountId: existing.email || existing.recordNumber || id,
-        status: 'Confirmed'
-      });
+    const nowIso = new Date().toISOString();
+    const formattedNow = formatISTDateTime(nowIso);
+    const actor = activeUser?.email || activeUser?.name || 'Authorized Admin';
+    const changeEventId = `evt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const newChangeEntries = [];
+
+    // 1. Mail ID / Login ID
+    if (updates.email !== undefined) {
+      const oldEmail = (existing.email || '').trim();
+      const newEmail = String(updates.email || '').trim();
+      if (oldEmail !== newEmail) {
+        newChangeEntries.push({
+          id: `ent_${Date.now()}_email`,
+          field: 'Mail ID changed',
+          fieldName: 'email',
+          screenNumber: null,
+          oldValue: oldEmail || 'Empty',
+          newValue: newEmail || 'Empty',
+          isPassword: false
+        });
+      }
     }
 
-    // Check screen PIN or Expiry changes
+    // 2. OTT Account Password (store plaintext, unmasked for authorized owners)
+    if (updates.password !== undefined) {
+      const oldPw = (existing.password || '').trim();
+      const newPw = String(updates.password || '').trim();
+      if (oldPw !== newPw) {
+        newChangeEntries.push({
+          id: `ent_${Date.now()}_pw`,
+          field: 'Password changed',
+          fieldName: 'password',
+          screenNumber: null,
+          oldValue: oldPw || 'Empty',
+          newValue: newPw || 'Empty',
+          isPassword: true
+        });
+      }
+    }
+
+    // 3. Screen PINs (with exact Screen-XX and preserving leading zeros)
     if (updates.screens && Array.isArray(updates.screens)) {
       updates.screens.forEach((newS, sIdx) => {
         const oldS = existing.screens ? existing.screens[sIdx] : null;
-        const screenLabel = `Screen-${sIdx + 1}`;
-        if (newS.pin !== undefined && oldS && String(newS.pin) !== String(oldS.pin)) {
-          existingHistory.unshift({
-            id: `hist_${Date.now()}_pin_${sIdx}`,
-            field: `${screenLabel} PIN`,
-            previous: maskCredential(oldS.pin),
-            current: maskCredential(newS.pin),
-            timestamp: nowIso,
-            accountId: existing.email || existing.recordNumber || id,
-            status: 'Confirmed'
-          });
+        if (newS.pin !== undefined && oldS) {
+          const oldPin = oldS.pin !== undefined ? String(oldS.pin) : '';
+          const newPin = String(newS.pin);
+          if (oldPin !== newPin) {
+            const screenLabel = `Screen-${String(sIdx + 1).padStart(2, '0')}`;
+            newChangeEntries.push({
+              id: `ent_${Date.now()}_pin_${sIdx + 1}`,
+              field: `${screenLabel} PIN changed`,
+              fieldName: 'screen_pin',
+              screenNumber: sIdx + 1,
+              oldValue: oldPin || 'Empty',
+              newValue: newPin || 'Empty',
+              isPassword: false
+            });
+          }
         }
-        if (newS.expiryDate !== undefined && oldS && newS.expiryDate !== oldS.expiryDate) {
-          existingHistory.unshift({
-            id: `hist_${Date.now()}_exp_${sIdx}`,
-            field: `${screenLabel} Expiry`,
-            previous: oldS.expiryDate || 'None',
-            current: newS.expiryDate || 'None',
-            timestamp: nowIso,
-            accountId: existing.email || existing.recordNumber || id,
-            status: 'Confirmed'
+      });
+    }
+
+    // 4. Star-Button Seller & Account Details popup fields
+    if (updates.sellerDetails !== undefined) {
+      const oldS = existing.sellerDetails || {};
+      const newS = updates.sellerDetails || {};
+
+      const sellerFields = [
+        { key: 'sellerName', label: 'Seller Name changed' },
+        { key: 'sellerNumber', label: 'Seller Number changed' },
+        { key: 'purchaseDate', altKey: 'referenceDate', label: 'Purchase Date changed' },
+        { key: 'expiry', altKey: 'expiryDate', label: 'Account Expiry changed' },
+        { key: 'reference', label: 'Reference changed' },
+        { key: 'link', label: 'Link changed' },
+        { key: 'amount', label: 'Amount changed' },
+        { key: 'card', label: 'Card Reference changed', isCard: true },
+        { key: 'notes', label: 'Notes changed' }
+      ];
+
+      sellerFields.forEach(f => {
+        const oldVal = String(oldS[f.key] ?? (f.altKey ? oldS[f.altKey] : '') ?? '').trim();
+        const newVal = String(newS[f.key] ?? (f.altKey ? newS[f.altKey] : '') ?? '').trim();
+        if (oldVal !== newVal) {
+          let displayOld = oldVal || 'Empty';
+          let displayNew = newVal || 'Empty';
+          if (f.isCard) {
+            if (displayOld !== 'Empty' && displayOld.length >= 12) {
+              displayOld = `•••• •••• •••• ${displayOld.slice(-4)}`;
+            }
+            if (displayNew !== 'Empty' && displayNew.length >= 12) {
+              displayNew = `•••• •••• •••• ${displayNew.slice(-4)}`;
+            }
+          }
+          newChangeEntries.push({
+            id: `ent_${Date.now()}_seller_${f.key}`,
+            field: f.label,
+            fieldName: f.key,
+            screenNumber: null,
+            oldValue: displayOld,
+            newValue: displayNew,
+            isPassword: false
           });
         }
       });
     }
 
-    if (existingHistory.length > 50) existingHistory = existingHistory.slice(0, 50);
+    const startingCount = existingEntries.length;
+    const finalizedEntries = newChangeEntries.map((ent, idx) => ({
+      ...ent,
+      entryNumber: `Entry ${String(startingCount + idx + 1).padStart(2, '0')}`,
+      changeEventId,
+      status: 'Confirmed',
+      changedBy: actor,
+      timestamp: nowIso,
+      formattedTime: formattedNow,
+      accountId: id
+    }));
+
+    // WhatsApp-style order: oldest at top, newest appended at bottom!
+    const combinedEntries = [...existingEntries, ...finalizedEntries];
 
     let finalRecordNumber = existing.recordNumber || '01';
     if (updates.recordNumber !== undefined) {
@@ -742,7 +824,8 @@ export const api = {
       ...updates,
       recordNumber: finalRecordNumber,
       screens: mergedScreens,
-      credentialHistory: existingHistory,
+      entries: combinedEntries,
+      credentialHistory: combinedEntries,
       defaultExpanded: updates.defaultExpanded !== undefined ? Boolean(updates.defaultExpanded) : Boolean(existing.defaultExpanded),
       sellerDetails: updates.sellerDetails !== undefined ? updates.sellerDetails : existing.sellerDetails,
       updatedAt: nowIso,
@@ -1964,31 +2047,6 @@ export const api = {
     return { success: res?.success ?? true, message: res?.message || 'Sync completed', timestamp: now };
   },
 
-  // SETTINGS
-  async getSettings() {
-    try {
-      const res = await fetch('/api/settings');
-      if (res.ok) return await res.json();
-    } catch (e) {}
-    const local = getLocalData();
-    return local.settings || {};
-  },
-
-  async updateSettings(settings) {
-    try {
-      const res = await fetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
-      });
-      if (res.ok) return await res.json();
-    } catch (e) {}
-    const local = getLocalData();
-    local.settings = { ...local.settings, ...settings };
-    saveLocalData(local);
-    return local.settings;
-  },
-
   // AUTHENTICATION
   async login(email, password) {
     const normEmail = (email || '').trim().toLowerCase();
@@ -2827,19 +2885,36 @@ export const api = {
       const res = await fetch(url);
       if (res.ok) {
         const settings = await res.json();
+        // Sanitize any test template contamination
+        if (settings?.whatsappSaleTemplate && settings.whatsappSaleTemplate.includes('Custom template from test')) {
+          delete settings.whatsappSaleTemplate;
+        }
+        if (Array.isArray(settings?.whatsappTemplates)) {
+          settings.whatsappTemplates = settings.whatsappTemplates.map(t => {
+            if (t.content && t.content.includes('Custom template from test')) {
+              return { ...t, content: '' };
+            }
+            return t;
+          });
+        }
         const local = getLocalData();
-        local.settings = settings;
+        local.settings = { ...(local.settings || {}), ...settings };
         saveLocalData(local);
         return settings;
       }
     } catch (e) {}
     const local = getLocalData();
-    return local.settings || {};
+    const s = { ...(local.settings || {}) };
+    if (s?.whatsappSaleTemplate && s.whatsappSaleTemplate.includes('Custom template from test')) {
+      delete s.whatsappSaleTemplate;
+    }
+    return s;
   },
 
   async updateSettings(newSettings, userEmail) {
     try {
-      const res = await fetch('/api/settings', {
+      const url = userEmail ? `/api/settings?userEmail=${encodeURIComponent(userEmail)}` : '/api/settings';
+      const res = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newSettings, userEmail })
@@ -2847,7 +2922,7 @@ export const api = {
       if (res.ok) {
         const updated = await res.json();
         const local = getLocalData();
-        local.settings = updated;
+        local.settings = { ...(local.settings || {}), ...updated };
         saveLocalData(local);
         return updated;
       }

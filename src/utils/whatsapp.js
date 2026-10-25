@@ -1,4 +1,4 @@
-import { formatDate } from './dateUtils.js';
+import { formatDate, calculateExpiryCountdown, isValidDateStr } from './dateUtils.js';
 
 export const DEFAULT_SALE_WHATSAPP_TEMPLATE = `Hello {customerName}! 🍿
 
@@ -41,6 +41,72 @@ Regards,
 *OTTMoneySaver.Com*
 *+91 6305151531*`;
 
+export const DEFAULT_WHATSAPP_CATEGORIES = [
+  {
+    id: 'sale',
+    name: 'Sale Message',
+    description: 'Login credentials & purchase confirmation sent to customers upon sale'
+  },
+  {
+    id: 'expiry',
+    name: 'Expiry / Renewal Message',
+    description: 'Approaching subscription renewal & reminder notices sent before expiry'
+  }
+];
+
+export const DEFAULT_WHATSAPP_TEMPLATES = [
+  {
+    id: 'tpl_sale_default',
+    categoryId: 'sale',
+    name: 'Standard Sale Confirmation',
+    content: DEFAULT_SALE_WHATSAPP_TEMPLATE,
+    isActive: true,
+    imageUrl: null,
+    createdAt: '2026-10-25T00:00:00.000Z',
+    updatedAt: '2026-10-25T00:00:00.000Z'
+  },
+  {
+    id: 'tpl_expiry_1',
+    categoryId: 'expiry',
+    name: 'Template 01 — Friendly Reminder',
+    content: DEFAULT_EXPIRY_WHATSAPP_TEMPLATE,
+    isActive: true,
+    imageUrl: null,
+    createdAt: '2026-10-25T00:00:00.000Z',
+    updatedAt: '2026-10-25T00:00:00.000Z'
+  },
+  {
+    id: 'tpl_expiry_2',
+    categoryId: 'expiry',
+    name: 'Template 02 — Renewal Notice',
+    content: `Hello {customerName},\n\nYour {brandName} subscription has {remainingDays} days left before renewal.\n\nExpiry Date: {expiryDate}\n\nPlease contact us to renew your subscription.\n\nRegards,\n*OTTMoneySaver.Com*`,
+    isActive: false,
+    imageUrl: null,
+    createdAt: '2026-10-25T00:00:00.000Z',
+    updatedAt: '2026-10-25T00:00:00.000Z'
+  },
+  {
+    id: 'tpl_expiry_3',
+    categoryId: 'expiry',
+    name: 'Template 03 — Short Reminder',
+    content: `Hi {customerName}! Quick reminder that your {brandName} subscription expires on *{expiryDate}* ({expiryStatus}). Reply to this message to renew right away! 🍿\n\nRegards,\n*OTTMoneySaver.Com*`,
+    isActive: false,
+    imageUrl: null,
+    createdAt: '2026-10-25T00:00:00.000Z',
+    updatedAt: '2026-10-25T00:00:00.000Z'
+  },
+  {
+    id: 'tpl_expiry_4',
+    categoryId: 'expiry',
+    name: 'Template 04 — Picture + Text Reminder',
+    content: `🎬 *SUBSCRIPTION RENEWAL NOTICE*\n\nHello {customerName}!\nYour {brandName} plan expires on *{expiryDate}* ({remainingDays} days remaining).\n\n📱 Screen: {screenNumber}\n🪄 PIN: {screenPin}\n\nRenew today to keep watching uninterrupted! 🍿\n\nRegards,\n*OTTMoneySaver.Com*`,
+    isActive: false,
+    imageUrl: null,
+    createdAt: '2026-10-25T00:00:00.000Z',
+    updatedAt: '2026-10-25T00:00:00.000Z'
+  }
+];
+
 /**
  * Replace all {tags} in the template with corresponding data values.
  */
@@ -57,11 +123,45 @@ export function fillTemplate(template, data = {}) {
       .join('\n');
   }
 
+  // Dynamic calculation for countdown tags if expiryDate is available
+  const countdown = (data.expiryDate && isValidDateStr(data.expiryDate))
+    ? calculateExpiryCountdown(data.expiryDate)
+    : null;
+
+  const resolvedRemainingDays = data.remainingDays !== undefined
+    ? String(data.remainingDays)
+    : (data.daysRemaining !== undefined ? String(data.daysRemaining) : (countdown ? String(countdown.remainingDays) : '0'));
+
+  const resolvedOverdueDays = data.overdueDays !== undefined
+    ? String(data.overdueDays)
+    : (countdown ? String(countdown.overdueDays) : '0');
+
+  const resolvedExpiryStatus = data.expiryStatus !== undefined
+    ? String(data.expiryStatus)
+    : (countdown ? countdown.expiryStatus : '');
+
   // If reference details are empty, we handle them cleanly
-  const hasRefName = data.referenceName && String(data.referenceName).trim();
-  const hasRefNum = data.referenceNumber && String(data.referenceNumber).trim();
+  const hasRefName = data.referenceName !== undefined && data.referenceName !== null && String(data.referenceName).trim() !== '';
+  const hasRefNum = data.referenceNumber !== undefined && data.referenceNumber !== null && String(data.referenceNumber).trim() !== '';
 
   return processed.replace(/\{(\w+)\}/g, (match, key) => {
+    // Explicit tag overrides
+    if (key === 'remainingDays' || key === 'daysRemaining') {
+      return resolvedRemainingDays;
+    }
+    if (key === 'overdueDays') {
+      return resolvedOverdueDays;
+    }
+    if (key === 'expiryStatus') {
+      return resolvedExpiryStatus;
+    }
+    if (key === 'referenceName') {
+      return hasRefName ? String(data.referenceName).trim() : '';
+    }
+    if (key === 'referenceNumber') {
+      return hasRefNum ? String(data.referenceNumber).trim() : '';
+    }
+
     if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
       if (key === 'activationDate') {
         const formatted = formatDate(data[key]);
@@ -69,7 +169,8 @@ export function fillTemplate(template, data = {}) {
       }
       return String(data[key]);
     }
-    // Specific clean fallbacks for nice display
+
+    // Specific clean fallbacks for nice display without undefined/null
     if (key === 'customerName') return 'Customer';
     if (key === 'customerNumber' || key === 'customerPhone') return data.customerPhone || data.customerNumber || '';
     if (key === 'brandName') return 'OTT';
@@ -83,9 +184,6 @@ export function fillTemplate(template, data = {}) {
     if (key === 'expiryDate') return 'N/A';
     if (key === 'amount') return '---';
     if (key === 'deviceName') return '';
-    if (key === 'referenceName') return hasRefName ? String(data.referenceName).trim() : '-';
-    if (key === 'referenceNumber') return hasRefNum ? String(data.referenceNumber).trim() : '-';
-    if (key === 'daysRemaining') return '0';
     return '';
   });
 }
@@ -118,9 +216,16 @@ export function formatSaleConfirmationMessage({
   referenceName,
   referenceNumber
 }, customTemplate) {
-  const templateToUse = customTemplate ||
-    (typeof window !== 'undefined' ? localStorage.getItem('accounts_whatsapp_sale_template') : null) ||
-    DEFAULT_SALE_WHATSAPP_TEMPLATE;
+  let templateToUse = customTemplate;
+  if (!templateToUse && typeof window !== 'undefined') {
+    const cached = localStorage.getItem('accounts_whatsapp_sale_template');
+    if (cached && !cached.includes('Custom template from test')) {
+      templateToUse = cached;
+    }
+  }
+  if (!templateToUse) {
+    templateToUse = DEFAULT_SALE_WHATSAPP_TEMPLATE;
+  }
 
   const planInfo = pricingPlan && pricingPlan !== 'General' ? ` (${pricingPlan})` : '';
 
@@ -153,11 +258,20 @@ export function formatCustomerMessage({
   validity,
   expiryDate,
   daysRemaining,
-  renewalAmount
+  remainingDays,
+  overdueDays,
+  expiryStatus,
+  renewalAmount,
+  referenceName,
+  referenceNumber
 }, customTemplate) {
-  const templateToUse = customTemplate ||
-    (typeof window !== 'undefined' ? localStorage.getItem('accounts_whatsapp_expiry_template') : null) ||
-    DEFAULT_EXPIRY_WHATSAPP_TEMPLATE;
+  let templateToUse = customTemplate;
+  if (!templateToUse && typeof window !== 'undefined') {
+    templateToUse = localStorage.getItem('accounts_whatsapp_expiry_template');
+  }
+  if (!templateToUse) {
+    templateToUse = DEFAULT_EXPIRY_WHATSAPP_TEMPLATE;
+  }
 
   return fillTemplate(templateToUse, {
     customerName,
@@ -167,7 +281,12 @@ export function formatCustomerMessage({
     screenPin,
     validity,
     expiryDate,
-    daysRemaining: daysRemaining !== undefined ? String(daysRemaining) : '2',
-    renewalAmount: renewalAmount || ''
+    daysRemaining,
+    remainingDays,
+    overdueDays,
+    expiryStatus,
+    renewalAmount: renewalAmount || '',
+    referenceName: referenceName || '',
+    referenceNumber: referenceNumber || ''
   });
 }

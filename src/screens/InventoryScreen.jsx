@@ -2889,6 +2889,7 @@ export default function InventoryScreen({
           isOpen={true}
           item={starModalItem}
           brand={currentBrand}
+          currentUser={currentUser}
           onClose={() => setStarModalItem(null)}
           onOpenSellerDetails={(itemToEdit) => {
             setStarModalItem(null);
