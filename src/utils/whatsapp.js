@@ -1,25 +1,32 @@
 import { formatDate } from './dateUtils.js';
 
-export const DEFAULT_SALE_WHATSAPP_TEMPLATE = `Hello {customerName}! 🎬
+export const DEFAULT_SALE_WHATSAPP_TEMPLATE = `Hello {customerName}! 🍿
 
-Thank you for your purchase! Here are your *{brandName}* subscription details:
+🥰 Thank you for your purchase!
+Here are your *{brandName}* subscription details:
 
-🎬 *Brand:* {brandName}
-📞 *Phone Number:* {customerNumber}
+⏳ *Validity:* {validity}
+🗓️ *From Date:* {activationDate}
+🗓️ *Expiry Date:* {expiryDate}
+
 📧 *ID / Email:* {accountEmail}
 🔒 *Password:* {accountPassword}
-📱 *Screen No:* {screenNumber}
-🔑 *Screen PIN:* {screenPin}
-📺 *Device:* {deviceName}
-⏳ *Validity:* {validity}
-📅 *Activation Date:* {activationDate}
-📅 *Expiry Date:* {expiryDate}
-💰 *Amount:* ₹{amount}
+🎴 *Screen No:* {screenNumber}
+🪄 *Screen PIN:* {screenPin}
+🔥 *Amount:* ₹{amount}
+📱 *Device:* {deviceName}
+
+------------------------------------
+👤 *User Name:* {customerName}
+📞 *Number:* {customerNumber}
+👥 *Ref Name:* {referenceName}
+📞 *Ref Number:* {referenceNumber}
 
 Enjoy uninterrupted streaming! For renewals or queries, kindly message us. 🍿
 
 Regards,
-*Accounts Manager*`;
+*OTTMoneySaver.Com*
+*+91 6305151531*`;
 
 export const DEFAULT_EXPIRY_WHATSAPP_TEMPLATE = `Hello {customerName}! 🎬
 
@@ -31,7 +38,8 @@ Your *{brandName}* subscription details:
 Your plan is approaching renewal ({daysRemaining} days remaining). Kindly renew today to extend your subscription and continue non-stop streaming! 🍿
 
 Regards,
-*Accounts Manager*`;
+*OTTMoneySaver.Com*
+*+91 6305151531*`;
 
 /**
  * Replace all {tags} in the template with corresponding data values.
@@ -49,6 +57,10 @@ export function fillTemplate(template, data = {}) {
       .join('\n');
   }
 
+  // If reference details are empty, we handle them cleanly
+  const hasRefName = data.referenceName && String(data.referenceName).trim();
+  const hasRefNum = data.referenceNumber && String(data.referenceNumber).trim();
+
   return processed.replace(/\{(\w+)\}/g, (match, key) => {
     if (data[key] !== undefined && data[key] !== null && data[key] !== '') {
       if (key === 'activationDate') {
@@ -59,8 +71,9 @@ export function fillTemplate(template, data = {}) {
     }
     // Specific clean fallbacks for nice display
     if (key === 'customerName') return 'Customer';
-    if (key === 'customerNumber') return '';
+    if (key === 'customerNumber' || key === 'customerPhone') return data.customerPhone || data.customerNumber || '';
     if (key === 'brandName') return 'OTT';
+    if (key === 'planVariant') return data.planVariant || 'General';
     if (key === 'accountEmail') return 'N/A';
     if (key === 'accountPassword') return 'N/A';
     if (key === 'screenNumber') return '01';
@@ -70,6 +83,8 @@ export function fillTemplate(template, data = {}) {
     if (key === 'expiryDate') return 'N/A';
     if (key === 'amount') return '---';
     if (key === 'deviceName') return '';
+    if (key === 'referenceName') return hasRefName ? String(data.referenceName).trim() : '-';
+    if (key === 'referenceNumber') return hasRefNum ? String(data.referenceNumber).trim() : '-';
     if (key === 'daysRemaining') return '0';
     return '';
   });
@@ -78,7 +93,6 @@ export function fillTemplate(template, data = {}) {
 export function buildWhatsAppLink(customerNumber, message, countryCode = '91') {
   if (!customerNumber) return '';
   const clean = customerNumber.replace(/\D/g, '');
-  // If the number already includes country code (e.g. 10+ digits with 91 or international)
   let fullNumber = clean;
   if (clean.length === 10) {
     fullNumber = `${countryCode}${clean}`;
@@ -89,6 +103,7 @@ export function buildWhatsAppLink(customerNumber, message, countryCode = '91') {
 export function formatSaleConfirmationMessage({
   customerName,
   customerNumber,
+  customerPhone,
   brandName,
   pricingPlan,
   accountEmail,
@@ -103,7 +118,6 @@ export function formatSaleConfirmationMessage({
   referenceName,
   referenceNumber
 }, customTemplate) {
-  // Check if custom template provided or saved in localStorage
   const templateToUse = customTemplate ||
     (typeof window !== 'undefined' ? localStorage.getItem('accounts_whatsapp_sale_template') : null) ||
     DEFAULT_SALE_WHATSAPP_TEMPLATE;
@@ -112,7 +126,8 @@ export function formatSaleConfirmationMessage({
 
   return fillTemplate(templateToUse, {
     customerName,
-    customerNumber,
+    customerNumber: customerNumber || customerPhone || '',
+    customerPhone: customerPhone || customerNumber || '',
     brandName: `${brandName || 'OTT'}${planInfo}`,
     planVariant: pricingPlan || 'General',
     accountEmail,
@@ -124,8 +139,8 @@ export function formatSaleConfirmationMessage({
     activationDate,
     expiryDate,
     amount,
-    referenceName,
-    referenceNumber
+    referenceName: referenceName || '',
+    referenceNumber: referenceNumber || ''
   });
 }
 
@@ -156,4 +171,3 @@ export function formatCustomerMessage({
     renewalAmount: renewalAmount || ''
   });
 }
-

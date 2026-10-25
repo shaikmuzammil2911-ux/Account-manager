@@ -104,6 +104,15 @@ function readDb() {
     modified = true;
   }
 
+  if (!data.settings) {
+    data.settings = {};
+    modified = true;
+  }
+  if (!data.settings.whatsappSaleTemplate) {
+    data.settings.whatsappSaleTemplate = `Hello {customerName}! 🍿\n\n🥰 Thank you for your purchase!\nHere are your *{brandName}* subscription details:\n\n⏳ *Validity:* {validity}\n🗓️ *From Date:* {activationDate}\n🗓️ *Expiry Date:* {expiryDate}\n\n📧 *ID / Email:* {accountEmail}\n🔒 *Password:* {accountPassword}\n🎴 *Screen No:* {screenNumber}\n🪄 *Screen PIN:* {screenPin}\n🔥 *Amount:* ₹{amount}\n📱 *Device:* {deviceName}\n\n------------------------------------\n👤 *User Name:* {customerName}\n📞 *Number:* {customerNumber}\n👥 *Ref Name:* {referenceName}\n📞 *Ref Number:* {referenceNumber}\n\nEnjoy uninterrupted streaming! For renewals or queries, kindly message us. 🍿\n\nRegards,\n*OTTMoneySaver.Com*\n*+91 6305151531*`;
+    modified = true;
+  }
+
   // Ensure legacy records have an owner so they never leak into newly created business users' workspaces
   const ADMIN_OWNER = 'Fixyourmobiles10@gmail.com';
   (data.brands || []).forEach(b => {
@@ -794,12 +803,17 @@ export const db = {
     const targetAccountEmail = (updated.accountEmail || '').toLowerCase().trim();
     const targetScreenNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
 
-    const inv = (data.inventory || []).find(i =>
+    let inv = (data.inventory || []).find(i =>
       (targetAccountId && i.id === targetAccountId) ||
+      (i.screens && i.screens.some(s => s.saleId === id)) ||
       (targetAccountEmail && String(i.email || '').toLowerCase().trim() === targetAccountEmail)
     );
     if (inv && Array.isArray(inv.screens)) {
-      const screen = inv.screens.find(s => s.screenNumber === targetScreenNum);
+      const screen = inv.screens.find(s =>
+        s.saleId === id ||
+        s.screenNumber === targetScreenNum ||
+        String(s.screenNumber) === String(targetScreenNum)
+      );
       if (screen) {
         if (updates.deviceName !== undefined) {
           screen.deviceName = String(updates.deviceName).trim();
@@ -815,6 +829,9 @@ export const db = {
         }
         if (updates.customerNumber !== undefined) {
           screen.customerNumber = updates.customerNumber;
+        }
+        if (!screen.saleId) {
+          screen.saleId = id;
         }
         inv.updatedAt = Date.now();
       }
@@ -1005,16 +1022,38 @@ export const db = {
     };
   },
 
-  getSettings() {
+  getSettings(userEmail) {
     const data = readDb();
-    return data.settings || {};
+    const settings = { ...(data.settings || {}) };
+    if (userEmail) {
+      const normalized = String(userEmail).trim().toLowerCase();
+      if (data.settings?.userTemplates?.[normalized]) {
+        const u = data.settings.userTemplates[normalized];
+        if (u.whatsappSaleTemplate) settings.whatsappSaleTemplate = u.whatsappSaleTemplate;
+        if (u.whatsappExpiryTemplate) settings.whatsappExpiryTemplate = u.whatsappExpiryTemplate;
+        if (u.whatsappExpiryImage) settings.whatsappExpiryImage = u.whatsappExpiryImage;
+      }
+    }
+    return settings;
   },
 
-  updateSettings(newSettings) {
+  updateSettings(newSettings = {}, userEmail) {
     const data = readDb();
+    if (!data.settings) data.settings = {};
     data.settings = { ...data.settings, ...newSettings };
+    if (userEmail) {
+      const normalized = String(userEmail).trim().toLowerCase();
+      if (!data.settings.userTemplates) data.settings.userTemplates = {};
+      data.settings.userTemplates[normalized] = {
+        ...(data.settings.userTemplates[normalized] || {}),
+        whatsappSaleTemplate: newSettings.whatsappSaleTemplate !== undefined ? newSettings.whatsappSaleTemplate : data.settings.userTemplates[normalized]?.whatsappSaleTemplate,
+        whatsappExpiryTemplate: newSettings.whatsappExpiryTemplate !== undefined ? newSettings.whatsappExpiryTemplate : data.settings.userTemplates[normalized]?.whatsappExpiryTemplate,
+        whatsappExpiryImage: newSettings.whatsappExpiryImage !== undefined ? newSettings.whatsappExpiryImage : data.settings.userTemplates[normalized]?.whatsappExpiryImage,
+        updatedAt: new Date().toISOString()
+      };
+    }
     writeDb(data);
-    return data.settings;
+    return this.getSettings(userEmail);
   },
 
   getSheetsConfig() {
@@ -2002,5 +2041,46 @@ export const db = {
     data.sharedBrands = (data.sharedBrands || []).filter(s => s.id !== id);
     writeDb(data);
     return true;
+  },
+
+  // --- SETTINGS (WhatsApp Templates & Preferences) ---
+  getSettings(userEmail) {
+    const data = readDb();
+    if (!data.settings) data.settings = {};
+    if (userEmail) {
+      const emailKey = String(userEmail).toLowerCase().trim();
+      const userSettings = data.userSettings?.[emailKey] || {};
+      return {
+        whatsappSaleTemplate: userSettings.whatsappSaleTemplate || data.settings.whatsappSaleTemplate || '',
+        whatsappExpiryTemplate: userSettings.whatsappExpiryTemplate || data.settings.whatsappExpiryTemplate || '',
+        updatedAt: userSettings.updatedAt || data.settings.updatedAt || new Date().toISOString()
+      };
+    }
+    return data.settings;
+  },
+
+  updateSettings(newSettings, userEmail) {
+    const data = readDb();
+    if (!data.settings) data.settings = {};
+    const timestamp = new Date().toISOString();
+
+    if (userEmail) {
+      if (!data.userSettings) data.userSettings = {};
+      const emailKey = String(userEmail).toLowerCase().trim();
+      data.userSettings[emailKey] = {
+        ...(data.userSettings[emailKey] || {}),
+        ...newSettings,
+        updatedAt: timestamp
+      };
+    }
+
+    data.settings = {
+      ...data.settings,
+      ...newSettings,
+      updatedAt: timestamp
+    };
+
+    writeDb(data);
+    return userEmail ? data.userSettings[String(userEmail).toLowerCase().trim()] : data.settings;
   }
 };

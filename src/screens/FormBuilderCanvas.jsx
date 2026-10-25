@@ -400,11 +400,17 @@ export default function FormBuilderCanvas({
   );
 
   const [selectedElementId, setSelectedElementId] = useState(elements[0]?.id || null);
+  const [selectedEdge, setSelectedEdge] = useState(null); // null (whole element) | 'top' | 'bottom' | 'left' | 'right'
   const [moveStep, setMoveStep] = useState(10);
   const [showToolsPanel, setShowToolsPanel] = useState(true);
   const canvasRef = useRef(null);
 
   const selectedElement = elements.find(el => el.id === selectedElementId);
+
+  // Reset selected edge when selected element changes
+  useEffect(() => {
+    setSelectedEdge(null);
+  }, [selectedElementId]);
 
   // Switch tools panel tab automatically when selecting an element
   useEffect(() => {
@@ -427,6 +433,7 @@ export default function FormBuilderCanvas({
     if (!id) return;
     setElements(prev => prev.filter(el => el.id !== id));
     setSelectedElementId(null);
+    setSelectedEdge(null);
     showToast('Element deleted', 'info');
   };
 
@@ -441,11 +448,13 @@ export default function FormBuilderCanvas({
     };
     setElements(prev => [...prev, duplicated]);
     setSelectedElementId(duplicated.id);
+    setSelectedEdge(null);
     showToast('Duplicated element', 'info');
   };
 
-  // Position control steps (Up, Down, Left, Right) per image copy 85.png
-  // Touching & moving freely disabled per user request: user selects Box and uses Navigation buttons
+  // Four multipurpose arrow buttons:
+  // Mode A: Whole element selected -> moves entire box / element
+  // Mode B: One border selected (Top, Bottom, Left, Right) -> resizes that edge while opposite edge stays fixed
   const handleMovePosition = (direction, step = moveStep) => {
     if (!selectedElementId) {
       showToast('Please select a Box or Text on canvas to move it!', 'info');
@@ -453,12 +462,68 @@ export default function FormBuilderCanvas({
     }
     setElements(prev => prev.map(el => {
       if (el.id !== selectedElementId) return el;
-      let newX = el.x;
-      let newY = el.y;
-      if (direction === 'up') newY = Math.max(0, el.y - step);
-      if (direction === 'down') newY = el.y + step;
-      if (direction === 'left') newX = Math.max(0, el.x - step);
-      if (direction === 'right') newX = el.x + step;
+
+      let curX = el.x || 0;
+      let curY = el.y || 0;
+      let curW = el.width || 320;
+      let curH = el.height || 44;
+
+      // MODE B: BORDER EDGE SELECTED RESIZING
+      if (selectedEdge === 'top') {
+        if (direction === 'up') {
+          const newY = Math.max(0, curY - step);
+          const newH = curH + (curY - newY);
+          return { ...el, y: newY, height: newH };
+        }
+        if (direction === 'down') {
+          const newH = Math.max(20, curH - step);
+          const newY = curY + (curH - newH);
+          return { ...el, y: newY, height: newH };
+        }
+        return el;
+      }
+
+      if (selectedEdge === 'bottom') {
+        if (direction === 'down') {
+          return { ...el, height: curH + step };
+        }
+        if (direction === 'up') {
+          return { ...el, height: Math.max(20, curH - step) };
+        }
+        return el;
+      }
+
+      if (selectedEdge === 'left') {
+        if (direction === 'left') {
+          const newX = Math.max(0, curX - step);
+          const newW = curW + (curX - newX);
+          return { ...el, x: newX, width: newW };
+        }
+        if (direction === 'right') {
+          const newW = Math.max(40, curW - step);
+          const newX = curX + (curW - newW);
+          return { ...el, x: newX, width: newW };
+        }
+        return el;
+      }
+
+      if (selectedEdge === 'right') {
+        if (direction === 'right') {
+          return { ...el, width: curW + step };
+        }
+        if (direction === 'left') {
+          return { ...el, width: Math.max(40, curW - step) };
+        }
+        return el;
+      }
+
+      // MODE A: WHOLE ELEMENT SELECTED MOVEMENT
+      let newX = curX;
+      let newY = curY;
+      if (direction === 'up') newY = Math.max(0, curY - step);
+      if (direction === 'down') newY = curY + step;
+      if (direction === 'left') newX = Math.max(0, curX - step);
+      if (direction === 'right') newX = curX + step;
       return { ...el, x: newX, y: newY };
     }));
   };
@@ -1046,7 +1111,7 @@ export default function FormBuilderCanvas({
               {/* Step selector & Actions */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>Step:</span>
-                {[5, 10, 20].map(s => (
+                {[1, 5, 10, 20].map(s => (
                   <button
                     key={s}
                     type="button"
@@ -1106,6 +1171,102 @@ export default function FormBuilderCanvas({
               </div>
             </div>
 
+            {/* Selection Mode Row: Whole Element vs Border Edge (Requirement 4) */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              overflowX: 'auto',
+              padding: '2px 0'
+            }}>
+              <span style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', marginRight: '2px', whiteSpace: 'nowrap' }}>Target:</span>
+              <button
+                type="button"
+                onClick={() => setSelectedEdge(null)}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: selectedEdge === null ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+                  background: selectedEdge === null ? '#2563eb' : '#ffffff',
+                  color: selectedEdge === null ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Whole Box (Move)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEdge('top')}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: selectedEdge === 'top' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                  background: selectedEdge === 'top' ? '#d97706' : '#ffffff',
+                  color: selectedEdge === 'top' ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Top Edge
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEdge('bottom')}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: selectedEdge === 'bottom' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                  background: selectedEdge === 'bottom' ? '#d97706' : '#ffffff',
+                  color: selectedEdge === 'bottom' ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Bottom Edge
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEdge('left')}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: selectedEdge === 'left' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                  background: selectedEdge === 'left' ? '#d97706' : '#ffffff',
+                  color: selectedEdge === 'left' ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Left Edge
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedEdge('right')}
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  border: selectedEdge === 'right' ? '1.5px solid #d97706' : '1px solid #cbd5e1',
+                  background: selectedEdge === 'right' ? '#d97706' : '#ffffff',
+                  color: selectedEdge === 'right' ? '#ffffff' : '#334155',
+                  fontSize: '11px',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                Right Edge
+              </button>
+            </div>
+
             {/* Exactly 4 Navigation Buttons side-by-side matching image copy 85.png */}
             <div style={{
               display: 'grid',
@@ -1115,105 +1276,105 @@ export default function FormBuilderCanvas({
               <button
                 type="button"
                 onClick={() => handleMovePosition('up')}
-                disabled={!selectedElement}
+                disabled={!selectedElement || selectedEdge === 'left' || selectedEdge === 'right'}
                 style={{
                   padding: '12px 6px',
                   borderRadius: '12px',
-                  border: '2px solid #2563eb',
+                  border: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? '2px solid #cbd5e1' : (selectedEdge ? '2px solid #d97706' : '2px solid #2563eb'),
                   background: '#ffffff',
-                  color: '#2563eb',
+                  color: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? '#94a3b8' : (selectedEdge ? '#d97706' : '#2563eb'),
                   fontWeight: 800,
                   fontSize: '14.5px',
-                  cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.45,
+                  cursor: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? 'not-allowed' : 'pointer',
+                  opacity: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? 0.45 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                 }}
                 id="builder-move-up-btn"
               >
                 <ArrowUp size={18} strokeWidth={2.5} />
-                <span>Up</span>
+                <span>{selectedEdge === 'top' ? 'Expand' : selectedEdge === 'bottom' ? 'Shrink' : 'Up'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleMovePosition('down')}
-                disabled={!selectedElement}
+                disabled={!selectedElement || selectedEdge === 'left' || selectedEdge === 'right'}
                 style={{
                   padding: '12px 6px',
                   borderRadius: '12px',
-                  border: '2px solid #2563eb',
+                  border: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? '2px solid #cbd5e1' : (selectedEdge ? '2px solid #d97706' : '2px solid #2563eb'),
                   background: '#ffffff',
-                  color: '#2563eb',
+                  color: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? '#94a3b8' : (selectedEdge ? '#d97706' : '#2563eb'),
                   fontWeight: 800,
                   fontSize: '14.5px',
-                  cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.45,
+                  cursor: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? 'not-allowed' : 'pointer',
+                  opacity: (!selectedElement || selectedEdge === 'left' || selectedEdge === 'right') ? 0.45 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                 }}
                 id="builder-move-down-btn"
               >
                 <ArrowDown size={18} strokeWidth={2.5} />
-                <span>Down</span>
+                <span>{selectedEdge === 'bottom' ? 'Expand' : selectedEdge === 'top' ? 'Shrink' : 'Down'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleMovePosition('left')}
-                disabled={!selectedElement}
+                disabled={!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom'}
                 style={{
                   padding: '12px 6px',
                   borderRadius: '12px',
-                  border: '2px solid #2563eb',
+                  border: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? '2px solid #cbd5e1' : (selectedEdge ? '2px solid #d97706' : '2px solid #2563eb'),
                   background: '#ffffff',
-                  color: '#2563eb',
+                  color: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? '#94a3b8' : (selectedEdge ? '#d97706' : '#2563eb'),
                   fontWeight: 800,
                   fontSize: '14.5px',
-                  cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.45,
+                  cursor: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? 'not-allowed' : 'pointer',
+                  opacity: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? 0.45 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                 }}
                 id="builder-move-left-btn"
               >
                 <ArrowLeft size={18} strokeWidth={2.5} />
-                <span>Left</span>
+                <span>{selectedEdge === 'left' ? 'Expand' : selectedEdge === 'right' ? 'Shrink' : 'Left'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => handleMovePosition('right')}
-                disabled={!selectedElement}
+                disabled={!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom'}
                 style={{
                   padding: '12px 6px',
                   borderRadius: '12px',
-                  border: '2px solid #2563eb',
+                  border: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? '2px solid #cbd5e1' : (selectedEdge ? '2px solid #d97706' : '2px solid #2563eb'),
                   background: '#ffffff',
-                  color: '#2563eb',
+                  color: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? '#94a3b8' : (selectedEdge ? '#d97706' : '#2563eb'),
                   fontWeight: 800,
                   fontSize: '14.5px',
-                  cursor: selectedElement ? 'pointer' : 'not-allowed',
-                  opacity: selectedElement ? 1 : 0.45,
+                  cursor: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? 'not-allowed' : 'pointer',
+                  opacity: (!selectedElement || selectedEdge === 'top' || selectedEdge === 'bottom') ? 0.45 : 1,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   gap: '6px',
-                  boxShadow: '0 2px 5px rgba(37,99,235,0.1)'
+                  boxShadow: '0 2px 5px rgba(0,0,0,0.05)'
                 }}
                 id="builder-move-right-btn"
               >
                 <ArrowRight size={18} strokeWidth={2.5} />
-                <span>Right</span>
+                <span>{selectedEdge === 'right' ? 'Expand' : selectedEdge === 'left' ? 'Shrink' : 'Right'}</span>
               </button>
             </div>
           </div>
@@ -1687,6 +1848,57 @@ export default function FormBuilderCanvas({
 
                 {selectedElement && selectedElement.type === 'field' ? (
                   <>
+                    {/* LINK FIELD / DATA BINDING (Requirement 6) */}
+                    <div>
+                      <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span>🔗 Link Field (Data Binding)</span>
+                      </label>
+                      <select
+                        value={selectedElement.fieldBinding || ''}
+                        onChange={e => {
+                          const val = e.target.value;
+                          const updates = { fieldBinding: val };
+                          if (val === 'brand') { updates.label = 'Brand'; updates.placeholder = 'Select Brand ▾'; }
+                          else if (val === 'planVariant') { updates.label = 'Plan'; updates.placeholder = 'Select Plan ▾'; }
+                          else if (val === 'validity') { updates.label = 'Validity'; updates.placeholder = 'Select Validity ▾'; }
+                          else if (val === 'activationDate') { updates.label = 'From Date'; updates.placeholder = 'DD-MMM-YYYY'; updates.fieldType = 'date'; }
+                          else if (val === 'expiryDate') { updates.label = 'Expiry Date'; updates.placeholder = 'DD-MMM-YYYY'; updates.fieldType = 'date'; }
+                          else if (val === 'accountEmail') { updates.label = 'Mail ID'; updates.placeholder = 'Account Email / ID'; updates.fieldType = 'email'; }
+                          else if (val === 'accountPassword') { updates.label = 'Password'; updates.placeholder = 'Password'; updates.fieldType = 'password'; }
+                          else if (val === 'screenNumber') { updates.label = 'Screen'; updates.placeholder = 'Screen 01'; }
+                          else if (val === 'screenPin') { updates.label = 'Screen PIN'; updates.placeholder = 'PIN (e.g. 0044)'; }
+                          else if (val === 'deviceName') { updates.label = 'Device Name'; updates.placeholder = 'TV / Mobile / Laptop'; }
+                          else if (val === 'amount') { updates.label = 'Amount (₹)'; updates.placeholder = '₹ 0.00'; updates.fieldType = 'number'; }
+                          else if (val === 'customerName') { updates.label = 'Customer Name'; updates.placeholder = 'Enter customer name'; }
+                          else if (val === 'customerNumber') { updates.label = 'Customer Number'; updates.placeholder = 'Phone number'; updates.fieldType = 'phone'; }
+                          else if (val === 'referenceName') { updates.label = 'Ref Name'; updates.placeholder = 'Reference name'; }
+                          else if (val === 'referenceNumber') { updates.label = 'Ref Number'; updates.placeholder = 'Reference phone'; updates.fieldType = 'phone'; }
+                          else if (val === 'notes') { updates.label = 'Notes'; updates.placeholder = 'Optional note'; updates.fieldType = 'text'; }
+                          updateSelectedElement(updates);
+                        }}
+                        className="form-input-pill"
+                        style={{ marginTop: '4px' }}
+                      >
+                        <option value="">-- Custom Field (No Binding) --</option>
+                        <option value="brand">Brand</option>
+                        <option value="planVariant">Plan Variant</option>
+                        <option value="validity">Validity</option>
+                        <option value="activationDate">Activation / Date From</option>
+                        <option value="expiryDate">Expiry / Date To</option>
+                        <option value="accountEmail">Account ID / Mail ID</option>
+                        <option value="accountPassword">Account Password</option>
+                        <option value="screenNumber">Screen Number</option>
+                        <option value="screenPin">Screen PIN</option>
+                        <option value="deviceName">Device Name</option>
+                        <option value="amount">Amount (₹)</option>
+                        <option value="customerName">Customer Name</option>
+                        <option value="customerNumber">Customer Number</option>
+                        <option value="referenceName">Reference Name</option>
+                        <option value="referenceNumber">Reference Number</option>
+                        <option value="notes">Notes</option>
+                      </select>
+                    </div>
+
                     <div>
                       <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569' }}>Field Label</label>
                       <input

@@ -10,6 +10,7 @@ import DatePickerModal from '../components/DatePickerModal';
 import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import DeleteSaleModal from '../components/DeleteSaleModal';
+import { formatSaleConfirmationMessage } from '../utils/whatsapp';
 
 export default function RecentSalesScreen({
   brands = [],
@@ -91,6 +92,40 @@ export default function RecentSalesScreen({
     }, 150);
   };
 
+  // Scroll date indicator state
+  const [scrollingDate, setScrollingDate] = useState('');
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolling(true);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
+        setIsScrolling(false);
+      }, 900);
+
+      // Find topmost visible sale element
+      const saleElements = document.querySelectorAll('[data-sale-date]');
+      for (const el of saleElements) {
+        const rect = el.getBoundingClientRect();
+        if (rect.top >= 40 && rect.top <= window.innerHeight - 100) {
+          const d = el.getAttribute('data-sale-date');
+          if (d) {
+            setScrollingDate(d);
+            break;
+          }
+        }
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
   // Dynamic list of dates for the horizontal toolbar (last 14 days ending with today)
   const toolbarDates = useMemo(() => {
     const dates = [];
@@ -100,10 +135,14 @@ export default function RecentSalesScreen({
       d.setDate(now.getDate() - i);
       const str = formatDate(d);
       const dayNum = String(d.getDate()).padStart(2, '0');
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      const monthYear = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase() + '-' + d.getFullYear();
       const isToday = i === 0;
       dates.push({
         dateStr: str,
         dayNum,
+        dayName,
+        monthYear,
         label: isToday ? `${dayNum} (Today)` : dayNum,
         isToday
       });
@@ -372,25 +411,30 @@ Expiry: ${sale.expiryDate}`;
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Direct WhatsApp chat with credentials prefilled (image copy 42.png)
+  // Direct WhatsApp chat with credentials prefilled using shared custom template
   const handleDirectWhatsApp = (sale) => {
     const cleanPhone = (sale.customerNumber || '').replace(/\D/g, '');
     const phoneParam = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
+    const savedTemplate = localStorage.getItem('accounts_whatsapp_sale_template');
 
-    let credentialsMessage = `*${sale.brandName} Subscription Details*
-👤 ID: ${sale.accountEmail}
-🔒 Password: ${sale.accountPassword}
-📺 Screen: ${sale.screenNumber}
-🔑 PIN: ${sale.screenPin}
-📅 Validity: ${sale.validity}
-⏳ Expiry: ${sale.expiryDate}`;
-
-    if (sale.deviceName && sale.deviceName.trim()) {
-      credentialsMessage += `\n📱 Device: ${sale.deviceName.trim()}`;
-    }
-    if (sale.note) {
-      credentialsMessage += `\n📝 Note: ${sale.note}`;
-    }
+    const credentialsMessage = formatSaleConfirmationMessage({
+      customerName: sale.customerName,
+      customerNumber: sale.customerNumber,
+      customerPhone: sale.customerNumber,
+      brandName: sale.brandName || activeBrand?.displayName || 'Netflix',
+      pricingPlan: sale.pricingPlan || sale.planVariant || 'General',
+      accountEmail: sale.accountEmail,
+      accountPassword: sale.accountPassword,
+      screenNumber: sale.screenNumber,
+      screenPin: sale.screenPin,
+      deviceName: sale.deviceName,
+      validity: sale.validity,
+      activationDate: sale.activationDate,
+      expiryDate: sale.expiryDate,
+      amount: sale.amount,
+      referenceName: sale.referenceName || '',
+      referenceNumber: sale.referenceNumber || sale.referencePhone || ''
+    }, savedTemplate);
 
     try {
       navigator.clipboard.writeText(credentialsMessage);
@@ -471,14 +515,27 @@ Expiry: ${sale.expiryDate}`;
 
   // Sort Sales Array based on sortDirection (WhatsApp default: 'asc' oldest top, newest bottom)
   const sortedSales = [...sales].sort((a, b) => {
+    // 1. Group by activation/sale date
     const dateA = parseDate(a.activationDate || a.saleDate).getTime();
     const dateB = parseDate(b.activationDate || b.saleDate).getTime();
     if (dateA !== dateB) {
       return sortDirection === 'desc' ? dateB - dateA : dateA - dateB;
     }
+    // 2. Within the same date: actual creation timestamp (not updated_at)
+    const timeA = new Date(a.createdAt || 0).getTime();
+    const timeB = new Date(b.createdAt || 0).getTime();
+    if (timeA && timeB && timeA !== timeB) {
+      return sortDirection === 'desc' ? timeB - timeA : timeA - timeB;
+    }
+    // 3. Stable secondary identifier
     const recA = parseInt(a.recordNumber || '0', 10);
     const recB = parseInt(b.recordNumber || '0', 10);
-    return sortDirection === 'desc' ? recB - recA : recA - recB;
+    if (recA !== recB) {
+      return sortDirection === 'desc' ? recB - recA : recA - recB;
+    }
+    const idA = String(a.id || '');
+    const idB = String(b.id || '');
+    return sortDirection === 'desc' ? idB.localeCompare(idA) : idA.localeCompare(idB);
   });
 
   // Group into date segments for WhatsApp-style timeline view
@@ -551,6 +608,7 @@ Expiry: ${sale.expiryDate}`;
     return (
       <div
         key={sale.id || sIdx}
+        data-sale-date={sale.activationDate || sale.saleDate || ''}
         className="inventory-card"
         style={{
           padding: '14px 12px',
@@ -1034,47 +1092,110 @@ Expiry: ${sale.expiryDate}`;
   return (
     <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '10px' }}>
       {/* =================================================================== */}
-      {/* ROW 1 — SEARCH BAR (Full Width at Top)                             */}
+      {/* ROW 1 — SEARCH BAR & FULL BLUE FILTER BUTTONS                      */}
       {/* =================================================================== */}
-      <div style={{ position: 'relative', marginBottom: '8px' }}>
-        <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
-        <input
-          type="text"
-          className="form-input-pill"
-          style={{ paddingLeft: '36px', height: '42px', fontSize: '13.5px', width: '100%', boxSizing: 'border-box' }}
-          placeholder="Search customer, phone, email, brand, PIN, device..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-          id="recent-sales-search-input"
-        />
-        {searchQuery && (
-          <button
-            type="button"
-            onClick={() => setSearchQuery('')}
-            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
-          >
-            <X size={15} />
-          </button>
-        )}
+      <div style={{ marginBottom: '10px' }}>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '8px',
+          alignItems: 'center'
+        }}>
+          {/* Search Input */}
+          <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '220px' }}>
+            <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+            <input
+              type="text"
+              className="form-input-pill"
+              style={{ paddingLeft: '36px', height: '42px', fontSize: '13.5px', width: '100%', boxSizing: 'border-box' }}
+              placeholder="Search customer, phone, email, brand, PIN, device..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              id="recent-sales-search-input"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: '4px' }}
+              >
+                <X size={15} />
+              </button>
+            )}
+          </div>
+
+          {/* Quick Filter Buttons: Validity and Accounts (Full labels, solid blue, readable) */}
+          <div style={{ display: 'flex', gap: '8px', flex: '0 0 auto', width: 'auto' }}>
+            <button
+              type="button"
+              onClick={cycleValidity}
+              style={{
+                height: '42px',
+                padding: '0 16px',
+                background: filterValidity !== 'all' ? '#1d4ed8' : '#2563eb',
+                border: filterValidity !== 'all' ? '2px solid #1e40af' : '1.5px solid #2563eb',
+                color: '#ffffff',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+                whiteSpace: 'nowrap'
+              }}
+              title="Filter sales by Validity"
+              id="recent-sales-btn-validity"
+            >
+              <span>{filterValidity === 'all' ? 'Validity' : `Validity: ${filterValidity.replace(' Months', 'M').replace(' Month', 'M')}`}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSalesGrouping(prev => prev === 'account' ? 'sold' : 'account')}
+              style={{
+                height: '42px',
+                padding: '0 16px',
+                background: salesGrouping === 'account' ? '#1d4ed8' : '#2563eb',
+                border: salesGrouping === 'account' ? '2px solid #1e40af' : '1.5px solid #2563eb',
+                color: '#ffffff',
+                borderRadius: '10px',
+                fontSize: '13px',
+                fontWeight: 800,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(37,99,235,0.25)',
+                whiteSpace: 'nowrap'
+              }}
+              title="Group by Accounts vs Timeline"
+              id="recent-sales-btn-account"
+            >
+              <Layers size={15} />
+              <span>Accounts</span>
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* =================================================================== */}
-      {/* ROW 2 — DATE NAVIGATION & ACTIONS TOOLBAR (Mobile-friendly strip)    */}
-      {/* Layout: Horizontal Dates -> Calendar -> Sort -> Refresh -> Account   */}
+      {/* ROW 2 — DATE TOOLBAR: Dates on left, Calendar & Sort on right       */}
       {/* =================================================================== */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '6px',
+        gap: '8px',
         marginBottom: '10px',
         overflow: 'hidden'
       }}>
-        {/* Horizontally Scrollable Dates Strip */}
+        {/* Horizontally Scrollable Dates Strip with month/weekday/day number */}
         <div
           style={{
             display: 'flex',
             alignItems: 'center',
-            gap: '5px',
+            gap: '6px',
             overflowX: 'auto',
             scrollbarWidth: 'none',
             msOverflowStyle: 'none',
@@ -1093,20 +1214,26 @@ Expiry: ${sale.expiryDate}`;
             }}
             style={{
               flexShrink: 0,
-              height: '36px',
-              padding: '0 10px',
+              height: '52px',
+              minWidth: '44px',
+              padding: '4px 8px',
               borderRadius: '10px',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
               fontSize: '12px',
               fontWeight: 800,
               cursor: 'pointer',
-              border: !filterDate && !filterDateRange ? '1.5px solid #2563eb' : '1px solid #cbd5e1',
+              border: !filterDate && !filterDateRange ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
               background: !filterDate && !filterDateRange ? '#2563eb' : '#ffffff',
               color: !filterDate && !filterDateRange ? '#ffffff' : '#475569',
               boxShadow: !filterDate && !filterDateRange ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
               transition: 'all 0.15s ease'
             }}
           >
-            All
+            <span style={{ fontSize: '9px', fontWeight: 700 }}>VIEW</span>
+            <span style={{ fontSize: '13px', fontWeight: 900 }}>ALL</span>
           </button>
 
           {toolbarDates.map(item => {
@@ -1121,13 +1248,16 @@ Expiry: ${sale.expiryDate}`;
                 }}
                 style={{
                   flexShrink: 0,
-                  height: '36px',
-                  padding: '0 10px',
+                  height: '52px',
+                  minWidth: '52px',
+                  padding: '3px 8px',
                   borderRadius: '10px',
-                  fontSize: '12.5px',
-                  fontWeight: isSelected ? 900 : 700,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                   cursor: 'pointer',
-                  border: isSelected ? '1.5px solid #2563eb' : '1px solid #e2e8f0',
+                  border: isSelected ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
                   background: isSelected ? '#2563eb' : (item.isToday ? '#eff6ff' : '#ffffff'),
                   color: isSelected ? '#ffffff' : (item.isToday ? '#1e40af' : '#475569'),
                   boxShadow: isSelected ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
@@ -1135,129 +1265,56 @@ Expiry: ${sale.expiryDate}`;
                 }}
                 title={item.dateStr}
               >
-                {item.label}
+                <span style={{ fontSize: '8.5px', fontWeight: 800, textTransform: 'uppercase', opacity: 0.85 }}>{item.dayName}</span>
+                <span style={{ fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>{item.dayNum}</span>
+                <span style={{ fontSize: '8px', fontWeight: 700, opacity: 0.85 }}>{item.isToday ? 'TODAY' : item.monthYear?.split('-')[0]}</span>
               </button>
             );
           })}
         </div>
 
-        {/* Action Buttons: Calendar, Sort, Refresh, Validity, Account View */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
-          {/* Calendar Picker Button */}
+        {/* Action Buttons: Calendar and Sort ONLY */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
           <button
             type="button"
             className="header-btn"
             style={{
-              width: '36px',
-              height: '36px',
+              width: '40px',
+              height: '52px',
               background: filterDateRange || (filterDate && filterDate !== todayStr) ? '#eff6ff' : '#ffffff',
               borderColor: filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#cbd5e1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              borderRadius: '8px'
+              borderRadius: '10px'
             }}
             onClick={() => setShowDatePicker(true)}
             title="Calendar: Select Single Date or Date Range"
             id="recent-sales-calendar-btn"
           >
-            <Calendar size={17} color={filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#475569'} />
+            <Calendar size={18} color={filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#475569'} />
           </button>
 
-          {/* Sort Button (Ascending / Descending) */}
           <button
             type="button"
             className="header-btn"
             style={{
-              width: '36px',
-              height: '36px',
+              width: '40px',
+              height: '52px',
               background: sortDirection === 'asc' ? '#eff6ff' : '#ffffff',
               borderColor: sortDirection === 'asc' ? '#2563eb' : '#cbd5e1',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               cursor: 'pointer',
-              borderRadius: '8px'
+              borderRadius: '10px'
             }}
             onClick={toggleSortDirection}
             title={sortDirection === 'asc' ? 'Ascending: Oldest Top, Newest Bottom (WhatsApp Style)' : 'Descending: Newest Top, Oldest Bottom'}
             id="recent-sales-sort-toggle-btn"
           >
-            <ArrowUpDown size={17} color={sortDirection === 'asc' ? '#2563eb' : '#475569'} strokeWidth={2.3} />
-          </button>
-
-          {/* Refresh Button */}
-          <button
-            type="button"
-            className="header-btn"
-            style={{
-              width: '36px',
-              height: '36px',
-              background: isSyncingSheet ? '#f0fdf4' : '#ffffff',
-              borderColor: isSyncingSheet ? '#16a34a' : '#cbd5e1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '8px'
-            }}
-            onClick={handleRefreshLiveSheet}
-            disabled={isSyncingSheet || loading}
-            title="Refresh Live Data"
-            id="recent-sales-refresh-btn"
-          >
-            <RefreshCw size={16} color={isSyncingSheet ? '#16a34a' : '#475569'} className={isSyncingSheet || loading ? 'animate-spin' : ''} />
-          </button>
-
-          {/* Validity Filter Quick Button */}
-          <button
-            type="button"
-            className="header-btn"
-            style={{
-              height: '36px',
-              padding: '0 8px',
-              background: filterValidity !== 'all' ? '#16a34a' : '#ffffff',
-              borderColor: filterValidity !== 'all' ? '#16a34a' : '#cbd5e1',
-              color: filterValidity !== 'all' ? '#ffffff' : '#475569',
-              fontSize: '12px',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-            onClick={cycleValidity}
-            title="Filter by validity"
-            id="recent-sales-btn-validity"
-          >
-            <span>{filterValidity === 'all' ? 'Val' : filterValidity.replace(' Months', 'M').replace(' Month', 'M')}</span>
-          </button>
-
-          {/* Account Grouping Toggle */}
-          <button
-            type="button"
-            className="header-btn"
-            style={{
-              height: '36px',
-              padding: '0 8px',
-              background: salesGrouping === 'account' ? '#1e40af' : '#ffffff',
-              borderColor: salesGrouping === 'account' ? '#1e40af' : '#cbd5e1',
-              color: salesGrouping === 'account' ? '#ffffff' : '#475569',
-              fontSize: '12px',
-              fontWeight: 800,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              borderRadius: '8px',
-              cursor: 'pointer'
-            }}
-            onClick={() => setSalesGrouping(prev => prev === 'account' ? 'sold' : 'account')}
-            title="Toggle Account grouping view vs WhatsApp chronological timeline"
-            id="recent-sales-btn-account"
-          >
-            <Layers size={14} />
-            <span>{salesGrouping === 'account' ? 'Timeline' : 'Account'}</span>
+            <ArrowUpDown size={18} color={sortDirection === 'asc' ? '#2563eb' : '#475569'} strokeWidth={2.3} />
           </button>
         </div>
       </div>
@@ -1885,6 +1942,30 @@ Expiry: ${sale.expiryDate}`;
         onClose={() => setSaleToDelete(null)}
         onConfirm={handleConfirmDeleteSale}
       />
+
+      {/* Subtle Right-Side Floating Scroll Date Indicator */}
+      {scrollingDate && isScrolling && (
+        <div style={{
+          position: 'fixed',
+          right: '12px',
+          top: '38%',
+          transform: 'translateY(-50%)',
+          background: 'rgba(15, 23, 42, 0.88)',
+          color: '#ffffff',
+          padding: '5px 12px',
+          borderRadius: '16px',
+          fontSize: '11.5px',
+          fontWeight: 800,
+          boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          backdropFilter: 'blur(6px)',
+          border: '1px solid rgba(255,255,255,0.2)',
+          transition: 'opacity 0.25s ease'
+        }}>
+          📅 {scrollingDate}
+        </div>
+      )}
     </div>
   );
 }

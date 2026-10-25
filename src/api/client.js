@@ -825,6 +825,10 @@ export const api = {
 
   async deleteInventory(id) {
     try {
+      fetch(`/api/inventory/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+
+    try {
       await supabase.from('screens').delete().eq('account_id', id);
       await supabase.from('accounts').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', id);
     } catch (e) {
@@ -833,10 +837,20 @@ export const api = {
 
     const local = getLocalData();
     const item = (local.inventory || []).find(i => i.id === id);
-    if (item) {
-      item.isDeleted = true;
-      saveLocalData(local);
+    local.inventory = (local.inventory || []).filter(i => i.id !== id);
+    saveLocalData(local);
 
+    try {
+      const cached = localStorage.getItem('accounts_manager_cached_inventory');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) {
+          localStorage.setItem('accounts_manager_cached_inventory', JSON.stringify(parsed.filter(i => i.id !== id)));
+        }
+      }
+    } catch (e) {}
+
+    if (item) {
       this.getSheetsConfig().then(cfg => {
         const b = (local.brands || []).find(x => x.id === item.brandId);
         syncAccountDeleteToGoogleSheet(cfg?.webhookUrl || '', item, b?.displayName || b?.name).catch(e => {
@@ -1248,25 +1262,30 @@ export const api = {
       };
       local.sales[idx] = updated;
 
-      // If sale expiry date or pin changed, update linked screen in inventory
+      // If sale expiry date, pin, or deviceName changed, update linked screen in inventory
       if (updated.inventoryId || updated.accountEmail) {
         const inv = (local.inventory || []).find(i =>
           (updated.inventoryId && i.id === updated.inventoryId) ||
+          (i.screens && i.screens.some(s => s.saleId === id)) ||
           (updated.accountEmail && String(i?.email || '').toLowerCase() === String(updated.accountEmail).toLowerCase())
         );
         if (inv && inv.screens) {
           const sNum = parseInt(String(updated.screenNumber).replace(/\D/g, '') || '1', 10);
-          const screen = inv.screens.find(s => s.screenNumber === sNum);
+          const screen = inv.screens.find(s => s.saleId === id || s.screenNumber === sNum || String(s.screenNumber) === String(sNum));
           if (screen) {
             if (updates.expiryDate !== undefined) screen.expiryDate = updates.expiryDate;
             if (updates.screenPin !== undefined) screen.pin = updates.screenPin;
             if (updates.deviceName !== undefined) screen.deviceName = String(updates.deviceName).trim();
+            if (!screen.saleId) screen.saleId = id;
             inv.updatedAt = Date.now();
           }
         }
       }
 
       saveLocalData(local);
+      try {
+        localStorage.setItem('accounts_manager_cached_inventory', JSON.stringify(local.inventory || []));
+      } catch (e) {}
 
       // Direct Supabase Update
       try {
@@ -2799,6 +2818,46 @@ export const api = {
     local.userPermissions[userId] = { ...(local.userPermissions[userId] || {}), ...permissions };
     saveLocalData(local);
     return local.userPermissions[userId];
+  },
+
+  // --- APPLICATION & WHATSAPP SETTINGS ---
+  async getSettings(userEmail) {
+    try {
+      const url = userEmail ? `/api/settings?userEmail=${encodeURIComponent(userEmail)}` : '/api/settings';
+      const res = await fetch(url);
+      if (res.ok) {
+        const settings = await res.json();
+        const local = getLocalData();
+        local.settings = settings;
+        saveLocalData(local);
+        return settings;
+      }
+    } catch (e) {}
+    const local = getLocalData();
+    return local.settings || {};
+  },
+
+  async updateSettings(newSettings, userEmail) {
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...newSettings, userEmail })
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        const local = getLocalData();
+        local.settings = updated;
+        saveLocalData(local);
+        return updated;
+      }
+      throw new Error('Failed to persist settings on server');
+    } catch (e) {
+      const local = getLocalData();
+      local.settings = { ...(local.settings || {}), ...newSettings };
+      saveLocalData(local);
+      throw e;
+    }
   },
 
   // --- SITE SETTINGS & BRANDING ---

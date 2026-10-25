@@ -460,40 +460,6 @@ export default function BrandsManagementScreen({
                             Ad Free
                           </span>
                         )}
-                        {/* Screen Pin & Device Name Status Badges */}
-                        <span style={{
-                          fontSize: '10px',
-                          background: brand.showScreenPin !== false ? '#dcfce7' : '#f1f5f9',
-                          color: brand.showScreenPin !== false ? '#15803d' : '#64748b',
-                          border: `1px solid ${brand.showScreenPin !== false ? '#86efac' : '#cbd5e1'}`,
-                          padding: '1px 6px',
-                          borderRadius: '6px',
-                          fontWeight: 800
-                        }}>
-                          PIN: {brand.showScreenPin !== false ? 'ON' : 'OFF'}
-                        </span>
-                        <span style={{
-                          fontSize: '10px',
-                          background: brand.showDeviceName !== false ? '#e0f2fe' : '#f1f5f9',
-                          color: brand.showDeviceName !== false ? '#0369a1' : '#64748b',
-                          border: `1px solid ${brand.showDeviceName !== false ? '#7dd3fc' : '#cbd5e1'}`,
-                          padding: '1px 6px',
-                          borderRadius: '6px',
-                          fontWeight: 800
-                        }}>
-                          Device: {brand.showDeviceName !== false ? 'ON' : 'OFF'}
-                        </span>
-                        <span style={{
-                          fontSize: '10px',
-                          background: brand.groupScreensBy5 !== false ? '#ede9fe' : '#f1f5f9',
-                          color: brand.groupScreensBy5 !== false ? '#6d28d9' : '#64748b',
-                          border: `1px solid ${brand.groupScreensBy5 !== false ? '#c4b5fd' : '#cbd5e1'}`,
-                          padding: '1px 6px',
-                          borderRadius: '6px',
-                          fontWeight: 800
-                        }}>
-                          Group by 5: {brand.groupScreensBy5 !== false ? 'ON' : 'OFF'}
-                        </span>
                       </div>
                     </div>
                   </div>

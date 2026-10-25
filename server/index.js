@@ -359,6 +359,27 @@ app.delete('/api/forms/:id', (req, res) => {
   }
 });
 
+// App Settings (WhatsApp Templates & User Customizations)
+app.get('/api/settings', (req, res) => {
+  try {
+    const { userEmail } = req.query;
+    const settings = db.getSettings(userEmail);
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/settings', (req, res) => {
+  try {
+    const { userEmail } = req.query;
+    const settings = db.updateSettings(req.body, userEmail || req.body.userEmail);
+    res.json(settings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Cell Mappings
 app.get('/api/cells/mapping', (req, res) => {
   try {
@@ -646,7 +667,8 @@ app.get('/api/stats', (req, res) => {
 // Settings
 app.get('/api/settings', (req, res) => {
   try {
-    const settings = db.getSettings();
+    const userEmail = req.query.userEmail;
+    const settings = db.getSettings(userEmail);
     res.json(settings);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -655,7 +677,8 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
   try {
-    const updated = db.updateSettings(req.body);
+    const userEmail = req.query.userEmail || req.body.userEmail;
+    const updated = db.updateSettings(req.body, userEmail);
     res.json(updated);
   } catch (err) {
     res.status(500).json({ error: err.message });

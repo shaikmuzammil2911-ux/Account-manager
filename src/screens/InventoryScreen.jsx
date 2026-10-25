@@ -34,6 +34,7 @@ export default function InventoryScreen({
     return [];
   });
   const [loading, setLoading] = useState(false);
+  const [invSales, setInvSales] = useState([]);
   const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
   const [userDetailsModal, setUserDetailsModal] = useState(null); // { name, number, sold, plan, activation, expiry, amount, device, refName, refNumber }
   const [starModalItem, setStarModalItem] = useState(null);
@@ -285,14 +286,18 @@ export default function InventoryScreen({
     if (!currentBrand) return;
     try {
       setLoading(true);
-      const data = await api.getInventory({
-        brandId: currentBrand.id,
-        selectedOnly: filterSelectedOnly,
-        emptyOnly: filterEmptyOnly,
-        validity: selectedValidity,
-        sortOrder
-      });
+      const [data, salesData] = await Promise.all([
+        api.getInventory({
+          brandId: currentBrand.id,
+          selectedOnly: filterSelectedOnly,
+          emptyOnly: filterEmptyOnly,
+          validity: selectedValidity,
+          sortOrder
+        }),
+        api.getSales({ brandId: currentBrand.id }).catch(() => [])
+      ]);
       setItems(data || []);
+      setInvSales(Array.isArray(salesData) ? salesData : []);
       try {
         const cached = localStorage.getItem('accounts_manager_cached_inventory');
         let fullList = cached ? JSON.parse(cached) : [];
@@ -786,17 +791,7 @@ export default function InventoryScreen({
           />
         </div>
 
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className="glossy-btn glossy-btn-green"
-            style={{ padding: '10px 12px', fontSize: '13px', whiteSpace: 'nowrap', borderRadius: '12px' }}
-            onClick={handleSyncFromSheet}
-            title="Refresh accounts directly from Google Sheet"
-            id="inventory-sync-sheet-btn"
-          >
-            <RefreshCw size={15} /> Sync
-          </button>
+        <div>
           <button
             type="button"
             className="glossy-btn glossy-btn-blue"
@@ -833,8 +828,10 @@ export default function InventoryScreen({
           const isEditing = !!editingCards[item.id];
           const editState = editingCards[item.id] || {};
           const isPassVisible = !!visiblePasswords[item.id];
-          const freeCount = (item.screens || []).filter(s => s.status === 'empty').length;
-          const totalScreens = item.screens?.length || (currentBrand?.screensCount || 5);
+          const targetScreenCount = currentBrand?.screensCount || item.screensCount || (item.screens?.length || 5);
+          const effectiveScreens = (item.screens || []).slice(0, targetScreenCount);
+          const freeCount = effectiveScreens.filter(s => s.status === 'empty').length;
+          const totalScreens = targetScreenCount;
 
           const isExpanded = expandedAccounts[item.id] !== undefined
             ? expandedAccounts[item.id]
@@ -1164,7 +1161,8 @@ export default function InventoryScreen({
 
               {/* Dynamic Screen Count & Grouping by 5 or Horizontal Scroll */}
               {(() => {
-                const screensList = item.screens || [];
+                const targetScreenCount = currentBrand?.screensCount || item.screensCount || (item.screens?.length || 5);
+                const screensList = (item.screens || []).slice(0, targetScreenCount);
                 const isGroupedBy5 = currentBrand?.groupScreensBy5 !== false;
                 const groupSize = 5;
 
@@ -1179,8 +1177,9 @@ export default function InventoryScreen({
                   : [screensList.map((screen, idx) => ({ screen, globalIdx: idx }))];
 
                 const renderGroupContent = (groupScreens) => {
+                  const colCount = Math.min(groupScreens.length, 5);
                   const gridStyle = isGroupedBy5
-                    ? { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '6px', alignItems: 'center' }
+                    ? { display: 'grid', gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))`, gap: '6px', alignItems: 'center', width: '100%' }
                     : { display: 'grid', gridTemplateColumns: `repeat(${screensList.length}, minmax(68px, 1fr))`, gap: '6px', alignItems: 'center', width: 'max-content', minWidth: '100%' };
 
                   return (
@@ -1419,16 +1418,21 @@ export default function InventoryScreen({
                       {currentBrand?.showDeviceName !== false && (
                         <div style={gridStyle}>
                           {groupScreens.map(({ screen, globalIdx }) => {
+                            const matchingSale = (invSales || []).find(s =>
+                              (s.id === screen.saleId) ||
+                              (!s.isDeleted && s.inventoryId === item.id && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1)) ||
+                              (!s.isDeleted && item.email && String(s.accountEmail || '').toLowerCase().trim() === String(item.email || '').toLowerCase().trim() && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1))
+                            );
                             const devNameVal = isEditing
-                              ? (editState.deviceNames?.[globalIdx] !== undefined ? editState.deviceNames[globalIdx] : (screen.deviceName || ''))
-                              : (screen.deviceName || '');
+                              ? (editState.deviceNames?.[globalIdx] !== undefined ? editState.deviceNames[globalIdx] : (screen.deviceName || matchingSale?.deviceName || ''))
+                              : (screen.deviceName || matchingSale?.deviceName || '');
 
                             return (
-                              <div key={globalIdx} style={{ width: '100%', boxSizing: 'border-box' }}>
+                              <div key={globalIdx} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
                                 {isEditing ? (
                                   <input
                                     type="text"
-                                    placeholder="Device name"
+                                    placeholder="Device"
                                     value={devNameVal}
                                     onChange={(e) => {
                                       const newNames = [...(editState.deviceNames || screensList.map(s => s.deviceName || ''))];
@@ -1442,16 +1446,20 @@ export default function InventoryScreen({
                                       height: '28px',
                                       minHeight: '28px',
                                       width: '100%',
+                                      minWidth: 0,
                                       boxSizing: 'border-box',
-                                      padding: '0 6px',
+                                      padding: '0 4px',
                                       borderRadius: '6px',
-                                      fontSize: '10.5px',
+                                      fontSize: '10px',
                                       fontWeight: 700,
                                       background: '#ffffff',
                                       color: '#0f172a',
                                       border: '1.5px solid #93c5fd',
                                       outline: 'none',
-                                      textAlign: 'left'
+                                      textAlign: 'left',
+                                      overflow: 'hidden',
+                                      textOverflow: 'ellipsis',
+                                      whiteSpace: 'nowrap'
                                     }}
                                     title={`Screen-${String(globalIdx + 1).padStart(2, '0')} Device Name`}
                                   />
@@ -1460,13 +1468,15 @@ export default function InventoryScreen({
                                     style={{
                                       height: '28px',
                                       minHeight: '28px',
+                                      width: '100%',
+                                      minWidth: 0,
                                       boxSizing: 'border-box',
-                                      padding: '0 6px',
+                                      padding: '0 4px',
                                       borderRadius: '6px',
                                       display: 'flex',
                                       alignItems: 'center',
                                       justifyContent: 'flex-start',
-                                      fontSize: '10px',
+                                      fontSize: '9.5px',
                                       fontWeight: 700,
                                       background: devNameVal ? '#f0fdf4' : '#f8fafc',
                                       color: devNameVal ? '#166534' : '#94a3b8',
@@ -1478,7 +1488,9 @@ export default function InventoryScreen({
                                     }}
                                     title={devNameVal ? `Device: ${devNameVal}` : 'No device name'}
                                   >
-                                    {devNameVal || '-'}
+                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%', textAlign: 'left' }}>
+                                      {devNameVal || '-'}
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -2003,10 +2015,35 @@ export default function InventoryScreen({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation Modal - Centered in middle of screen */}
       {deleteConfirmItem && (
-        <div className="modal-backdrop" onClick={() => setDeleteConfirmItem(null)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px', textAlign: 'center', padding: '24px' }}>
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.7)',
+            backdropFilter: 'blur(4px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px',
+            zIndex: 99999
+          }}
+          onClick={() => setDeleteConfirmItem(null)}
+        >
+          <div
+            className="modal-card"
+            onClick={e => e.stopPropagation()}
+            style={{
+              maxWidth: '380px',
+              width: '92%',
+              textAlign: 'center',
+              padding: '24px 20px',
+              borderRadius: '20px',
+              margin: 'auto',
+              boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.35)'
+            }}
+          >
             <div style={{
               width: '48px',
               height: '48px',
@@ -2040,6 +2077,7 @@ export default function InventoryScreen({
                 className="glossy-btn glossy-btn-red"
                 style={{ flex: 1, padding: '10px', borderRadius: '10px' }}
                 onClick={handleDeleteCard}
+                id="confirm-delete-account-btn"
               >
                 Yes, Delete
               </button>

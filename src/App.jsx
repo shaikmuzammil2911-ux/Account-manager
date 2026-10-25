@@ -177,6 +177,20 @@ export default function App() {
         localStorage.setItem('accounts_manager_cached_stats', JSON.stringify(liveStats));
       } catch (e) {}
 
+      // 5. Load authoritative user settings & sync WhatsApp templates across devices
+      try {
+        const appSettings = await api.getSettings(activeUser?.email);
+        if (appSettings?.whatsappSaleTemplate) {
+          localStorage.setItem('accounts_whatsapp_sale_template', appSettings.whatsappSaleTemplate);
+        }
+        if (appSettings?.whatsappExpiryTemplate) {
+          localStorage.setItem('accounts_whatsapp_expiry_template', appSettings.whatsappExpiryTemplate);
+        }
+        if (appSettings?.whatsappExpiryImage) {
+          localStorage.setItem('accounts_whatsapp_expiry_image', appSettings.whatsappExpiryImage);
+        }
+      } catch (e) {}
+
       // Extract latest live data from Google Sheets if configured
       api.pullFromGoogleSheet().then(res => {
         if (res?.success) {
@@ -780,6 +794,7 @@ export default function App() {
         {currentScreen === 'whatsapp-messages' && (
           isAllowed('notifications') ? (
             <WhatsAppMessagesScreen
+              currentUser={currentUser}
               onBack={handleBack}
               showToast={showToast}
             />

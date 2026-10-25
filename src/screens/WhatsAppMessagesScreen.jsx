@@ -10,7 +10,7 @@ import {
   fillTemplate
 } from '../utils/whatsapp';
 
-export default function WhatsAppMessagesScreen({ onBack, showToast }) {
+export default function WhatsAppMessagesScreen({ currentUser, onBack, showToast }) {
   // activeView: 'hub' | 'sale' | 'expiry'
   const [activeView, setActiveView] = useState('hub');
   const [loading, setLoading] = useState(true);
@@ -63,10 +63,11 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
   useEffect(() => {
     async function load() {
       try {
-        const settings = await api.getSettings();
+        const settings = await api.getSettings(currentUser?.email);
         if (settings) {
           if (settings.whatsappSaleTemplate) {
             setSaleTemplate(settings.whatsappSaleTemplate);
+            try { localStorage.setItem('accounts_whatsapp_sale_template', settings.whatsappSaleTemplate); } catch (e) {}
           } else {
             const localSale = localStorage.getItem('accounts_whatsapp_sale_template');
             if (localSale) setSaleTemplate(localSale);
@@ -74,6 +75,7 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
 
           if (settings.whatsappExpiryTemplate) {
             setExpiryTemplate(settings.whatsappExpiryTemplate);
+            try { localStorage.setItem('accounts_whatsapp_expiry_template', settings.whatsappExpiryTemplate); } catch (e) {}
           } else {
             const localExpiry = localStorage.getItem('accounts_whatsapp_expiry_template');
             if (localExpiry) setExpiryTemplate(localExpiry);
@@ -81,6 +83,7 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
 
           if (settings.whatsappExpiryImage) {
             setExpiryImage(settings.whatsappExpiryImage);
+            try { localStorage.setItem('accounts_whatsapp_expiry_image', settings.whatsappExpiryImage); } catch (e) {}
           } else {
             const localImg = localStorage.getItem('accounts_whatsapp_expiry_image');
             if (localImg) setExpiryImage(localImg);
@@ -99,28 +102,34 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
       }
     }
     load();
-  }, []);
+  }, [currentUser]);
 
   // Save Sale Message
   const handleSaveSaleTemplate = async () => {
     setSaving(true);
     try {
-      localStorage.setItem('accounts_whatsapp_sale_template', saleTemplate);
       await api.updateSettings({
         whatsappSaleTemplate: saleTemplate
-      });
+      }, currentUser?.email);
+      try { localStorage.setItem('accounts_whatsapp_sale_template', saleTemplate); } catch (e) {}
       showToast('Sale WhatsApp Message template saved successfully!', 'success');
     } catch (err) {
-      showToast('Saved locally in browser', 'info');
+      try { localStorage.setItem('accounts_whatsapp_sale_template', saleTemplate); } catch (e) {}
+      showToast('Saved locally. Backend sync notice: ' + (err.message || 'Check network'), 'info');
     } finally {
       setSaving(false);
     }
   };
 
   // Reset Sale Message
-  const handleResetSaleTemplate = () => {
+  const handleResetSaleTemplate = async () => {
     setSaleTemplate(DEFAULT_SALE_WHATSAPP_TEMPLATE);
-    localStorage.removeItem('accounts_whatsapp_sale_template');
+    try { localStorage.removeItem('accounts_whatsapp_sale_template'); } catch (e) {}
+    try {
+      await api.updateSettings({
+        whatsappSaleTemplate: DEFAULT_SALE_WHATSAPP_TEMPLATE
+      }, currentUser?.email);
+    } catch (e) {}
     showToast('Reset to default sale message template', 'info');
   };
 
@@ -128,29 +137,36 @@ export default function WhatsAppMessagesScreen({ onBack, showToast }) {
   const handleSaveExpiryTemplate = async () => {
     setSaving(true);
     try {
-      localStorage.setItem('accounts_whatsapp_expiry_template', expiryTemplate);
-      if (expiryImage) {
-        localStorage.setItem('accounts_whatsapp_expiry_image', expiryImage);
-      } else {
-        localStorage.removeItem('accounts_whatsapp_expiry_image');
-      }
-
       await api.updateSettings({
         whatsappExpiryTemplate: expiryTemplate,
         whatsappExpiryImage: expiryImage || ''
-      });
+      }, currentUser?.email);
+      try {
+        localStorage.setItem('accounts_whatsapp_expiry_template', expiryTemplate);
+        if (expiryImage) {
+          localStorage.setItem('accounts_whatsapp_expiry_image', expiryImage);
+        } else {
+          localStorage.removeItem('accounts_whatsapp_expiry_image');
+        }
+      } catch (e) {}
       showToast('Expiry WhatsApp Message & Picture saved successfully!', 'success');
     } catch (err) {
-      showToast('Saved locally in browser', 'info');
+      try { localStorage.setItem('accounts_whatsapp_expiry_template', expiryTemplate); } catch (e) {}
+      showToast('Saved locally. Backend sync notice: ' + (err.message || 'Check network'), 'info');
     } finally {
       setSaving(false);
     }
   };
 
   // Reset Expiry Message
-  const handleResetExpiryTemplate = () => {
+  const handleResetExpiryTemplate = async () => {
     setExpiryTemplate(DEFAULT_EXPIRY_WHATSAPP_TEMPLATE);
-    localStorage.removeItem('accounts_whatsapp_expiry_template');
+    try {
+      localStorage.removeItem('accounts_whatsapp_expiry_template');
+      await api.updateSettings({
+        whatsappExpiryTemplate: DEFAULT_EXPIRY_WHATSAPP_TEMPLATE
+      }, currentUser?.email);
+    } catch (e) {}
     showToast('Reset to default expiry message template', 'info');
   };
 

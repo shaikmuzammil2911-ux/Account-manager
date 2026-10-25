@@ -1187,9 +1187,91 @@
           "expiryDate": null
         }
       ]
+    },
+    {
+      "id": "inv_1792899063676_17ch",
+      "brandId": "netflix",
+      "recordNumber": "08",
+      "email": "testsync@netflix.com",
+      "password": "Password123",
+      "validity": "01 Month",
+      "planVariant": "General",
+      "notes": "",
+      "ownerEmail": "fixyourmobiles10@gmail.com",
+      "userId": "",
+      "sellerDetails": null,
+      "isLocked": true,
+      "isSelected": false,
+      "isDeleted": true,
+      "createdAt": "2026-10-25",
+      "updatedAt": "2026-10-25",
+      "screens": [
+        {
+          "screenNumber": 1,
+          "name": "Screen-01",
+          "pin": "1111",
+          "deviceType": "tv",
+          "deviceName": "",
+          "status": "vacant",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 2,
+          "name": "Screen-02",
+          "pin": "2222",
+          "deviceType": "tv",
+          "deviceName": "",
+          "status": "vacant",
+          "saleId": null,
+          "expiryDate": null
+        },
+        {
+          "screenNumber": 3,
+          "name": "Screen-03",
+          "pin": "3333",
+          "deviceType": "tv",
+          "deviceName": "InitialDevice",
+          "status": "occupied",
+          "saleId": "sale_1792899063689",
+          "expiryDate": "24-Nov-2026"
+        }
+      ],
+      "deletedAt": "2026-10-25T03:31:03.726Z"
     }
   ],
-  "sales": [],
+  "sales": [
+    {
+      "id": "sale_1792899063689",
+      "recordNumber": "01",
+      "customerName": "Vineet",
+      "customerNumber": "9876543210",
+      "referenceName": "",
+      "referenceNumber": "",
+      "brandId": "netflix",
+      "brandName": "Netflix",
+      "sellerEmail": "fixyourmobiles10@gmail.com",
+      "ownerEmail": "fixyourmobiles10@gmail.com",
+      "userId": "",
+      "isSharedSale": false,
+      "accountEmail": "testsync@netflix.com",
+      "accountPassword": "Password123",
+      "validity": "01 Month",
+      "pricingPlan": "General",
+      "screenNumber": "03",
+      "screenPin": "3333",
+      "activationDate": "24-Oct-2026",
+      "expiryDate": "24-Nov-2026",
+      "amount": 199,
+      "deviceName": "InitialDevice",
+      "saleDate": "24-Oct-2026",
+      "note": "",
+      "status": "Active",
+      "notificationSent": false,
+      "lastNotifiedAt": null,
+      "inventoryId": "inv_1792899063676_17ch"
+    }
+  ],
   "users": [
     {
       "id": "admin_1",
@@ -1268,5 +1350,15 @@
     "headerBg": "#0f172a",
     "headingsText": "Multi-Brand OTT Subscriptions",
     "updatedAt": "2026-10-20T06:37:09.835Z"
+  },
+  "settings": {
+    "whatsappSaleTemplate": "Custom template from test",
+    "updatedAt": "2026-10-25T03:28:48.653Z"
+  },
+  "userSettings": {
+    "testuser@gmail.com": {
+      "whatsappSaleTemplate": "Custom template from test",
+      "updatedAt": "2026-10-25T03:28:48.653Z"
+    }
   }
 }

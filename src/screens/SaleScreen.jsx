@@ -54,6 +54,16 @@ export default function SaleScreen({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedPricingPlan, setSelectedPricingPlan] = useState('general');
 
+  // Form template selector state (Requirement 9 & 10)
+  const [saleForms, setSaleForms] = useState([]);
+  const [selectedFormId, setSelectedFormId] = useState('default_individual');
+
+  useEffect(() => {
+    api.getCustomForms('sale').then(forms => {
+      setSaleForms(Array.isArray(forms) ? forms : []);
+    }).catch(() => {});
+  }, []);
+
   const currentBrand = brandId ? brands.find(b => b.id === brandId) : null;
 
   // Multi-plan variants configuration
@@ -241,6 +251,7 @@ export default function SaleScreen({
       const showPin = currentBrand?.showScreenPin !== false;
       const showDev = currentBrand?.showDeviceName !== false;
 
+      const isReseller = (selectedFormId.includes('reseller') || saleForms.find(f => f.id === selectedFormId)?.subType === 'reseller');
       const salePayload = {
         brandId,
         brandName: currentBrand?.displayName || currentBrand?.name || 'OTT',
@@ -258,7 +269,9 @@ export default function SaleScreen({
         customerNumber: customerNumber.trim(),
         referenceName: referenceName.trim(),
         referenceNumber: referenceNumber.trim(),
-        inventoryId: selectedInventoryId || null
+        inventoryId: selectedInventoryId || null,
+        formTemplateId: selectedFormId,
+        saleType: isReseller ? 'reseller' : 'individual'
       };
 
       // 1). First save to Database - ensures availability and atomic validation
@@ -278,7 +291,9 @@ export default function SaleScreen({
         validity,
         activationDate,
         expiryDate,
-        amount
+        amount,
+        referenceName: referenceName.trim(),
+        referenceNumber: referenceNumber.trim()
       });
 
       const waLink = buildWhatsAppLink(customerNumber.trim(), waMsg);
@@ -396,7 +411,60 @@ export default function SaleScreen({
     <div className="sale-form-compact" style={{ paddingBottom: '90px' }}>
       <form onSubmit={handleSubmit} style={{ width: '100%', maxWidth: '580px', margin: '0 auto' }}>
         
-        {/* Plan Variant Selector (Rendered when brand has multiple plans configured) */}
+        {/* COMPACT FORM SELECTOR ABOVE SALE FIELDS (Requirement 9 & 10) */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          background: '#ffffff',
+          border: '1.5px solid #cbd5e1',
+          borderRadius: '12px',
+          padding: '6px 12px',
+          marginBottom: '10px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+            <span style={{ fontSize: '11px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.3px', flexShrink: 0 }}>
+              Form:
+            </span>
+            <select
+              value={selectedFormId}
+              onChange={(e) => setSelectedFormId(e.target.value)}
+              style={{
+                border: 'none',
+                background: 'transparent',
+                fontSize: '13px',
+                fontWeight: 800,
+                color: '#0f172a',
+                outline: 'none',
+                cursor: 'pointer',
+                flex: 1,
+                minWidth: 0
+              }}
+              id="sale-form-selector"
+            >
+              <option value="default_individual">Individual Sale Form (Default)</option>
+              {saleForms.filter(f => !currentBrand?.id || !f.brands || f.brands.length === 0 || f.brands.includes(currentBrand.id) || f.isAllBrands).map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.title || f.name} ({f.subType === 'reseller' || f.isReseller ? 'Reseller' : 'Individual'})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Form Type Badge */}
+          <span style={{
+            fontSize: '11px',
+            fontWeight: 800,
+            padding: '2px 8px',
+            borderRadius: '6px',
+            background: (selectedFormId.includes('reseller') || saleForms.find(f => f.id === selectedFormId)?.subType === 'reseller') ? '#fef3c7' : '#eff6ff',
+            color: (selectedFormId.includes('reseller') || saleForms.find(f => f.id === selectedFormId)?.subType === 'reseller') ? '#b45309' : '#1d4ed8',
+            flexShrink: 0
+          }}>
+            {(selectedFormId.includes('reseller') || saleForms.find(f => f.id === selectedFormId)?.subType === 'reseller') ? 'Reseller' : 'Individual'}
+          </span>
+        </div>
         {enabledPlans.length > 1 && (
           <div style={{ marginBottom: '10px' }}>
             <div style={{

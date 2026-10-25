@@ -48,9 +48,30 @@ export default function ExpiryScreen({
   });
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [minOffset, setMinOffset] = useState(-30);
+  const [maxOffset, setMaxOffset] = useState(60);
 
   const dateStripRef = useRef(null);
   const selectedPillRef = useRef(null);
+
+  // When selectedDate changes (e.g. from calendar 24-Nov-2026), ensure it's inside [minOffset, maxOffset]
+  useEffect(() => {
+    if (selectedDate && selectedDate !== 'ALL') {
+      const parsed = parseDate(selectedDate);
+      if (parsed) {
+        const base = getKolkataDate();
+        const baseTime = new Date(base.getFullYear(), base.getMonth(), base.getDate()).getTime();
+        const targetTime = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate()).getTime();
+        const diffDays = Math.round((targetTime - baseTime) / (1000 * 60 * 60 * 24));
+        if (diffDays < minOffset) {
+          setMinOffset(diffDays - 25);
+        }
+        if (diffDays > maxOffset) {
+          setMaxOffset(diffDays + 25);
+        }
+      }
+    }
+  }, [selectedDate, minOffset, maxOffset]);
 
   // Sync external brand or dateFilter if updated from outside
   useEffect(() => {
@@ -174,13 +195,13 @@ export default function ExpiryScreen({
   });
 
   // =========================================================================
-  // 2. HORIZONTAL DATE LIST GENERATION (-14 Days to +28 Days)
+  // 2. HORIZONTAL DATE LIST GENERATION (Continuous browsing in both directions)
   // =========================================================================
   const daysList = [];
   const baseDateObj = getKolkataDate();
   const kolkataTodayTime = new Date(baseDateObj.getFullYear(), baseDateObj.getMonth(), baseDateObj.getDate()).getTime();
 
-  for (let offset = -14; offset <= 28; offset++) {
+  for (let offset = minOffset; offset <= maxOffset; offset++) {
     const d = new Date(baseDateObj.getFullYear(), baseDateObj.getMonth(), baseDateObj.getDate() + offset);
     const dStr = formatDate(d); // e.g. "24-Oct-2026"
     const dayNum = String(d.getDate()).padStart(2, '0');
@@ -202,11 +223,6 @@ export default function ExpiryScreen({
     const pendingScreens = matchingScreens.filter(s => !s.notificationSent);
     const pendingCount = pendingScreens.length;
 
-    // Strict Color Rules (Requirement 3):
-    // A. Pending count = 0: GREEN tile, whether past, today, or future. Display 0 clearly.
-    // B. Pending count > 0 AND date is before today: RED tile.
-    // C. Pending count > 0 AND date is today: RED tile.
-    // D. Pending count > 0 AND date is after today: GREEN tile with upcoming count.
     let isRed = false;
     if (pendingCount === 0) {
       isRed = false;
@@ -232,7 +248,7 @@ export default function ExpiryScreen({
     });
   }
 
-  // Auto-scroll the date strip to the selected date pill
+  // Auto-scroll the date strip to the selected date pill (center it)
   useEffect(() => {
     if (selectedPillRef.current) {
       selectedPillRef.current.scrollIntoView({
@@ -241,7 +257,7 @@ export default function ExpiryScreen({
         block: 'nearest'
       });
     }
-  }, [selectedDate, dateRange]);
+  }, [selectedDate, dateRange, minOffset, maxOffset]);
 
   // =========================================================================
   // 3. FILTER SCREEN RECORDS BASED ON DATE / RANGE & SEARCH
@@ -278,11 +294,14 @@ export default function ExpiryScreen({
     return true;
   });
 
-  // Sort screens chronologically and by screenNumber
+  // Sort screens chronologically: oldest sales at top, newest at bottom (WhatsApp style)
   filteredScreens.sort((a, b) => {
     const dateA = parseDate(a.expiryDate)?.getTime() || 0;
     const dateB = parseDate(b.expiryDate)?.getTime() || 0;
     if (dateA !== dateB) return dateA - dateB;
+    const timeA = new Date(a.createdAt || a.saleDate || 0).getTime();
+    const timeB = new Date(b.createdAt || b.saleDate || 0).getTime();
+    if (timeA && timeB && timeA !== timeB) return timeA - timeB;
     return (a.screenNumber || 0) - (b.screenNumber || 0);
   });
 
@@ -349,6 +368,15 @@ export default function ExpiryScreen({
       if (showToast) showToast('Failed to export Excel: ' + e.message, 'error');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleDateStripScroll = (e) => {
+    const el = e.target;
+    if (el.scrollLeft < 30) {
+      setMinOffset(prev => prev - 25);
+    } else if (el.scrollLeft + el.clientWidth > el.scrollWidth - 30) {
+      setMaxOffset(prev => prev + 25);
     }
   };
 
@@ -536,6 +564,7 @@ export default function ExpiryScreen({
       {/* =================================================================== */}
       <div
         ref={dateStripRef}
+        onScroll={handleDateStripScroll}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -580,15 +609,10 @@ export default function ExpiryScreen({
           <div style={{ fontSize: '9px', fontWeight: 700, opacity: 0.85 }}>DATES</div>
         </button>
 
-        {/* Dynamic Day Pills (-14 Days to +28 Days) */}
+        {/* Dynamic Day Pills (Continuous Browsing) */}
         {daysList.map((item) => {
           const isSelected = !dateRange && selectedDate === item.dateStr;
 
-          // Strict Color Rules (Requirement 3):
-          // A. Pending count = 0: GREEN tile, whether past, today, or future. Display 0 clearly.
-          // B. Pending count > 0 AND date is before today: RED tile.
-          // C. Pending count > 0 AND date is today: RED tile.
-          // D. Pending count > 0 AND date is after today: GREEN tile with upcoming count.
           let pillBg = item.isRed ? '#fef2f2' : '#f0fdf4';
           let pillBorder = item.isRed ? '#fca5a5' : '#86efac';
           let textColor = item.isRed ? '#b91c1c' : '#15803d';
@@ -676,86 +700,6 @@ export default function ExpiryScreen({
             </button>
           );
         })}
-      </div>
-
-      {/* =================================================================== */}
-      {/* ROW 3: ACTIVE DATE FILTER BANNER                                   */}
-      {/* =================================================================== */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: '#ffffff',
-        border: '1.5px solid #e2e8f0',
-        borderRadius: '10px',
-        padding: '7px 12px',
-        marginBottom: '12px',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-          <Calendar size={15} color="#2563eb" strokeWidth={2.4} />
-          {dateRange ? (
-            <span style={{ fontWeight: 800, color: '#1e40af' }}>
-              Range: <strong>{dateRange.start}</strong> &rarr; <strong>{dateRange.end}</strong> ({filteredScreens.length} screens)
-            </span>
-          ) : selectedDate === 'ALL' ? (
-            <span style={{ fontWeight: 800, color: '#334155' }}>
-              Viewing: <strong>All Expiry Dates</strong> ({filteredScreens.length} screens)
-            </span>
-          ) : (
-            <span style={{ fontWeight: 800, color: '#1e40af' }}>
-              Date: <strong>{selectedDate}</strong> {selectedDate === todayStr ? '(Today)' : ''} &bull; {filteredScreens.length} screens
-            </span>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          {selectedDate !== todayStr && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDate(todayStr);
-                setDateRange(null);
-              }}
-              style={{
-                background: '#eff6ff',
-                border: '1px solid #bfdbfe',
-                color: '#1d4ed8',
-                borderRadius: '6px',
-                padding: '3px 8px',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-              title="Jump to Today"
-            >
-              Today
-            </button>
-          )}
-
-          {selectedDate !== 'ALL' && (
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedDate('ALL');
-                setDateRange(null);
-              }}
-              style={{
-                background: '#f1f5f9',
-                border: '1px solid #cbd5e1',
-                color: '#475569',
-                borderRadius: '6px',
-                padding: '3px 8px',
-                fontSize: '11px',
-                fontWeight: 800,
-                cursor: 'pointer'
-              }}
-              title="Show All Dates"
-            >
-              All
-            </button>
-          )}
-        </div>
       </div>
 
       {/* =================================================================== */}
@@ -1066,28 +1010,46 @@ export default function ExpiryScreen({
                 )}
               </div>
 
-              {/* Row 4: ACTIVATION, DEVICE, and NOTIFY / DONE BUTTONS */}
+              {/* Row 4: ACTIVATION, DEVICE (Always rendered for ALL brands including Netflix), and NOTIFY / DONE BUTTONS */}
               <div style={{
                 display: 'grid',
-                gridTemplateColumns: (showDevice && sub.deviceName) ? '1fr 1fr 1.4fr' : '1.1fr 1.4fr',
+                gridTemplateColumns: '1fr 1.15fr 1.4fr',
                 gap: '6px',
                 alignItems: 'center'
               }}>
                 <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '8px', padding: '5px', textAlign: 'center' }}>
                   <div style={{ fontSize: '9px', color: '#16a34a', fontWeight: 800 }}>ACTIVATION</div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#15803d', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {sub.activationDate || '-'}
                   </div>
                 </div>
 
-                {showDevice && sub.deviceName && (
-                  <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '8px', padding: '5px', textAlign: 'center', overflow: 'hidden' }}>
-                    <div style={{ fontSize: '9px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
-                    <div style={{ fontSize: '11px', fontWeight: 700, color: '#1d4ed8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub.deviceName}>
-                      {sub.deviceName}
-                    </div>
+                {/* Device Name Box: Always rendered for ALL brands including Netflix */}
+                <div style={{
+                  background: '#eff6ff',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '8px',
+                  padding: '5px 6px',
+                  textAlign: 'center',
+                  overflow: 'hidden',
+                  minWidth: 0,
+                  boxSizing: 'border-box'
+                }}>
+                  <div style={{ fontSize: '9px', color: '#2563eb', fontWeight: 800 }}>DEVICE</div>
+                  <div
+                    style={{
+                      fontSize: '11px',
+                      fontWeight: 700,
+                      color: sub.deviceName ? '#1d4ed8' : '#94a3b8',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis'
+                    }}
+                    title={sub.deviceName || ''}
+                  >
+                    {sub.deviceName || '-'}
                   </div>
-                )}
+                </div>
 
                 {/* Notify & Done / Pending Action Buttons (Requirement 5) */}
                 <div style={{ display: 'flex', gap: '4px', height: '100%', alignItems: 'stretch' }}>
