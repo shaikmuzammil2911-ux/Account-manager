@@ -97,7 +97,7 @@ export default function BrandSelectorModal({
               }}
               id={`modal-brand-select-${brand.id}`}
             >
-              <OttLogo brandId={brand.id} name={brand.displayName || brand.name} size={68} />
+              <OttLogo brandId={brand.id} name={brand.displayName || brand.name} logo={brand.logo} size={68} />
               <span className="ott-brand-tile-name">
                 {brand.displayName || brand.name}
               </span>

@@ -9,6 +9,7 @@ import CopyButton from '../components/CopyButton';
 import OttBrandsGrid from '../components/OttBrandsGrid';
 import DatePickerModal from '../components/DatePickerModal';
 import AccountStarDetailsModal from '../components/AccountStarDetailsModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 import { getExpiryStatus } from '../utils/dateUtils';
 import { exportInventoryToExcel } from '../utils/excelExport';
 
@@ -17,8 +18,10 @@ export default function InventoryScreen({
   selectedBrand,
   onSelectBrand,
   onNavigateToSaleWithSlot,
-  showToast
+  showToast,
+  currentUser = null
 }) {
+  const activeUser = currentUser || (typeof api !== 'undefined' && api.getActiveUser ? api.getActiveUser() : null);
   // If no brand selected yet, start with selectedBrand or null (opens Brands list)
   const [currentBrand, setCurrentBrand] = useState(selectedBrand || null);
   const [items, setItems] = useState(() => {
@@ -955,23 +958,46 @@ export default function InventoryScreen({
                       style={{
                         cursor: 'pointer',
                         userSelect: 'none',
-                        padding: '3px 10px',
+                        padding: '4px 10px',
                         borderRadius: '8px',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        background: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#f1f5f9' : '#eff6ff',
-                        color: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#475569' : '#1d4ed8',
+                        fontSize: '11.5px',
+                        fontWeight: 900,
+                        background: (() => {
+                          const val = ((isEditing ? editState.planVariant : item.planVariant) || 'General').toLowerCase();
+                          if (val.includes('free')) return 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)';
+                          if (val.includes('ads') || val.includes('with')) return 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+                          return '#eff6ff';
+                        })(),
+                        color: (() => {
+                          const val = ((isEditing ? editState.planVariant : item.planVariant) || 'General').toLowerCase();
+                          if (val.includes('free') || val.includes('ads') || val.includes('with')) return '#ffffff';
+                          return '#1d4ed8';
+                        })(),
                         border: '1.5px solid',
-                        borderColor: ((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#cbd5e1' : '#93c5fd',
+                        borderColor: (() => {
+                          const val = ((isEditing ? editState.planVariant : item.planVariant) || 'General').toLowerCase();
+                          if (val.includes('free')) return '#a78bfa';
+                          if (val.includes('ads') || val.includes('with')) return '#fde68a';
+                          return '#93c5fd';
+                        })(),
                         display: 'inline-flex',
                         alignItems: 'center',
                         gap: '5px',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+                        boxShadow: (() => {
+                          const val = ((isEditing ? editState.planVariant : item.planVariant) || 'General').toLowerCase();
+                          if (val.includes('free')) return '0 2px 8px rgba(124, 58, 237, 0.4)';
+                          if (val.includes('ads') || val.includes('with')) return '0 2px 6px rgba(217, 119, 6, 0.35)';
+                          return '0 1px 3px rgba(0,0,0,0.04)';
+                        })(),
                         transition: 'all 0.15s ease'
                       }}
                       title="Click to cycle plan variant (General, With Ads, Ads Free...)"
                     >
-                      <Sparkles size={12} color={((isEditing ? editState.planVariant : item.planVariant) || 'General') === 'General' ? '#64748b' : '#2563eb'} />
+                      <Sparkles size={12} color={(() => {
+                        const val = ((isEditing ? editState.planVariant : item.planVariant) || 'General').toLowerCase();
+                        if (val.includes('free') || val.includes('ads') || val.includes('with')) return '#fef08a';
+                        return '#2563eb';
+                      })()} />
                       <span>{(isEditing ? editState.planVariant : item.planVariant) || 'General'}</span>
                     </div>
                   )}
@@ -1074,7 +1100,17 @@ export default function InventoryScreen({
                   <div
                     className="badge-navy-pill"
                     onClick={() => handleCycleValidity(item)}
-                    style={{ cursor: 'pointer', userSelect: 'none' }}
+                    style={{
+                      cursor: 'pointer',
+                      userSelect: 'none',
+                      display: 'inline-flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      padding: '4px 9px 3px 9px',
+                      lineHeight: 1.15
+                    }}
                     title="Click to cycle validity"
                   >
                     {isEditing ? (editState.validity || item.validity) : item.validity}
@@ -1401,10 +1437,19 @@ export default function InventoryScreen({
                                 const parts = String(currentExpDate).split('-');
                                 if (parts.length === 3) {
                                   return (
-                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', lineHeight: 1.08 }}>
-                                      <span style={{ fontSize: '9.5px', fontWeight: 900 }}>{parts[0]}-{parts[1]}</span>
-                                      <span style={{ fontSize: '9px', fontWeight: 800, opacity: 0.95 }}>{parts[2]}</span>
-                                    </div>
+                                    <span style={{
+                                      fontSize: '9.5px',
+                                      fontWeight: 900,
+                                      whiteSpace: 'nowrap',
+                                      display: 'inline-flex',
+                                      alignItems: 'baseline',
+                                      justifyContent: 'center',
+                                      gap: '2px',
+                                      lineHeight: 1
+                                    }}>
+                                      <span>{parts[0]}-{parts[1]}</span>
+                                      <span style={{ fontSize: '8px', fontWeight: 700, opacity: 0.9 }}>{parts[2]}</span>
+                                    </span>
                                   );
                                 }
                                 return currentExpDate;
@@ -1688,22 +1733,45 @@ export default function InventoryScreen({
                 style={{
                   cursor: 'pointer',
                   userSelect: 'none',
-                  padding: '3px 10px',
+                  padding: '4px 10px',
                   borderRadius: '8px',
-                  fontSize: '12px',
-                  fontWeight: 800,
-                  background: newPlanVariant === 'General' ? '#f1f5f9' : '#eff6ff',
-                  color: newPlanVariant === 'General' ? '#475569' : '#1d4ed8',
+                  fontSize: '11.5px',
+                  fontWeight: 900,
+                  background: (() => {
+                    const val = (newPlanVariant || 'General').toLowerCase();
+                    if (val.includes('free')) return 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)';
+                    if (val.includes('ads') || val.includes('with')) return 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+                    return '#eff6ff';
+                  })(),
+                  color: (() => {
+                    const val = (newPlanVariant || 'General').toLowerCase();
+                    if (val.includes('free') || val.includes('ads') || val.includes('with')) return '#ffffff';
+                    return '#1d4ed8';
+                  })(),
                   border: '1.5px solid',
-                  borderColor: newPlanVariant === 'General' ? '#cbd5e1' : '#93c5fd',
+                  borderColor: (() => {
+                    const val = (newPlanVariant || 'General').toLowerCase();
+                    if (val.includes('free')) return '#a78bfa';
+                    if (val.includes('ads') || val.includes('with')) return '#fde68a';
+                    return '#93c5fd';
+                  })(),
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: '5px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.04)'
+                  boxShadow: (() => {
+                    const val = (newPlanVariant || 'General').toLowerCase();
+                    if (val.includes('free')) return '0 2px 8px rgba(124, 58, 237, 0.4)';
+                    if (val.includes('ads') || val.includes('with')) return '0 2px 6px rgba(217, 119, 6, 0.35)';
+                    return '0 1px 3px rgba(0,0,0,0.04)';
+                  })()
                 }}
                 title="Click to cycle plan variant"
               >
-                <Sparkles size={12} color={newPlanVariant === 'General' ? '#64748b' : '#2563eb'} />
+                <Sparkles size={12} color={(() => {
+                  const val = (newPlanVariant || 'General').toLowerCase();
+                  if (val.includes('free') || val.includes('ads') || val.includes('with')) return '#fef08a';
+                  return '#2563eb';
+                })()} />
                 <span>{newPlanVariant}</span>
               </div>
 
@@ -1715,7 +1783,17 @@ export default function InventoryScreen({
                     const curIdx = valids.indexOf(newValidity);
                     setNewValidity(valids[(curIdx + 1) % valids.length]);
                   }}
-                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  style={{
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    display: 'inline-flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    textAlign: 'center',
+                    padding: '4px 9px 3px 9px',
+                    lineHeight: 1.15
+                  }}
                   title="Click to cycle validity"
                 >
                   {newValidity}
@@ -2885,18 +2963,24 @@ export default function InventoryScreen({
 
       {/* Account Star Details & Credential Change History Modal */}
       {starModalItem && (
-        <AccountStarDetailsModal
-          isOpen={true}
-          item={starModalItem}
-          brand={currentBrand}
-          currentUser={currentUser}
+        <ErrorBoundary
+          title="Account Star Details"
           onClose={() => setStarModalItem(null)}
-          onOpenSellerDetails={(itemToEdit) => {
-            setStarModalItem(null);
-            handleOpenSellerDetails(itemToEdit);
-          }}
-          onToggleDefaultExpanded={handleToggleDefaultExpanded}
-        />
+          onReset={() => setStarModalItem(null)}
+        >
+          <AccountStarDetailsModal
+            isOpen={true}
+            item={starModalItem}
+            brand={currentBrand}
+            currentUser={activeUser}
+            onClose={() => setStarModalItem(null)}
+            onOpenSellerDetails={(itemToEdit) => {
+              setStarModalItem(null);
+              handleOpenSellerDetails(itemToEdit);
+            }}
+            onToggleDefaultExpanded={handleToggleDefaultExpanded}
+          />
+        </ErrorBoundary>
       )}
     </div>
   );

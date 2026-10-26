@@ -27,6 +27,7 @@ import ShareBrandsScreen from './screens/ShareBrandsScreen';
 import RevenueManagementScreen from './screens/RevenueManagementScreen';
 import AdminPanelScreen from './screens/AdminPanelScreen';
 import AccessRestricted from './components/AccessRestricted';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   // Authentication State
@@ -617,6 +618,7 @@ export default function App() {
         )}
 
         {/* Screen Routing */}
+        <ErrorBoundary title="Screen Error" onClose={() => navigateTo('home')}>
         {currentScreen === 'admin-panel' && (
           currentUser?.role === 'admin' ? (
             <AdminPanelScreen
@@ -675,6 +677,7 @@ export default function App() {
               onSelectBrand={setSelectedBrand}
               onNavigateToSaleWithSlot={(slotData) => navigateTo('sale', { prefill: slotData })}
               showToast={showToast}
+              currentUser={currentUser}
             />
           ) : (
             <AccessRestricted featureName="Accounts & Inventory (Data)" onGoHome={() => navigateTo('home')} />
@@ -825,6 +828,7 @@ export default function App() {
             <AccessRestricted featureName="Revenue Management" onGoHome={() => navigateTo('home')} />
           )
         )}
+        </ErrorBoundary>
 
         {/* Fixed Bottom Navigation Bar (Hidden when inside Admin Panel) */}
         {currentScreen !== 'admin-panel' && (

@@ -101,6 +101,18 @@ export default function HomeScreen({
   useEffect(() => {
     loadSheetsConfig();
     loadDashboardData();
+  }, [stats]);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      loadDashboardData();
+    };
+    window.addEventListener('sales-updated', handleRefresh);
+    window.addEventListener('focus', handleRefresh);
+    return () => {
+      window.removeEventListener('sales-updated', handleRefresh);
+      window.removeEventListener('focus', handleRefresh);
+    };
   }, []);
 
   const isLinked = Boolean(sheetsConfig?.webhookUrl && sheetsConfig.webhookUrl.trim());

@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * High-definition vector icons matching image copy 13.png exactly
  */
-export default function OttLogo({ brandId, name = '', size = 56, style = {} }) {
+export default function OttLogo({ brandId, name = '', logo = '', size = 56, style = {} }) {
   const normalized = (brandId || name || '').toLowerCase().replace(/[\s\-_+]/g, '');
 
   const containerStyle = {
@@ -20,6 +20,22 @@ export default function OttLogo({ brandId, name = '', size = 56, style = {} }) {
     flexShrink: 0,
     ...style
   };
+
+  // If custom uploaded logo/image exists, display it first
+  if (logo && String(logo).trim()) {
+    return (
+      <div style={{ ...containerStyle, background: '#ffffff', padding: '2px' }}>
+        <img
+          src={logo}
+          alt={name || brandId}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', borderRadius: `${Math.round(size * 0.24)}px` }}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      </div>
+    );
+  }
 
   // 1. Netflix
   if (normalized.includes('netflix')) {
@@ -247,8 +263,8 @@ export default function OttLogo({ brandId, name = '', size = 56, style = {} }) {
     );
   }
 
-  // 13. Sun NXT
-  if (normalized.includes('sunnxt') || (normalized.includes('sun') && normalized.includes('nxt'))) {
+  // 13. Sun NXT / Sunnext
+  if (normalized.includes('sunnxt') || normalized.includes('sunnext') || (normalized.includes('sun') && (normalized.includes('nxt') || normalized.includes('next')))) {
     return (
       <div style={{ ...containerStyle, background: 'linear-gradient(135deg, #b91c1c 0%, #4c0519 60%, #1e1b4b 100%)' }}>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>

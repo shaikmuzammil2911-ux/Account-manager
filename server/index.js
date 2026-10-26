@@ -563,6 +563,8 @@ app.post('/api/sales', (req, res) => {
     }
 
     const result = db.createSale({
+      id: req.body.id,
+      recordNumber: req.body.recordNumber,
       brandId,
       validity,
       activationDate,

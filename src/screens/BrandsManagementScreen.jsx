@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Plus, X, Trash2, Edit2, Upload, Calendar, Tv, ArrowLeft, Check, Sparkles, Sliders
+  Plus, X, Trash2, Edit2, Upload, Calendar, Tv, ArrowLeft, Check, Sparkles, Sliders, Crop
 } from 'lucide-react';
 import { api } from '../api/client';
+import ImageCropModal from '../components/ImageCropModal';
 
 export default function BrandsManagementScreen({
   onBack,
@@ -28,6 +29,8 @@ export default function BrandsManagementScreen({
   // New / Edit Brand Form State
   const [name, setName] = useState('');
   const [logoPreview, setLogoPreview] = useState('');
+  const [cropImage, setCropImage] = useState(null);
+  const [showCropModal, setShowCropModal] = useState(false);
   const [brandColor, setBrandColor] = useState('#3b82f6');
   const [screensCount, setScreensCount] = useState(5);
   const [maxScreenOptions, setMaxScreenOptions] = useState(10);
@@ -197,10 +200,28 @@ export default function BrandsManagementScreen({
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setLogoPreview(reader.result);
+        setCropImage(reader.result);
+        setShowCropModal(true);
       };
       reader.readAsDataURL(file);
+      e.target.value = '';
     }
+  };
+
+  const handleApplyCrop = (croppedData) => {
+    setLogoPreview(croppedData);
+    setShowCropModal(false);
+    setCropImage(null);
+    showToast('Cropped 1:1 image applied!', 'success');
+  };
+
+  const handleSkipCrop = () => {
+    if (cropImage) {
+      setLogoPreview(cropImage);
+    }
+    setShowCropModal(false);
+    setCropImage(null);
+    showToast('Original image applied', 'info');
   };
 
   const handleAddValidityRow = () => {
@@ -728,9 +749,63 @@ export default function BrandsManagementScreen({
 
               {/* 03-in-01 Row: Upload Logo, Screen Count, Logo Color (image copy 39) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', alignItems: 'flex-end' }}>
-                {/* 1. Upload Logo (URL box removed per request) */}
+                {/* 1. Upload Logo & Optional 1:1 Crop & Delete (image copy 188 & 189) */}
                 <div>
-                  <label className="form-label" style={{ fontSize: '11px', marginBottom: '4px' }}>Logo</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <label className="form-label" style={{ fontSize: '11px', margin: 0 }}>Logo</label>
+                    {logoPreview && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCropImage(logoPreview);
+                            setShowCropModal(true);
+                          }}
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#2563eb',
+                            borderRadius: '4px',
+                            padding: '1px 5px',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px'
+                          }}
+                          title="Crop image (1:1)"
+                        >
+                          <Crop size={10} />
+                          <span>Crop</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setLogoPreview('');
+                            showToast('Picture removed', 'info');
+                          }}
+                          style={{
+                            background: '#fee2e2',
+                            border: '1px solid #fecaca',
+                            color: '#dc2626',
+                            borderRadius: '4px',
+                            padding: '1px 5px',
+                            fontSize: '9.5px',
+                            fontWeight: 800,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '2px'
+                          }}
+                          title="Delete / Remove picture"
+                        >
+                          <Trash2 size={10} />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   <label style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -1207,6 +1282,18 @@ export default function BrandsManagementScreen({
           </div>
         </div>
       )}
+
+      {/* 1:1 Square Image Crop Modal (image copy 188 & 189) */}
+      <ImageCropModal
+        isOpen={showCropModal}
+        imageSrc={cropImage}
+        onApplyCrop={handleApplyCrop}
+        onSkipCrop={handleSkipCrop}
+        onClose={() => {
+          setShowCropModal(false);
+          setCropImage(null);
+        }}
+      />
     </div>
   );
 }

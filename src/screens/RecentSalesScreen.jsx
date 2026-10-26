@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Unlock, Save, Tv,
   Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertTriangle, Plus, X, FileText,
-  RefreshCw, CheckCircle2, Trash2
+  RefreshCw, CheckCircle2, Trash2, Edit3
 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDate, parseDate, calculateExpiryDate, formatTimelineDateBadge } from '../utils/dateUtils';
@@ -160,6 +160,7 @@ export default function RecentSalesScreen({
   };
 
   const [savingSale, setSavingSale] = useState(false);
+  const savingSaleRef = useRef(false);
   const [addSaleForm, setAddSaleForm] = useState({
     customerName: '',
     customerNumber: '',
@@ -464,6 +465,8 @@ Expiry: ${sale.expiryDate}`;
   // Submit Add Sale
   const handleSaveSale = async (e) => {
     if (e) e.preventDefault();
+    if (savingSaleRef.current || savingSale) return;
+
     if (!addSaleForm.customerName.trim()) {
       showToast('Please enter Customer Name', 'error');
       return;
@@ -478,6 +481,7 @@ Expiry: ${sale.expiryDate}`;
     }
 
     try {
+      savingSaleRef.current = true;
       setSavingSale(true);
       const targetBrandId = (activeBrand && activeBrand.id !== 'all') ? activeBrand.id : (brands[0]?.id || 'netflix');
       const targetBrand = brands.find(b => b.id === targetBrandId) || activeBrand;
@@ -509,6 +513,7 @@ Expiry: ${sale.expiryDate}`;
     } catch (err) {
       showToast(err.message || 'Failed to add sale', 'error');
     } finally {
+      savingSaleRef.current = false;
       setSavingSale(false);
     }
   };
@@ -634,7 +639,7 @@ Expiry: ${sale.expiryDate}`;
           }}>
             {isAccountView
               ? `Screen ${String(sale.screenNumber).padStart(2, '0')}`
-              : (sale.recordNumber || String(sIdx + 1).padStart(2, '0'))}
+              : String(sIdx + 1).padStart(2, '0')}
           </div>
 
           {/* Show Brand in middle in related color box: height 34px aligned */}
@@ -658,8 +663,9 @@ Expiry: ${sale.expiryDate}`;
             <span>{bName}</span>
           </div>
 
-          {/* Action Buttons: Lock/Unlock + Compact Red Trash Delete Button */}
+          {/* Action Buttons: Compact Lock + Explicit Edit/Save + Compact Red Trash Delete Button (image copy 193) */}
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            {/* 1. Smaller Lock Icon Button */}
             <button
               type="button"
               onClick={() => handleToggleSaleLock(sale)}
@@ -667,26 +673,62 @@ Expiry: ${sale.expiryDate}`;
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: '5px',
+                width: '34px',
+                minWidth: '34px',
                 height: '34px',
                 minHeight: '34px',
-                padding: '0 12px',
+                padding: 0,
                 borderRadius: '8px',
-                fontSize: '13px',
-                fontWeight: 800,
                 cursor: 'pointer',
                 border: '1.5px solid',
                 background: isEditing ? '#fef2f2' : '#f0fdf4',
                 color: isEditing ? '#dc2626' : '#16a34a',
                 borderColor: isEditing ? '#f87171' : '#4ade80',
-                boxShadow: isEditing ? '0 2px 6px rgba(220, 38, 38, 0.25)' : '0 2px 6px rgba(22, 163, 74, 0.25)',
+                boxShadow: isEditing ? '0 2px 5px rgba(220, 38, 38, 0.2)' : '0 2px 5px rgba(22, 163, 74, 0.2)',
                 transition: 'all 0.15s ease',
                 boxSizing: 'border-box'
               }}
-              title={isEditing ? 'Currently Unlocked. Click to lock' : 'Currently Locked. Click to edit'}
+              title={isEditing ? 'Card unlocked. Click to cancel/lock' : 'Card locked. Click to toggle lock'}
+              id={`recent-sale-lock-btn-${sale.id}`}
             >
               {isEditing ? <Unlock size={15} strokeWidth={2.5} /> : <Lock size={15} strokeWidth={2.5} />}
-              <span>{isEditing ? 'UnLock' : 'Lock'}</span>
+            </button>
+
+            {/* 2. Explicit Edit / Save Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (isEditing) {
+                  handleSaveSaleCard(sale);
+                } else {
+                  handleToggleSaleLock(sale);
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '5px',
+                height: '34px',
+                minHeight: '34px',
+                padding: '0 10px',
+                borderRadius: '8px',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: '1.5px solid',
+                background: isEditing ? '#16a34a' : '#2563eb',
+                color: '#ffffff',
+                borderColor: isEditing ? '#15803d' : '#1d4ed8',
+                boxShadow: isEditing ? '0 2px 6px rgba(22, 163, 74, 0.3)' : '0 2px 6px rgba(37, 99, 235, 0.3)',
+                transition: 'all 0.15s ease',
+                boxSizing: 'border-box'
+              }}
+              title={isEditing ? 'Save changes' : 'Edit sale details'}
+              id={`recent-sale-edit-btn-${sale.id}`}
+            >
+              {isEditing ? <Save size={13} strokeWidth={2.4} /> : <Edit3 size={13} strokeWidth={2.4} />}
+              <span>{isEditing ? 'Save' : 'Edit'}</span>
             </button>
 
             <button
@@ -1090,19 +1132,31 @@ Expiry: ${sale.expiryDate}`;
   // STEP 2: SHOW SALES FOR SELECTED BRAND
   // =========================================================================
   return (
-    <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '10px' }}>
+    <div className="screen-content" style={{ paddingBottom: '90px', paddingTop: '0px' }}>
       {/* =================================================================== */}
-      {/* ROW 1 — SEARCH BAR & FULL BLUE FILTER BUTTONS                      */}
+      {/* FIXED / STICKY CONTROL HEADER: Row 1, Row 2 & Viewing Date Strip    */}
+      {/* (image copy 191, 194, 195, 196: Paina Search Bar, 02 Buttons, Dates fixed) */}
       {/* =================================================================== */}
-      <div style={{ marginBottom: '10px' }}>
+      <div style={{
+        position: 'sticky',
+        top: 'var(--app-header-height, 60px)',
+        zIndex: 40,
+        background: '#ffffff',
+        paddingTop: '10px',
+        paddingBottom: '8px',
+        borderBottom: '1px solid #e2e8f0',
+        marginBottom: '10px'
+      }}>
+        {/* ROW 1 — SEARCH BAR & VALIDITY + ACCOUNTS ON SAME ROW (image copy 191) */}
         <div style={{
           display: 'flex',
-          flexWrap: 'wrap',
           gap: '8px',
-          alignItems: 'center'
+          alignItems: 'center',
+          marginBottom: '8px',
+          flexWrap: 'nowrap'
         }}>
-          {/* Search Input */}
-          <div style={{ position: 'relative', flex: '1 1 220px', minWidth: '220px' }}>
+          {/* Search Input (Takes all available width on left) */}
+          <div style={{ position: 'relative', flex: 1, minWidth: 0 }}>
             <Search size={16} color="#94a3b8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
             <input
               type="text"
@@ -1124,14 +1178,14 @@ Expiry: ${sale.expiryDate}`;
             )}
           </div>
 
-          {/* Quick Filter Buttons: Validity and Accounts (Full labels, solid blue, readable) */}
-          <div style={{ display: 'flex', gap: '8px', flex: '0 0 auto', width: 'auto' }}>
+          {/* Quick Filter Buttons: Validity and Accounts directly on right */}
+          <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
             <button
               type="button"
               onClick={cycleValidity}
               style={{
                 height: '42px',
-                padding: '0 16px',
+                padding: '0 14px',
                 background: filterValidity !== 'all' ? '#1d4ed8' : '#2563eb',
                 border: filterValidity !== 'all' ? '2px solid #1e40af' : '1.5px solid #2563eb',
                 color: '#ffffff',
@@ -1156,7 +1210,7 @@ Expiry: ${sale.expiryDate}`;
               onClick={() => setSalesGrouping(prev => prev === 'account' ? 'sold' : 'account')}
               style={{
                 height: '42px',
-                padding: '0 16px',
+                padding: '0 14px',
                 background: salesGrouping === 'account' ? '#1d4ed8' : '#2563eb',
                 border: salesGrouping === 'account' ? '2px solid #1e40af' : '1.5px solid #2563eb',
                 color: '#ffffff',
@@ -1178,179 +1232,176 @@ Expiry: ${sale.expiryDate}`;
             </button>
           </div>
         </div>
-      </div>
 
-      {/* =================================================================== */}
-      {/* ROW 2 — DATE TOOLBAR: Dates on left, Calendar & Sort on right       */}
-      {/* =================================================================== */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px',
-        marginBottom: '10px',
-        overflow: 'hidden'
-      }}>
-        {/* Horizontally Scrollable Dates Strip with month/weekday/day number */}
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            overflowX: 'auto',
-            scrollbarWidth: 'none',
-            msOverflowStyle: 'none',
-            WebkitOverflowScrolling: 'touch',
-            flex: 1,
-            minWidth: 0,
-            padding: '2px 0'
-          }}
-        >
-          {/* All Dates option */}
-          <button
-            type="button"
-            onClick={() => {
-              setFilterDate('');
-              setFilterDateRange(null);
-            }}
-            style={{
-              flexShrink: 0,
-              height: '52px',
-              minWidth: '44px',
-              padding: '4px 8px',
-              borderRadius: '10px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '12px',
-              fontWeight: 800,
-              cursor: 'pointer',
-              border: !filterDate && !filterDateRange ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
-              background: !filterDate && !filterDateRange ? '#2563eb' : '#ffffff',
-              color: !filterDate && !filterDateRange ? '#ffffff' : '#475569',
-              boxShadow: !filterDate && !filterDateRange ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
-              transition: 'all 0.15s ease'
-            }}
-          >
-            <span style={{ fontSize: '9px', fontWeight: 700 }}>VIEW</span>
-            <span style={{ fontSize: '13px', fontWeight: 900 }}>ALL</span>
-          </button>
-
-          {toolbarDates.map(item => {
-            const isSelected = filterDate === item.dateStr && !filterDateRange;
-            return (
-              <button
-                key={item.dateStr}
-                type="button"
-                onClick={() => {
-                  setFilterDate(item.dateStr);
-                  setFilterDateRange(null);
-                }}
-                style={{
-                  flexShrink: 0,
-                  height: '52px',
-                  minWidth: '52px',
-                  padding: '3px 8px',
-                  borderRadius: '10px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  cursor: 'pointer',
-                  border: isSelected ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
-                  background: isSelected ? '#2563eb' : (item.isToday ? '#eff6ff' : '#ffffff'),
-                  color: isSelected ? '#ffffff' : (item.isToday ? '#1e40af' : '#475569'),
-                  boxShadow: isSelected ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
-                  transition: 'all 0.15s ease'
-                }}
-                title={item.dateStr}
-              >
-                <span style={{ fontSize: '8.5px', fontWeight: 800, textTransform: 'uppercase', opacity: 0.85 }}>{item.dayName}</span>
-                <span style={{ fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>{item.dayNum}</span>
-                <span style={{ fontSize: '8px', fontWeight: 700, opacity: 0.85 }}>{item.isToday ? 'TODAY' : item.monthYear?.split('-')[0]}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Action Buttons: Calendar and Sort ONLY */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-          <button
-            type="button"
-            className="header-btn"
-            style={{
-              width: '40px',
-              height: '52px',
-              background: filterDateRange || (filterDate && filterDate !== todayStr) ? '#eff6ff' : '#ffffff',
-              borderColor: filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#cbd5e1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '10px'
-            }}
-            onClick={() => setShowDatePicker(true)}
-            title="Calendar: Select Single Date or Date Range"
-            id="recent-sales-calendar-btn"
-          >
-            <Calendar size={18} color={filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#475569'} />
-          </button>
-
-          <button
-            type="button"
-            className="header-btn"
-            style={{
-              width: '40px',
-              height: '52px',
-              background: sortDirection === 'asc' ? '#eff6ff' : '#ffffff',
-              borderColor: sortDirection === 'asc' ? '#2563eb' : '#cbd5e1',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              borderRadius: '10px'
-            }}
-            onClick={toggleSortDirection}
-            title={sortDirection === 'asc' ? 'Ascending: Oldest Top, Newest Bottom (WhatsApp Style)' : 'Descending: Newest Top, Oldest Bottom'}
-            id="recent-sales-sort-toggle-btn"
-          >
-            <ArrowUpDown size={18} color={sortDirection === 'asc' ? '#2563eb' : '#475569'} strokeWidth={2.3} />
-          </button>
-        </div>
-      </div>
-
-      {/* Date Range / Custom Filter Active Strip */}
-      {(filterDateRange || (filterDate && filterDate !== todayStr)) && (
+        {/* ROW 2 — DATE TOOLBAR: Dates on left, Calendar & Sort on right */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
-          background: '#eff6ff',
-          padding: '8px 14px',
-          borderRadius: '10px',
-          marginBottom: '12px',
-          fontSize: '12.5px',
-          border: '1px solid #bfdbfe'
+          gap: '8px',
+          overflow: 'hidden'
         }}>
-          <span style={{ color: '#1e40af', fontWeight: 700 }}>
-            {filterDateRange ? (
-              <>Date Range: <strong>{filterDateRange.start} → {filterDateRange.end}</strong></>
-            ) : (
-              <>Viewing Date: <strong>{filterDate}</strong></>
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              setFilterDate(todayStr);
-              setFilterDateRange(null);
+          {/* Horizontally Scrollable Dates Strip with month/weekday/day number */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              overflowX: 'auto',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none',
+              WebkitOverflowScrolling: 'touch',
+              flex: 1,
+              minWidth: 0,
+              padding: '2px 0'
             }}
-            style={{ background: 'transparent', border: 'none', color: '#2563eb', fontWeight: 800, cursor: 'pointer', fontSize: '12.5px' }}
           >
-            Reset to Today
-          </button>
+            {/* All Dates option */}
+            <button
+              type="button"
+              onClick={() => {
+                setFilterDate('');
+                setFilterDateRange(null);
+              }}
+              style={{
+                flexShrink: 0,
+                height: '52px',
+                minWidth: '44px',
+                padding: '4px 8px',
+                borderRadius: '10px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: '12px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                border: !filterDate && !filterDateRange ? '2px solid #2563eb' : '1.5px solid #cbd5e1',
+                background: !filterDate && !filterDateRange ? '#2563eb' : '#ffffff',
+                color: !filterDate && !filterDateRange ? '#ffffff' : '#475569',
+                boxShadow: !filterDate && !filterDateRange ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <span style={{ fontSize: '9px', fontWeight: 700 }}>VIEW</span>
+              <span style={{ fontSize: '13px', fontWeight: 900 }}>ALL</span>
+            </button>
+
+            {toolbarDates.map(item => {
+              const isSelected = filterDate === item.dateStr && !filterDateRange;
+              return (
+                <button
+                  key={item.dateStr}
+                  type="button"
+                  onClick={() => {
+                    setFilterDate(item.dateStr);
+                    setFilterDateRange(null);
+                  }}
+                  style={{
+                    flexShrink: 0,
+                    height: '52px',
+                    minWidth: '52px',
+                    padding: '3px 8px',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    border: isSelected ? '2px solid #2563eb' : '1.5px solid #e2e8f0',
+                    background: isSelected ? '#2563eb' : (item.isToday ? '#eff6ff' : '#ffffff'),
+                    color: isSelected ? '#ffffff' : (item.isToday ? '#1e40af' : '#475569'),
+                    boxShadow: isSelected ? '0 2px 6px rgba(37,99,235,0.3)' : 'none',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title={item.dateStr}
+                >
+                  <span style={{ fontSize: '8.5px', fontWeight: 800, textTransform: 'uppercase', opacity: 0.85 }}>{item.dayName}</span>
+                  <span style={{ fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>{item.dayNum}</span>
+                  <span style={{ fontSize: '8px', fontWeight: 700, opacity: 0.85 }}>{item.isToday ? 'TODAY' : item.monthYear?.split('-')[0]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Action Buttons: Calendar and Sort ONLY */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+            <button
+              type="button"
+              className="header-btn"
+              style={{
+                width: '40px',
+                height: '52px',
+                background: filterDateRange || (filterDate && filterDate !== todayStr) ? '#eff6ff' : '#ffffff',
+                borderColor: filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#cbd5e1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                borderRadius: '10px'
+              }}
+              onClick={() => setShowDatePicker(true)}
+              title="Calendar: Select Single Date or Date Range"
+              id="recent-sales-calendar-btn"
+            >
+              <Calendar size={18} color={filterDateRange || (filterDate && filterDate !== todayStr) ? '#2563eb' : '#475569'} />
+            </button>
+
+            <button
+              type="button"
+              className="header-btn"
+              style={{
+                width: '40px',
+                height: '52px',
+                background: sortDirection === 'asc' ? '#eff6ff' : '#ffffff',
+                borderColor: sortDirection === 'asc' ? '#2563eb' : '#cbd5e1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                borderRadius: '10px'
+              }}
+              onClick={toggleSortDirection}
+              title={sortDirection === 'asc' ? 'Ascending: Oldest Top, Newest Bottom (WhatsApp Style)' : 'Descending: Newest Top, Oldest Bottom'}
+              id="recent-sales-sort-toggle-btn"
+            >
+              <ArrowUpDown size={18} color={sortDirection === 'asc' ? '#2563eb' : '#475569'} strokeWidth={2.3} />
+            </button>
+          </div>
         </div>
-      )}
+
+        {/* Date Range / Custom Filter Active Strip */}
+        {(filterDateRange || (filterDate && filterDate !== todayStr)) && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            background: '#eff6ff',
+            padding: '8px 14px',
+            borderRadius: '10px',
+            marginTop: '8px',
+            fontSize: '12.5px',
+            border: '1px solid #bfdbfe'
+          }}>
+            <span style={{ color: '#1e40af', fontWeight: 700 }}>
+              {filterDateRange ? (
+                <>Date Range: <strong>{filterDateRange.start} → {filterDateRange.end}</strong></>
+              ) : (
+                <>Viewing Date: <strong>{filterDate}</strong></>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterDate(todayStr);
+                setFilterDateRange(null);
+              }}
+              style={{ background: 'transparent', border: 'none', color: '#2563eb', fontWeight: 800, cursor: 'pointer', fontSize: '12.5px' }}
+            >
+              Reset to Today
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* =================================================================== */}
       {/* SALES CONTENT: WhatsApp-Style Daily Timeline VS Account Grouping     */}
@@ -1943,8 +1994,8 @@ Expiry: ${sale.expiryDate}`;
         onConfirm={handleConfirmDeleteSale}
       />
 
-      {/* Subtle Right-Side Floating Scroll Date Indicator */}
-      {scrollingDate && isScrolling && (
+      {/* Subtle Right-Side Floating Scroll Date Indicator (Shown ONLY when VIEW ALL is active per image copy 196) */}
+      {!filterDate && !filterDateRange && scrollingDate && isScrolling && (
         <div style={{
           position: 'fixed',
           right: '12px',

@@ -814,12 +814,32 @@ export const db = {
 
   createSale(saleData) {
     const data = readDb();
+
+    // Prevent duplicate: if sale with this ID already exists, return existing
+    if (saleData.id) {
+      const existing = data.sales.find(s => s.id === saleData.id);
+      if (existing) {
+        return { sale: existing, assignedAccount: null };
+      }
+    }
+
     const targetBrandId = (saleData.brandId || '').includes('__shared__')
       ? saleData.brandId.split('__shared__')[0]
       : saleData.brandId;
     const brand = data.brands.find(b => b.id === saleData.brandId || b.id === targetBrandId) || data.brands[0];
 
-    const nextRecordNum = String(data.sales.length + 1).padStart(2, '0');
+    // Daily serial numbering: starts from 01 every day
+    let nextRecordNum = saleData.recordNumber;
+    if (!nextRecordNum) {
+      const targetDate = saleData.activationDate || saleData.saleDate || new Date().toISOString().slice(0, 10);
+      const salesOnDate = data.sales.filter(s =>
+        !s.isDeleted &&
+        (s.activationDate === targetDate || s.saleDate === targetDate)
+      );
+      nextRecordNum = String(salesOnDate.length + 1).padStart(2, '0');
+    } else {
+      nextRecordNum = String(nextRecordNum).padStart(2, '0');
+    }
 
     // Find account to assign
     let assignedAccount = null;
@@ -872,7 +892,7 @@ export const db = {
       }
     }
 
-    const saleId = `sale_${Date.now()}`;
+    const saleId = saleData.id || `sale_${Date.now()}`;
 
     // Target screen identification
     const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '0', 10);

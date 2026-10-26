@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User, Lock, Eye, EyeOff, ChevronDown, Check,
   Tv, Sparkles, Calendar, ArrowLeft
@@ -52,6 +52,7 @@ export default function SaleScreen({
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [brandAccounts, setBrandAccounts] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [selectedPricingPlan, setSelectedPricingPlan] = useState('general');
 
   // Form template selector state (Requirement 9 & 10)
@@ -219,6 +220,8 @@ export default function SaleScreen({
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    if (isSubmittingRef.current || isSubmitting) return;
+
     if (!customerName.trim()) {
       showToast('Please enter Customer Name', 'error');
       return;
@@ -247,6 +250,7 @@ export default function SaleScreen({
     }
 
     try {
+      isSubmittingRef.current = true;
       setIsSubmitting(true);
       const showPin = currentBrand?.showScreenPin !== false;
       const showDev = currentBrand?.showDeviceName !== false;
@@ -309,6 +313,7 @@ export default function SaleScreen({
     } catch (err) {
       showToast(err.message || 'Failed to submit sale', 'error');
     } finally {
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -537,7 +542,7 @@ export default function SaleScreen({
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
                 {currentBrand ? (
-                  <OttLogo brandId={currentBrand.id} name={currentBrand.displayName} size={26} />
+                  <OttLogo brandId={currentBrand.id} name={currentBrand.displayName} logo={currentBrand.logo} size={26} />
                 ) : null}
                 <span style={{ fontSize: '13.5px', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: currentBrand ? '#ffffff' : '#94a3b8' }}>
                   {currentBrand?.displayName || currentBrand?.name || ''}

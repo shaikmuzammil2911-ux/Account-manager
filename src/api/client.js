@@ -148,7 +148,7 @@ function mapSupabaseBrand(b) {
 function mapBrandToSupabase(brandData, userEmail) {
   const id = brandData.id || brandData.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
   const pricesPayload = { ...(brandData.prices || {}) };
-  if (brandData.logo) pricesPayload._logo = brandData.logo;
+  if (brandData.logo !== undefined) pricesPayload._logo = brandData.logo;
   if (brandData.showScreenPin !== undefined) pricesPayload._showScreenPin = brandData.showScreenPin;
   if (brandData.showDeviceName !== undefined) pricesPayload._showDeviceName = brandData.showDeviceName;
   if (brandData.groupScreensBy5 !== undefined) pricesPayload._groupScreensBy5 = brandData.groupScreensBy5;
@@ -1144,7 +1144,14 @@ export const api = {
   async createSale(saleData) {
     const local = getLocalData();
     const brand = local.brands.find(b => b.id === saleData.brandId) || local.brands[0];
-    const nextRecordNum = String((local.sales || []).length + 1).padStart(2, '0');
+    
+    // Daily serial numbering: starts from 01 every single day
+    const targetDate = saleData.activationDate || saleData.saleDate || new Date().toISOString().slice(0, 10);
+    const salesOnDate = (local.sales || []).filter(s =>
+      !s.isDeleted && s.status !== 'Deleted' && s.status !== 'deleted' &&
+      (s.activationDate === targetDate || s.saleDate === targetDate)
+    );
+    const nextRecordNum = saleData.recordNumber ? String(saleData.recordNumber).padStart(2, '0') : String(salesOnDate.length + 1).padStart(2, '0');
 
     // Calculate guaranteed accurate expiry date
     const calculatedExpiry = saleData.expiryDate || calculateExpiryDate(saleData.activationDate, saleData.validity || '01 Month');
@@ -1326,8 +1333,14 @@ export const api = {
       fetch('/api/sales', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...saleData, expiryDate: calculatedExpiry })
+        body: JSON.stringify({ ...saleData, id: saleId, recordNumber: nextRecordNum, expiryDate: calculatedExpiry })
       }).catch(() => {});
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sales-updated', { detail: { action: 'create', sale: newSale } }));
+      }
     } catch (e) {}
 
     return { sale: newSale, assignedAccount };
@@ -1572,6 +1585,12 @@ export const api = {
 
     try {
       fetch(`/api/sales/${id}`, { method: 'DELETE' }).catch(() => {});
+    } catch (e) {}
+
+    try {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('sales-updated', { detail: { action: 'delete', id } }));
+      }
     } catch (e) {}
 
     return true;
@@ -2233,6 +2252,14 @@ export const api = {
     }
     saveLocalData(local);
 
+    try {
+      fetch('/api/brands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...brandData, id })
+      }).catch(() => {});
+    } catch (e) {}
+
     return createdBrand;
   },
 
@@ -2272,6 +2299,14 @@ export const api = {
       local.brands.push(updatedBrand);
     }
     saveLocalData(local);
+
+    try {
+      fetch(`/api/brands/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(merged)
+      }).catch(() => {});
+    } catch (e) {}
 
     // If screen count was set or updated, reconcile all accounts for this brand
     if (updatedBrand && updatedBrand.screensCount) {

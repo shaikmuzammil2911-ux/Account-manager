@@ -27,35 +27,59 @@ export default function AccountStarDetailsModal({
   const scrollContainerRef = useRef(null);
   const prevEntriesCountRef = useRef(0);
 
-  const screens = item.screens || [];
+  const screens = (item?.screens || []).filter(Boolean);
   const seller = item.sellerDetails;
 
   // Authorization Check: Admins or Account Owners can access Entries and credentials
-  const normalizedUser = (currentUser?.email || '').trim().toLowerCase();
-  const isAdmin = currentUser?.role === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!currentUser?.email && !currentUser?.role);
-  const itemOwner = (item.ownerEmail || '').trim().toLowerCase();
-  const isOwner = isAdmin || !item.isShared || (itemOwner && itemOwner === normalizedUser);
+  const effectiveUser = currentUser || (() => {
+    try {
+      const u = localStorage.getItem('accounts_manager_user');
+      return u ? JSON.parse(u) : null;
+    } catch (e) {
+      return null;
+    }
+  })();
+  const normalizedUser = (effectiveUser?.email || '').trim().toLowerCase();
+  const isAdmin = effectiveUser?.role === 'admin' || normalizedUser === 'fixyourmobiles10@gmail.com' || (!effectiveUser?.email && !effectiveUser?.role);
+  const itemOwner = (item?.ownerEmail || '').trim().toLowerCase();
+  const isOwner = isAdmin || !item?.isShared || (itemOwner && itemOwner === normalizedUser) || !itemOwner;
 
   // Normalize entries: oldest at top, newest at bottom (WhatsApp-style)
-  const rawEntries = Array.isArray(item.entries)
+  const rawEntries = Array.isArray(item?.entries)
     ? item.entries
-    : (Array.isArray(item.credentialHistory) ? item.credentialHistory : []);
+    : (Array.isArray(item?.credentialHistory) ? item.credentialHistory : []);
 
   // Ensure deterministic chronological ordering (oldest first)
   const entries = React.useMemo(() => {
     if (!rawEntries || rawEntries.length === 0) return [];
 
     // Check if rawEntries is in reverse-chronological order (legacy unshifted: newest at index 0)
-    let sorted = [...rawEntries];
+    let sorted = rawEntries.filter(Boolean);
     if (sorted.length > 1) {
-      const firstTime = new Date(sorted[0].timestamp || 0).getTime();
-      const lastTime = new Date(sorted[sorted.length - 1].timestamp || 0).getTime();
-      if (firstTime > lastTime) {
-        sorted.reverse();
-      }
+      try {
+        const firstTime = new Date(sorted[0]?.timestamp || 0).getTime();
+        const lastTime = new Date(sorted[sorted.length - 1]?.timestamp || 0).getTime();
+        if (firstTime > lastTime) {
+          sorted.reverse();
+        }
+      } catch (e) {}
     }
 
     return sorted.map((entry, idx) => {
+      if (!entry || typeof entry !== 'object') {
+        return {
+          id: `ent_${idx}`,
+          entryNumber: `Entry ${String(idx + 1).padStart(2, '0')}`,
+          field: 'Account update',
+          oldValue: 'Empty',
+          newValue: 'Empty',
+          isPassword: false,
+          timestamp: new Date().toISOString(),
+          formattedTime: formatISTDateTime(new Date()),
+          changedBy: 'Authorized Admin',
+          status: 'Confirmed'
+        };
+      }
       const entryNum = entry.entryNumber || `Entry ${String(idx + 1).padStart(2, '0')}`;
       const isPw = entry.isPassword || entry.fieldName === 'password' || String(entry.field || '').toLowerCase().includes('password');
 
