@@ -36,7 +36,8 @@ export default function SaleScreen({
 
   const [screenNumber, setScreenNumber] = useState(prefillData?.screenName || '');
   const [screenPin, setScreenPin] = useState(prefillData?.pin || '');
-  const [amount, setAmount] = useState(prefillData?.amount ? String(prefillData.amount) : '');
+  const [amount, setAmount] = useState(prefillData?.amount !== undefined && prefillData?.amount !== null ? String(prefillData.amount) : '');
+  const [isAmountManuallyEdited, setIsAmountManuallyEdited] = useState(Boolean(prefillData?.amount !== undefined && prefillData?.amount !== null));
   const [deviceName, setDeviceName] = useState(prefillData?.deviceName || '');
 
   const [customerName, setCustomerName] = useState('');
@@ -98,12 +99,12 @@ export default function SaleScreen({
     }
   }, [activationDate, validity]);
 
-  // Auto set amount when brand, plan or validity changes
+  // Auto set amount when brand, plan or validity changes ONLY IF not manually specified
   useEffect(() => {
-    if (activePlanPrices && validity && activePlanPrices[validity] !== undefined) {
+    if (!isAmountManuallyEdited && activePlanPrices && validity && activePlanPrices[validity] !== undefined) {
       setAmount(String(activePlanPrices[validity]));
     }
-  }, [currentBrand, selectedPricingPlan, validity]);
+  }, [currentBrand, selectedPricingPlan, validity, isAmountManuallyEdited]);
 
   // Load accounts for current brand to provide easy dropdown selection if needed
   useEffect(() => {
@@ -127,10 +128,18 @@ export default function SaleScreen({
       if (prefillData.email) setAccountEmail(prefillData.email);
       if (prefillData.password) setAccountPassword(prefillData.password);
       if (prefillData.screenName) setScreenNumber(prefillData.screenName);
-      if (prefillData.pin) setScreenPin(prefillData.pin);
+      if (prefillData.pin !== undefined) setScreenPin(prefillData.pin);
       if (prefillData.validity) setValidity(prefillData.validity);
       if (prefillData.inventoryId) setSelectedInventoryId(prefillData.inventoryId);
-      if (prefillData.amount) setAmount(String(prefillData.amount));
+      if (prefillData.amount !== undefined && prefillData.amount !== null) {
+        setAmount(String(prefillData.amount));
+        setIsAmountManuallyEdited(true);
+      }
+      if (prefillData.activationDate) {
+        setActivationDate(prefillData.activationDate);
+      } else if (prefillData.saleDate) {
+        setActivationDate(prefillData.saleDate);
+      }
     }
   }, [prefillData]);
 
@@ -252,8 +261,13 @@ export default function SaleScreen({
     try {
       isSubmittingRef.current = true;
       setIsSubmitting(true);
-      const showPin = currentBrand?.showScreenPin !== false;
+      const showPin = currentBrand?.showScreenPin !== false && currentBrand?.pinEnabled !== false;
       const showDev = currentBrand?.showDeviceName !== false;
+
+      // Exact amount preservation: entered 0 remains 0!
+      const finalAmount = (amount !== null && amount !== undefined && String(amount).trim() !== '')
+        ? Math.max(0, Number(amount))
+        : (activePlanPrices?.[validity] !== undefined ? Number(activePlanPrices[validity]) : 199);
 
       const isReseller = (selectedFormId.includes('reseller') || saleForms.find(f => f.id === selectedFormId)?.subType === 'reseller');
       const salePayload = {
@@ -263,11 +277,12 @@ export default function SaleScreen({
         validity,
         activationDate,
         expiryDate,
+        saleDate: activationDate,
         accountEmail: accountEmail.trim(),
         accountPassword: accountPassword.trim(),
         screenNumber: screenNumber.trim() || '01',
-        screenPin: showPin ? (screenPin.trim() || '1111') : '',
-        amount: Number(amount) || 199,
+        screenPin: showPin ? screenPin.trim() : '',
+        amount: finalAmount,
         deviceName: showDev ? deviceName.trim() : '',
         customerName: customerName.trim(),
         customerNumber: customerNumber.trim(),
@@ -823,85 +838,50 @@ export default function SaleScreen({
           </div>
         </div>
 
-        {/* Dynamic Rows for Screen No, Screen Pin, Amount, Device Name based on brand settings */}
+        {/* Dynamic Rows for Device, Screen No, Screen Pin, Amount based on brand settings */}
         {(() => {
-          const showPin = currentBrand?.showScreenPin !== false;
+          const showPin = currentBrand?.showScreenPin !== false && currentBrand?.pinEnabled !== false;
           const showDev = currentBrand?.showDeviceName !== false;
 
-          if (showPin && showDev) {
-            return (
-              <>
-                <div className="sale-row-2-compact">
+          return (
+            <>
+              {/* Row: Device Box (Left) + Screen No + Screen Pin (if enabled) */}
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: showDev && showPin ? '1.1fr 1fr 1fr' : (showDev ? '1.1fr 1fr' : (showPin ? '1fr 1fr' : '1fr')),
+                  gap: '8px',
+                  marginBottom: '10px'
+                }}
+              >
+                {showDev && (
                   <div>
-                    <div className="sale-label-compact">Screen No</div>
-                    <input
-                      type="text"
-                      className="sale-input-compact"
-                      value={screenNumber}
-                      onChange={e => setScreenNumber(e.target.value)}
-                      placeholder=""
-                      id="sale-screen-number"
-                      style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="sale-label-compact">Screen Pin</div>
-                    <input
-                      type="text"
-                      className="sale-input-compact"
-                      value={screenPin}
-                      onChange={e => setScreenPin(e.target.value)}
-                      placeholder=""
-                      id="sale-screen-pin"
-                      style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
-                    />
-                  </div>
-                </div>
-
-                <div className="sale-row-2-compact">
-                  <div>
-                    <div className="sale-label-compact">Amount</div>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{
-                        position: 'absolute',
-                        left: '10px',
-                        fontSize: '15px',
-                        fontWeight: 900,
-                        color: '#16a34a',
-                        pointerEvents: 'none'
-                      }}>₹</span>
-                      <input
-                        type="number"
-                        className="sale-input-compact"
-                        value={amount}
-                        onChange={e => setAmount(e.target.value)}
-                        placeholder="0"
-                        id="sale-amount"
-                        style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="sale-label-compact">Device Name</div>
-                    <input
-                      type="text"
+                    <div className="sale-label-compact">Device</div>
+                    <select
                       className="sale-input-compact"
                       value={deviceName}
                       onChange={e => setDeviceName(e.target.value)}
-                      placeholder=""
                       id="sale-device-name"
-                    />
+                      style={{
+                        background: '#f8fafc',
+                        borderColor: '#cbd5e1',
+                        fontWeight: 800,
+                        color: '#1e293b',
+                        padding: '0 8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <option value="">Select Device</option>
+                      <option value="TV">TV</option>
+                      <option value="Mobile">Mobile</option>
+                      <option value="Laptop">Laptop</option>
+                      <option value="PC">PC</option>
+                      <option value="Tablet">Tablet</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
-                </div>
-              </>
-            );
-          }
+                )}
 
-          if (!showPin && !showDev) {
-            return (
-              <div className="sale-row-2-compact">
                 <div>
                   <div className="sale-label-compact">Screen No</div>
                   <input
@@ -909,55 +889,13 @@ export default function SaleScreen({
                     className="sale-input-compact"
                     value={screenNumber}
                     onChange={e => setScreenNumber(e.target.value)}
-                    placeholder=""
+                    placeholder="01"
                     id="sale-screen-number"
                     style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
                   />
                 </div>
 
-                <div>
-                  <div className="sale-label-compact">Amount</div>
-                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                    <span style={{
-                      position: 'absolute',
-                      left: '10px',
-                      fontSize: '15px',
-                      fontWeight: 900,
-                      color: '#16a34a',
-                      pointerEvents: 'none'
-                    }}>₹</span>
-                    <input
-                      type="number"
-                      className="sale-input-compact"
-                      value={amount}
-                      onChange={e => setAmount(e.target.value)}
-                      placeholder="0"
-                      id="sale-amount"
-                      style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          if (showPin && !showDev) {
-            return (
-              <>
-                <div className="sale-row-2-compact">
-                  <div>
-                    <div className="sale-label-compact">Screen No</div>
-                    <input
-                      type="text"
-                      className="sale-input-compact"
-                      value={screenNumber}
-                      onChange={e => setScreenNumber(e.target.value)}
-                      placeholder=""
-                      id="sale-screen-number"
-                      style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
-                    />
-                  </div>
-
+                {showPin && (
                   <div>
                     <div className="sale-label-compact">Screen Pin</div>
                     <input
@@ -970,68 +908,11 @@ export default function SaleScreen({
                       style={{ background: '#ecfeff', borderColor: '#a5f3fc', color: '#0e7490', fontWeight: 800 }}
                     />
                   </div>
-                </div>
-
-                <div className="sale-row-2-compact">
-                  <div>
-                    <div className="sale-label-compact">Amount</div>
-                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <span style={{
-                        position: 'absolute',
-                        left: '10px',
-                        fontSize: '15px',
-                        fontWeight: 900,
-                        color: '#16a34a',
-                        pointerEvents: 'none'
-                      }}>₹</span>
-                      <input
-                        type="number"
-                        className="sale-input-compact"
-                        value={amount}
-                        onChange={e => setAmount(e.target.value)}
-                        placeholder="0"
-                        id="sale-amount"
-                        style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}
-                      />
-                    </div>
-                  </div>
-                  <div />
-                </div>
-              </>
-            );
-          }
-
-          // showDev && !showPin
-          return (
-            <>
-              <div className="sale-row-2-compact">
-                <div>
-                  <div className="sale-label-compact">Screen No</div>
-                  <input
-                    type="text"
-                    className="sale-input-compact"
-                    value={screenNumber}
-                    onChange={e => setScreenNumber(e.target.value)}
-                    placeholder=""
-                    id="sale-screen-number"
-                    style={{ background: '#fefce8', borderColor: '#fde047', color: '#854d0e', fontWeight: 800 }}
-                  />
-                </div>
-
-                <div>
-                  <div className="sale-label-compact">Device Name</div>
-                  <input
-                    type="text"
-                    className="sale-input-compact"
-                    value={deviceName}
-                    onChange={e => setDeviceName(e.target.value)}
-                    placeholder=""
-                    id="sale-device-name"
-                  />
-                </div>
+                )}
               </div>
 
-              <div className="sale-row-2-compact">
+              {/* Row: Amount */}
+              <div className="sale-row-2-compact" style={{ marginBottom: '10px' }}>
                 <div>
                   <div className="sale-label-compact">Amount</div>
                   <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
@@ -1047,7 +928,10 @@ export default function SaleScreen({
                       type="number"
                       className="sale-input-compact"
                       value={amount}
-                      onChange={e => setAmount(e.target.value)}
+                      onChange={e => {
+                        setAmount(e.target.value);
+                        setIsAmountManuallyEdited(true);
+                      }}
                       placeholder="0"
                       id="sale-amount"
                       style={{ paddingLeft: '24px', fontWeight: 900, fontSize: '15px', color: '#16a34a' }}

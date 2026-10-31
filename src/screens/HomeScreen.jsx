@@ -504,7 +504,7 @@ export default function HomeScreen({
           {(isAdmin || userPermissions.sales !== false) && (
             <div
               className="home-menu-card glossy-btn-orange"
-              onClick={() => onNavigate('sale')}
+              onClick={() => onNavigate('sale', { prefill: { activationDate: formatDate(activeDate), saleDate: formatDate(activeDate) } })}
               id="home-btn-sale"
               role="button"
               tabIndex={0}

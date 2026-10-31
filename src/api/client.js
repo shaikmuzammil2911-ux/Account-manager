@@ -1050,13 +1050,13 @@ export const api = {
               deviceName: s.device_name,
               activationDate: s.activation_date,
               expiryDate: s.expiry_date,
-              amount: Number(s.amount) || 199,
+              amount: (s.amount !== null && s.amount !== undefined && s.amount !== '') ? Number(s.amount) : 199,
               note: s.note,
               status: s.status,
               notificationSent: s.notification_sent,
               lastNotifiedAt: s.last_notified_at,
               inventoryId: s.inventory_id,
-              saleDate: s.activation_date,
+              saleDate: s.sale_date || s.activation_date,
               createdAt: s.created_at
             };
             salesMap.set(mapped.id, mapped);
@@ -1205,14 +1205,17 @@ export const api = {
     let assignedScreen = null;
 
     if (assignedAccount && assignedAccount.screens) {
-      const screenNum = parseInt(saleData.screenNumber?.toString().replace(/\D/g, '') || '0', 10);
-      assignedScreen = assignedAccount.screens.find(s => s.screenNumber === screenNum);
+      const targetNum = parseInt(String(saleData.screenNumber || '1').replace(/\D/g, ''), 10);
+      assignedScreen = assignedAccount.screens.find(s => {
+        const sNum = parseInt(String(s.screenNumber ?? s.name ?? '').replace(/\D/g, ''), 10);
+        return sNum === targetNum;
+      });
       if (!assignedScreen) {
         assignedScreen = assignedAccount.screens.find(s => s.status === 'empty');
       }
 
       if (!assignedScreen) {
-        const sNum = screenNum || (assignedAccount.screens.length + 1);
+        const sNum = targetNum || (assignedAccount.screens.length + 1);
         assignedScreen = {
           screenNumber: sNum,
           name: `Screen-${sNum}`,
@@ -1234,6 +1237,12 @@ export const api = {
       assignedAccount.updatedAt = Date.now();
     }
 
+    const isPinEnabled = brand?.showScreenPin !== false && brand?.pinEnabled !== false;
+    const finalPin = isPinEnabled ? (saleData.screenPin !== undefined && saleData.screenPin !== null ? String(saleData.screenPin).trim() : (assignedScreen?.pin || '')) : '';
+    const finalAmount = (saleData.amount !== null && saleData.amount !== undefined && String(saleData.amount).trim() !== '')
+      ? Math.max(0, Number(saleData.amount))
+      : (brand?.prices?.[saleData.validity] !== undefined ? Number(brand.prices[saleData.validity]) : 199);
+
     const newSale = {
       id: saleId,
       recordNumber: nextRecordNum,
@@ -1249,12 +1258,12 @@ export const api = {
       validity: saleData.validity || '01 Month',
       pricingPlan: saleData.pricingPlan || 'General',
       screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
-      screenPin: saleData.screenPin || assignedScreen?.pin || '1234',
+      screenPin: finalPin,
       activationDate: saleData.activationDate,
       expiryDate: calculatedExpiry,
-      amount: Number(saleData.amount) || brand?.prices?.[saleData.validity] || 199,
+      amount: finalAmount,
       deviceName: saleData.deviceName ? String(saleData.deviceName).trim() : '',
-      saleDate: saleData.activationDate,
+      saleDate: saleData.saleDate || saleData.activationDate,
       note: saleData.note || '',
       status: 'Active',
       notificationSent: false,
@@ -1266,7 +1275,7 @@ export const api = {
     local.sales = [newSale, ...(local.sales || [])];
     saveLocalData(local);
 
-    // 2. Direct Supabase Persistence (Database Consistency & RLS)
+    // 2. Direct Supabase Persistence (Database Consistency & RLS) with fast timeout
     try {
       const supabaseSalePayload = {
         id: saleId,
@@ -1297,24 +1306,27 @@ export const api = {
         updated_at: new Date().toISOString()
       };
 
-      const { error: sbErr } = await supabase.from('sales').upsert(supabaseSalePayload, { onConflict: 'id' });
-      if (sbErr) {
-        console.warn('[Supabase Sale Save Warning]:', sbErr.message);
-      }
+      const supabasePromise = (async () => {
+        const { error: sbErr } = await supabase.from('sales').upsert(supabaseSalePayload, { onConflict: 'id' });
+        if (sbErr) console.warn('[Supabase Sale Save Warning]:', sbErr.message);
 
-      // Update screen record in Supabase
-      if (assignedAccount?.id) {
-        const sNum = parseInt(String(newSale.screenNumber).replace(/\D/g, '') || '1', 10);
-        await supabase
-          .from('screens')
-          .update({
-            status: 'occupied',
-            sale_id: saleId,
-            expiry_date: calculatedExpiry,
-            updated_at: new Date().toISOString()
-          })
-          .match({ account_id: assignedAccount.id, screen_number: sNum });
-      }
+        // Update screen record in Supabase
+        if (assignedAccount?.id) {
+          const sNum = parseInt(String(newSale.screenNumber).replace(/\D/g, '') || '1', 10);
+          await supabase
+            .from('screens')
+            .update({
+              status: 'occupied',
+              sale_id: saleId,
+              expiry_date: calculatedExpiry,
+              updated_at: new Date().toISOString()
+            })
+            .match({ account_id: assignedAccount.id, screen_number: sNum });
+        }
+      })();
+
+      const timeoutPromise = new Promise((resolve) => setTimeout(resolve, 2500));
+      await Promise.race([supabasePromise, timeoutPromise]);
     } catch (sbEx) {
       console.warn('[Supabase Direct Save Error]:', sbEx.message);
     }
@@ -1358,6 +1370,10 @@ export const api = {
       };
       local.sales[idx] = updated;
 
+      if (updates.activationDate && !updates.saleDate) {
+        updated.saleDate = updates.activationDate;
+      }
+
       // If sale expiry date, pin, or deviceName changed, update linked screen in inventory
       if (updated.inventoryId || updated.accountEmail) {
         const inv = (local.inventory || []).find(i =>
@@ -1396,9 +1412,13 @@ export const api = {
         if (updates.screenNumber !== undefined) sbUpdatePayload.screen_number = updates.screenNumber;
         if (updates.screenPin !== undefined) sbUpdatePayload.screen_pin = updates.screenPin;
         if (updates.deviceName !== undefined) sbUpdatePayload.device_name = String(updates.deviceName).trim();
-        if (updates.activationDate !== undefined) sbUpdatePayload.activation_date = updates.activationDate;
-        if (updates.expiryDate !== undefined) sbUpdatePayload.expiry_date = updates.expiryDate;
-        if (updates.amount !== undefined) sbUpdatePayload.amount = Number(updates.amount);
+        if (updates.activationDate !== undefined) {
+          sbUpdatePayload.activation_date = updates.activationDate;
+          if (!updates.saleDate) sbUpdatePayload.sale_date = updates.activationDate;
+        }
+        if (updates.amount !== undefined && updates.amount !== null && String(updates.amount).trim() !== '') {
+          sbUpdatePayload.amount = Math.max(0, Number(updates.amount));
+        }
         if (updates.note !== undefined) sbUpdatePayload.note = updates.note;
         if (updates.status !== undefined) sbUpdatePayload.status = updates.status;
 

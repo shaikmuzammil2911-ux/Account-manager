@@ -371,9 +371,8 @@ export default function App() {
       sellerEmail: salePayload.sellerEmail || currentUser?.email || 'Fixyourmobiles10@gmail.com'
     };
     await api.createSale(payload);
-    const updatedStats = await api.getStats();
-    setStats(updatedStats);
     navigateTo('recent-sales');
+    api.getStats().then(setStats).catch(() => {});
   };
 
   const handleConfirmNotification = async (saleId) => {
@@ -539,37 +538,63 @@ export default function App() {
                   </span>
                 </button>
               ) : currentScreen === 'expiry' ? (
-                <button
-                  type="button"
-                  className="header-btn"
-                  onClick={handleExportAllToExcel}
-                  disabled={isExportingExcel}
-                  style={{
-                    height: '38px',
-                    padding: '0 10px',
-                    background: isExportingExcel ? '#f0fdf4' : '#ffffff',
-                    borderColor: '#16a34a',
-                    color: '#15803d',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    cursor: isExportingExcel ? 'wait' : 'pointer',
-                    borderRadius: '10px',
-                    boxShadow: '0 1px 3px rgba(22, 163, 74, 0.15)',
-                    whiteSpace: 'nowrap'
-                  }}
-                  title="Download All Subscriptions Expiry Report (.xlsx)"
-                  id="expiry-header-excel-btn"
-                >
-                  {isExportingExcel ? (
-                    <RefreshCw size={15} className="animate-spin" />
-                  ) : (
-                    <FileSpreadsheet size={16} strokeWidth={2.4} color="#16a34a" />
-                  )}
-                  <span style={{ fontSize: '11.5px', fontWeight: 800 }}>
-                    {isExportingExcel ? 'Exporting...' : 'Excel'}
-                  </span>
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <button
+                    type="button"
+                    className="glossy-btn glossy-btn-orange"
+                    style={{
+                      height: '38px',
+                      padding: '0 10px',
+                      fontSize: '12px',
+                      fontWeight: 800,
+                      borderRadius: '10px',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      boxShadow: '0 2px 6px rgba(249, 115, 22, 0.35)'
+                    }}
+                    onClick={() => {
+                      const curDate = localStorage.getItem('accounts_expiry_selected_date') || formatDate(new Date());
+                      navigateTo('sale', { prefill: { activationDate: curDate, saleDate: curDate } });
+                    }}
+                    id="expiry-header-add-sale-btn"
+                  >
+                    <Plus size={14} strokeWidth={2.5} />
+                    <span>Add Sale</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="header-btn"
+                    onClick={handleExportAllToExcel}
+                    disabled={isExportingExcel}
+                    style={{
+                      height: '38px',
+                      padding: '0 10px',
+                      background: isExportingExcel ? '#f0fdf4' : '#ffffff',
+                      borderColor: '#16a34a',
+                      color: '#15803d',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      cursor: isExportingExcel ? 'wait' : 'pointer',
+                      borderRadius: '10px',
+                      boxShadow: '0 1px 3px rgba(22, 163, 74, 0.15)',
+                      whiteSpace: 'nowrap'
+                    }}
+                    title="Download All Subscriptions Expiry Report (.xlsx)"
+                    id="expiry-header-excel-btn"
+                  >
+                    {isExportingExcel ? (
+                      <RefreshCw size={15} className="animate-spin" />
+                    ) : (
+                      <FileSpreadsheet size={16} strokeWidth={2.4} color="#16a34a" />
+                    )}
+                    <span style={{ fontSize: '11.5px', fontWeight: 800 }}>
+                      {isExportingExcel ? 'Exporting...' : 'Excel'}
+                    </span>
+                  </button>
+                </div>
               ) : currentScreen === 'recent-sales' && selectedBrand ? (
                 <button
                   type="button"

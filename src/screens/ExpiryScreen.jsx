@@ -57,6 +57,9 @@ export default function ExpiryScreen({
   // When selectedDate changes (e.g. from calendar 24-Nov-2026), ensure it's inside [minOffset, maxOffset]
   useEffect(() => {
     if (selectedDate && selectedDate !== 'ALL') {
+      try {
+        localStorage.setItem('accounts_expiry_selected_date', selectedDate);
+      } catch (e) {}
       const parsed = parseDate(selectedDate);
       if (parsed) {
         const base = getKolkataDate();

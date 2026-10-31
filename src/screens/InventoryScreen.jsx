@@ -440,20 +440,28 @@ export default function InventoryScreen({
     }
   };
 
-  // Cycle plan variant on card (image copy 48.png)
+  // Cycle plan variant on card (Strictly from brand's configured plans - no default Ads/Ads Free)
   const handleCyclePlanVariant = async (item) => {
-    let plans = ['General'];
+    let plans = [];
     if (currentBrand?.pricingPlans && typeof currentBrand.pricingPlans === 'object') {
-      const pList = Object.values(currentBrand.pricingPlans).filter(p => p.enabled).map(p => p.label || p.name);
+      const pList = Object.values(currentBrand.pricingPlans)
+        .filter(p => p && p.enabled !== false)
+        .map(p => p.label || p.name)
+        .filter(Boolean);
       if (pList.length > 0) plans = pList;
     }
-    if (plans.length === 1 && plans[0] === 'General') {
-      plans = ['General', 'With Ads', 'Ads Free'];
+    if (plans.length === 0) {
+      plans = [item.planVariant || (currentBrand?.displayName ? `${currentBrand.displayName}` : 'General')];
     }
 
-    const current = (editingCards[item.id]?.planVariant || item.planVariant || 'General');
+    if (plans.length <= 1) {
+      showToast(`Only 1 plan configured for this brand (${plans[0]})`, 'info');
+      return;
+    }
+
+    const current = (editingCards[item.id]?.planVariant || item.planVariant || plans[0]);
     const currIdx = plans.indexOf(current);
-    const nextPlan = plans[(currIdx + 1) % plans.length] || 'General';
+    const nextPlan = plans[(currIdx + 1) % plans.length] || plans[0];
 
     if (editingCards[item.id]) {
       setEditingCards(prev => ({
@@ -1722,13 +1730,27 @@ export default function InventoryScreen({
                 {String(items.length + 1).padStart(2, '0')}
               </div>
 
-              {/* Plan Variant Badge (Clickable to cycle) */}
+              {/* Plan Variant Badge (Clickable to cycle only configured plans) */}
               <div
                 className="badge-plan-variant"
                 onClick={() => {
-                  const plans = ['General', 'With Ads', 'Ads Free'];
+                  let plans = [];
+                  if (currentBrand?.pricingPlans && typeof currentBrand.pricingPlans === 'object') {
+                    const pList = Object.values(currentBrand.pricingPlans)
+                      .filter(p => p && p.enabled !== false)
+                      .map(p => p.label || p.name)
+                      .filter(Boolean);
+                    if (pList.length > 0) plans = pList;
+                  }
+                  if (plans.length === 0) {
+                    plans = [newPlanVariant || (currentBrand?.displayName ? `${currentBrand.displayName}` : 'General')];
+                  }
+                  if (plans.length <= 1) {
+                    showToast(`Only 1 plan configured for this brand (${plans[0]})`, 'info');
+                    return;
+                  }
                   const curIdx = plans.indexOf(newPlanVariant);
-                  setNewPlanVariant(plans[(curIdx + 1) % plans.length]);
+                  setNewPlanVariant(plans[(curIdx + 1) % plans.length] || plans[0]);
                 }}
                 style={{
                   cursor: 'pointer',

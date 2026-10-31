@@ -42,6 +42,8 @@ export default function BrandsManagementScreen({
   const [activePlanTab, setActivePlanTab] = useState('general');
   const [showNewPlanInput, setShowNewPlanInput] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
+  const [isEditingPlanLabel, setIsEditingPlanLabel] = useState(false);
+  const [editingPlanLabelText, setEditingPlanLabelText] = useState('');
 
   // Default plans: ONLY General by default! (image copy 47.png: Do not pre install Ads free or With Ads)
   const defaultPricingPlans = {
@@ -180,17 +182,44 @@ export default function BrandsManagementScreen({
     showToast(`Plan "${trimmed}" added!`, 'success');
   };
 
-  // Remove a custom plan variant
+  // Rename active plan variant
+  const handleSaveRenamedPlan = () => {
+    const trimmed = editingPlanLabelText.trim();
+    if (!trimmed) {
+      showToast('Please enter a valid plan name', 'error');
+      return;
+    }
+    setPricingPlans(prev => {
+      const cur = prev[activePlanTab];
+      if (!cur) return prev;
+      return {
+        ...prev,
+        [activePlanTab]: {
+          ...cur,
+          label: trimmed
+        }
+      };
+    });
+    setIsEditingPlanLabel(false);
+    showToast(`Plan renamed to "${trimmed}"`, 'success');
+  };
+
+  // Remove a custom plan variant (allow deleting if more than 1 plan exists)
   const handleDeleteCustomPlan = (planKey, e) => {
     e?.stopPropagation();
-    if (planKey === 'general') return;
+    const keys = Object.keys(pricingPlans);
+    if (keys.length <= 1) {
+      showToast('At least one plan must remain', 'error');
+      return;
+    }
     setPricingPlans(prev => {
       const copy = { ...prev };
       delete copy[planKey];
       return copy;
     });
     if (activePlanTab === planKey) {
-      setActivePlanTab('general');
+      const remaining = keys.filter(k => k !== planKey);
+      setActivePlanTab(remaining[0] || 'general');
     }
     showToast('Plan removed', 'info');
   };
@@ -302,9 +331,13 @@ export default function BrandsManagementScreen({
         }
       });
 
-      // Backward compatible mirror: prices & plans reflect General
-      const generalPrices = formattedPricingPlans.general?.prices || {};
-      const generalPlans = Object.keys(generalPrices);
+      // Backward compatible mirror: prices & plans reflect primary/active plan
+      const primaryKey = formattedPricingPlans[activePlanTab]
+        ? activePlanTab
+        : (Object.keys(formattedPricingPlans)[0] || 'general');
+      const primaryPlanObj = formattedPricingPlans[primaryKey] || Object.values(formattedPricingPlans)[0] || {};
+      const primaryPrices = primaryPlanObj.prices || formattedPricingPlans.general?.prices || {};
+      const primaryPlans = Object.keys(primaryPrices);
 
       const brandPayload = {
         name: name.trim(),
@@ -315,10 +348,11 @@ export default function BrandsManagementScreen({
         badgeColor: brandColor,
         screensCount: Number(screensCount) || 5,
         showScreenPin: showScreenPin !== false,
+        pinEnabled: showScreenPin !== false,
         showDeviceName: showDeviceName !== false,
         groupScreensBy5: groupScreensBy5 !== false,
-        plans: generalPlans.length > 0 ? generalPlans : ['01 Month'],
-        prices: Object.keys(generalPrices).length > 0 ? generalPrices : { '01 Month': 199 },
+        plans: primaryPlans.length > 0 ? primaryPlans : ['01 Month'],
+        prices: Object.keys(primaryPrices).length > 0 ? primaryPrices : { '01 Month': 199 },
         pricingPlans: formattedPricingPlans
       };
 
@@ -363,12 +397,16 @@ export default function BrandsManagementScreen({
       const nextVal = !currentVal;
 
       // Optimistic state update
-      setBrands(prev => prev.map(item => item.id === brandId ? { ...item, [settingKey]: nextVal } : item));
+      const updatePayload = { [settingKey]: nextVal };
+      if (settingKey === 'showScreenPin') {
+        updatePayload.pinEnabled = nextVal;
+      }
+      setBrands(prev => prev.map(item => item.id === brandId ? { ...item, [settingKey]: nextVal, ...(settingKey === 'showScreenPin' ? { pinEnabled: nextVal } : {}) } : item));
 
-      const updated = await api.updateBrand(brandId, { [settingKey]: nextVal });
+      const updated = await api.updateBrand(brandId, updatePayload);
       const settingLabel = settingKey === 'showScreenPin' ? 'Screen PIN' : settingKey === 'showDeviceName' ? 'Device Name' : 'Group Screens by 5';
       showToast(`${b.displayName || b.name}: ${settingLabel} turned ${nextVal ? 'ON' : 'OFF'}`, 'success');
-      if (onBrandUpdated) onBrandUpdated(updated || { ...b, [settingKey]: nextVal });
+      if (onBrandUpdated) onBrandUpdated(updated || { ...b, [settingKey]: nextVal, ...(settingKey === 'showScreenPin' ? { pinEnabled: nextVal } : {}) });
     } catch (err) {
       showToast('Failed to update brand setting', 'error');
       loadBrands();
@@ -467,20 +505,32 @@ export default function BrandsManagementScreen({
                         <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>
                           {brand.screensCount || 5} Screens
                         </span>
-                        {/* Plan variant badges */}
-                        <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '6px', fontWeight: 700 }}>
-                          General
-                        </span>
-                        {hasWithAds && (
-                          <span style={{ fontSize: '10px', background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '6px', fontWeight: 700 }}>
-                            With Ads
-                          </span>
-                        )}
-                        {hasAdFree && (
-                          <span style={{ fontSize: '10px', background: '#f3e8ff', color: '#7e22ce', padding: '1px 6px', borderRadius: '6px', fontWeight: 700 }}>
-                            Ad Free
-                          </span>
-                        )}
+                        {/* Dynamic plan variant badges */}
+                        {(() => {
+                          const planList = Object.values(brand.pricingPlans || {}).filter(p => p && p.enabled !== false);
+                          if (planList.length > 0) {
+                            return planList.map((p, idx) => (
+                              <span
+                                key={idx}
+                                style={{
+                                  fontSize: '10px',
+                                  background: idx === 0 ? '#dbeafe' : '#fef3c7',
+                                  color: idx === 0 ? '#1e40af' : '#b45309',
+                                  padding: '1px 6px',
+                                  borderRadius: '6px',
+                                  fontWeight: 700
+                                }}
+                              >
+                                {p.label || 'Plan'}
+                              </span>
+                            ));
+                          }
+                          return (
+                            <span style={{ fontSize: '10px', background: '#dbeafe', color: '#1e40af', padding: '1px 6px', borderRadius: '6px', fontWeight: 700 }}>
+                              General
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   </div>
@@ -1125,7 +1175,7 @@ export default function BrandsManagementScreen({
                       >
                         <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#16a34a' }} />
                         <span>{config.label}</span>
-                        {key !== 'general' && (
+                        {Object.keys(pricingPlans).length > 1 && (
                           <button
                             type="button"
                             onClick={(e) => handleDeleteCustomPlan(key, e)}
@@ -1149,7 +1199,7 @@ export default function BrandsManagementScreen({
                 </div>
               </div>
 
-              {/* Plan Specific Settings & Toggle for With Ads / Ad-Free */}
+              {/* Plan Specific Settings & Toggle */}
               <div style={{
                 background: '#f8fafc',
                 border: '1.5px solid #e2e8f0',
@@ -1158,9 +1208,87 @@ export default function BrandsManagementScreen({
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#0f172a' }}>
-                      {currentPlanConfig.label}
-                    </span>
+                    {isEditingPlanLabel ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <input
+                          type="text"
+                          value={editingPlanLabelText}
+                          onChange={e => setEditingPlanLabelText(e.target.value)}
+                          style={{
+                            padding: '3px 8px',
+                            borderRadius: '6px',
+                            border: '1.5px solid #2563eb',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            outline: 'none',
+                            width: '120px'
+                          }}
+                          placeholder="Plan Name"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={handleSaveRenamedPlan}
+                          style={{
+                            background: '#16a34a',
+                            color: '#ffffff',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '3px 8px',
+                            fontSize: '11px',
+                            fontWeight: 800,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingPlanLabel(false)}
+                          style={{
+                            background: '#f1f5f9',
+                            color: '#64748b',
+                            border: 'none',
+                            borderRadius: '6px',
+                            padding: '3px 6px',
+                            fontSize: '11px',
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '12.5px', fontWeight: 900, color: '#0f172a' }}>
+                          {currentPlanConfig.label}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanLabelText(currentPlanConfig.label);
+                            setIsEditingPlanLabel(true);
+                          }}
+                          style={{
+                            background: '#eff6ff',
+                            border: '1px solid #bfdbfe',
+                            color: '#2563eb',
+                            borderRadius: '6px',
+                            padding: '2px 6px',
+                            fontSize: '10.5px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '3px'
+                          }}
+                          title="Rename plan (e.g. Zee5 4k)"
+                        >
+                          <Edit2 size={10} />
+                          <span>Rename</span>
+                        </button>
+                      </div>
+                    )}
                     {activePlanTab !== 'general' && (
                       <label style={{
                         display: 'flex',

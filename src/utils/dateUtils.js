@@ -367,22 +367,20 @@ export function isSaleOnBusinessDate(sale, selectedDate, timeZone = 'Asia/Kolkat
   const targetFormatted = target.formatted.toLowerCase();
   const targetIso = target.isoDate;
 
-  // 1. Check activationDate or saleDate
-  if (sale.activationDate) {
-    const actParts = getBusinessDateParts(sale.activationDate, timeZone);
-    if (actParts && (actParts.formatted.toLowerCase() === targetFormatted || actParts.isoDate === targetIso)) {
+  // 1. Transaction date is strictly saleDate or activationDate
+  const txDate = sale.saleDate || sale.activationDate;
+  if (txDate) {
+    const txParts = getBusinessDateParts(txDate, timeZone);
+    if (txParts && (txParts.formatted.toLowerCase() === targetFormatted || txParts.isoDate === targetIso)) {
       return true;
     }
+    // Strict adherence to historical transaction date:
+    // If a transaction date is explicitly specified, the sale belongs ONLY to that date!
+    // Never fall back to system createdAt on another date.
+    return false;
   }
 
-  if (sale.saleDate && sale.saleDate !== sale.activationDate) {
-    const sParts = getBusinessDateParts(sale.saleDate, timeZone);
-    if (sParts && (sParts.formatted.toLowerCase() === targetFormatted || sParts.isoDate === targetIso)) {
-      return true;
-    }
-  }
-
-  // 2. Check createdAt timestamp in the configured business timezone
+  // 2. Check createdAt timestamp ONLY as last-resort fallback for records lacking a transaction date
   if (sale.createdAt) {
     const createdParts = getBusinessDateParts(sale.createdAt, timeZone);
     if (createdParts && (createdParts.isoDate === targetIso || createdParts.formatted.toLowerCase() === targetFormatted)) {

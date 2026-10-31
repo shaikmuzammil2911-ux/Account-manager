@@ -150,10 +150,37 @@ export default function RecentSalesScreen({
     return dates;
   }, [todayStr]);
 
+  // Date strip scrolling ref for auto-centering/scrolling to today/selected date
+  const dateStripContainerRef = useRef(null);
+  const selectedDateBtnRef = useRef(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (selectedDateBtnRef.current) {
+        selectedDateBtnRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      } else if (dateStripContainerRef.current) {
+        dateStripContainerRef.current.scrollLeft = dateStripContainerRef.current.scrollWidth;
+      }
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [activeBrand, filterDate]);
+
   // Add Sale Modal State
   const [localAddSaleOpen, setLocalAddSaleOpen] = useState(false);
   const showAddSaleModal = isAddSaleOpen !== undefined ? isAddSaleOpen : localAddSaleOpen;
   const setAddSaleModalState = (isOpen) => {
+    if (isOpen) {
+      const defaultPrice = activeBrand?.prices?.['01 Month'] || 199;
+      const initialDate = filterDate || todayStr;
+      const isPinEnabled = activeBrand?.showScreenPin !== false && activeBrand?.pinEnabled !== false;
+      setAddSaleForm(prev => ({
+        ...prev,
+        activationDate: prev.customerName ? prev.activationDate : initialDate,
+        expiryDate: prev.customerName ? prev.expiryDate : calculateExpiryDate(initialDate, prev.validity || '01 Month'),
+        amount: prev.amount !== '' ? prev.amount : String(defaultPrice),
+        screenPin: isPinEnabled ? (prev.screenPin || '') : ''
+      }));
+    }
     setLocalAddSaleOpen(isOpen);
     if (!isOpen && onCloseAddSale) onCloseAddSale();
     if (isOpen && onOpenAddSale) onOpenAddSale();
@@ -167,7 +194,7 @@ export default function RecentSalesScreen({
     accountEmail: '',
     accountPassword: '',
     screenNumber: '01',
-    screenPin: '1234',
+    screenPin: '',
     validity: '01 Month',
     activationDate: formatDate(new Date()),
     expiryDate: calculateExpiryDate(formatDate(new Date()), '01 Month'),
@@ -191,6 +218,9 @@ export default function RecentSalesScreen({
 
   const handleToggleSaleLock = (sale) => {
     const isEditing = !!editingSales[sale.id];
+    const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+    const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
+
     if (isEditing) {
       setEditingSales(prev => {
         const copy = { ...prev };
@@ -208,10 +238,10 @@ export default function RecentSalesScreen({
           accountPassword: sale.accountPassword || '',
           validity: sale.validity || '01 Month',
           screenNumber: sale.screenNumber || '01',
-          screenPin: sale.screenPin || '1234',
+          screenPin: isPinEnabled ? (sale.screenPin || '') : '',
           activationDate: sale.activationDate || '',
           expiryDate: sale.expiryDate || '',
-          amount: sale.amount !== undefined ? String(sale.amount) : '',
+          amount: sale.amount !== undefined && sale.amount !== null ? String(sale.amount) : '',
           deviceName: sale.deviceName || '',
           note: sale.note || ''
         }
@@ -239,6 +269,12 @@ export default function RecentSalesScreen({
     const editData = editingSales[sale.id];
     if (!editData) return;
     try {
+      const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+      const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
+      const finalAmount = (editData.amount !== null && editData.amount !== undefined && String(editData.amount).trim() !== '')
+        ? Math.max(0, Number(editData.amount))
+        : (sale.amount !== undefined && sale.amount !== null ? sale.amount : 0);
+
       const payload = {
         customerName: editData.customerName.trim(),
         customerNumber: editData.customerNumber.trim(),
@@ -246,10 +282,11 @@ export default function RecentSalesScreen({
         accountPassword: editData.accountPassword.trim(),
         validity: editData.validity,
         screenNumber: editData.screenNumber,
-        screenPin: editData.screenPin.trim(),
+        screenPin: isPinEnabled ? editData.screenPin.trim() : '',
         activationDate: editData.activationDate,
         expiryDate: editData.expiryDate,
-        amount: Number(editData.amount) || sale.amount,
+        saleDate: editData.activationDate,
+        amount: finalAmount,
         deviceName: editData.deviceName.trim(),
         note: editData.note.trim()
       };
@@ -334,16 +371,18 @@ export default function RecentSalesScreen({
   useEffect(() => {
     if (activeBrand) {
       const defaultPrice = activeBrand.prices?.['01 Month'] || 199;
+      const initialDate = filterDate || todayStr;
+      const isPinEnabled = activeBrand?.showScreenPin !== false && activeBrand?.pinEnabled !== false;
       setAddSaleForm({
         customerName: '',
         customerNumber: '',
         accountEmail: '',
         accountPassword: '',
         screenNumber: '01',
-        screenPin: '1234',
+        screenPin: isPinEnabled ? '' : '',
         validity: '01 Month',
-        activationDate: formatDate(new Date()),
-        expiryDate: calculateExpiryDate(formatDate(new Date()), '01 Month'),
+        activationDate: initialDate,
+        expiryDate: calculateExpiryDate(initialDate, '01 Month'),
         amount: String(defaultPrice),
         deviceName: '',
         note: ''
@@ -389,11 +428,15 @@ export default function RecentSalesScreen({
   };
 
   const copyFullSaleDetails = (sale) => {
+    const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+    const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
+    const pinPart = isPinEnabled && sale.screenPin ? ` | PIN: ${sale.screenPin}` : '';
+
     let text = `Customer: ${sale.customerName} (${sale.customerNumber})
 OTT Brand: ${sale.brandName}
 Account Email: ${sale.accountEmail}
 Password: ${sale.accountPassword}
-Screen: ${sale.screenNumber} | PIN: ${sale.screenPin}
+Screen: ${sale.screenNumber}${pinPart}
 Validity: ${sale.validity}
 Activation: ${sale.activationDate}
 Expiry: ${sale.expiryDate}`;
@@ -417,6 +460,8 @@ Expiry: ${sale.expiryDate}`;
     const cleanPhone = (sale.customerNumber || '').replace(/\D/g, '');
     const phoneParam = cleanPhone.length === 10 ? `91${cleanPhone}` : cleanPhone;
     const savedTemplate = localStorage.getItem('accounts_whatsapp_sale_template');
+    const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+    const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
 
     const credentialsMessage = formatSaleConfirmationMessage({
       customerName: sale.customerName,
@@ -427,7 +472,7 @@ Expiry: ${sale.expiryDate}`;
       accountEmail: sale.accountEmail,
       accountPassword: sale.accountPassword,
       screenNumber: sale.screenNumber,
-      screenPin: sale.screenPin,
+      screenPin: isPinEnabled ? sale.screenPin : '',
       deviceName: sale.deviceName,
       validity: sale.validity,
       activationDate: sale.activationDate,
@@ -485,6 +530,11 @@ Expiry: ${sale.expiryDate}`;
       setSavingSale(true);
       const targetBrandId = (activeBrand && activeBrand.id !== 'all') ? activeBrand.id : (brands[0]?.id || 'netflix');
       const targetBrand = brands.find(b => b.id === targetBrandId) || activeBrand;
+      const isPinEnabled = targetBrand?.showScreenPin !== false && targetBrand?.pinEnabled !== false;
+      const finalAmount = (addSaleForm.amount !== null && addSaleForm.amount !== undefined && String(addSaleForm.amount).trim() !== '')
+        ? Math.max(0, Number(addSaleForm.amount))
+        : (targetBrand?.prices?.[addSaleForm.validity] !== undefined ? Number(targetBrand.prices[addSaleForm.validity]) : 199);
+
       const payload = {
         brandId: targetBrandId,
         brandName: targetBrand?.displayName || targetBrand?.name || 'Netflix',
@@ -494,11 +544,12 @@ Expiry: ${sale.expiryDate}`;
         accountEmail: addSaleForm.accountEmail.trim(),
         accountPassword: addSaleForm.accountPassword.trim() || 'Secure@123',
         screenNumber: addSaleForm.screenNumber,
-        screenPin: addSaleForm.screenPin.trim() || '1234',
+        screenPin: isPinEnabled ? addSaleForm.screenPin.trim() : '',
         validity: addSaleForm.validity,
         activationDate: addSaleForm.activationDate,
         expiryDate: addSaleForm.expiryDate,
-        amount: Number(addSaleForm.amount) || activeBrand.prices?.[addSaleForm.validity] || 199,
+        saleDate: addSaleForm.activationDate,
+        amount: finalAmount,
         deviceName: addSaleForm.deviceName.trim(),
         note: addSaleForm.note.trim()
       };
@@ -878,60 +929,69 @@ Expiry: ${sale.expiryDate}`;
         </div>
 
         {/* Row 4: Validity, Screen No & Screen Pin with Headings ABOVE & Colored Boxes */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-          <div>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
-            <div style={{ background: '#eff6ff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #93c5fd', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              {isEditing ? (
-                <select
-                  value={editState.validity}
-                  onChange={e => handleEditingFieldChange(sale.id, 'validity', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 900, color: '#1d4ed8', outline: 'none', textAlign: 'center' }}
-                >
-                  <option value="01 Month">01 Month</option>
-                  <option value="03 Months">03 Months</option>
-                  <option value="06 Months">06 Months</option>
-                  <option value="12 Months">12 Months</option>
-                </select>
-              ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#1d4ed8' }}>{sale.validity}</span>
-              )}
-            </div>
-          </div>
+        {(() => {
+          const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+          const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
 
-          <div>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
-            <div style={{ background: '#fefce8', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #facc15', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              {isEditing ? (
-                <input
-                  type="text"
-                  value={editState.screenNumber}
-                  onChange={e => handleEditingFieldChange(sale.id, 'screenNumber', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#854d0e', outline: 'none', textAlign: 'center' }}
-                />
-              ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#854d0e' }}>{sale.screenNumber}</span>
-              )}
-            </div>
-          </div>
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: isPinEnabled ? '1.2fr 1fr 1fr' : '1.2fr 1fr', gap: '8px', marginBottom: '8px' }}>
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
+                <div style={{ background: '#eff6ff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #93c5fd', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                  {isEditing ? (
+                    <select
+                      value={editState.validity}
+                      onChange={e => handleEditingFieldChange(sale.id, 'validity', e.target.value)}
+                      style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '12px', fontWeight: 900, color: '#1d4ed8', outline: 'none', textAlign: 'center' }}
+                    >
+                      <option value="01 Month">01 Month</option>
+                      <option value="03 Months">03 Months</option>
+                      <option value="06 Months">06 Months</option>
+                      <option value="12 Months">12 Months</option>
+                    </select>
+                  ) : (
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#1d4ed8' }}>{sale.validity}</span>
+                  )}
+                </div>
+              </div>
 
-          <div>
-            <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
-            <div style={{ background: '#ecfeff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #67e8f9', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-              {isEditing ? (
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={editState.screenPin}
-                  onChange={e => handleEditingFieldChange(sale.id, 'screenPin', e.target.value)}
-                  style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0e7490', outline: 'none', textAlign: 'center' }}
-                />
-              ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#0e7490' }}>{sale.screenPin}</span>
+              <div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
+                <div style={{ background: '#fefce8', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #facc15', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editState.screenNumber}
+                      onChange={e => handleEditingFieldChange(sale.id, 'screenNumber', e.target.value)}
+                      style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#854d0e', outline: 'none', textAlign: 'center' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#854d0e' }}>{sale.screenNumber}</span>
+                  )}
+                </div>
+              </div>
+
+              {isPinEnabled && (
+                <div>
+                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
+                  <div style={{ background: '#ecfeff', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #67e8f9', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                    {isEditing ? (
+                      <input
+                        type="text"
+                        maxLength={6}
+                        value={editState.screenPin}
+                        onChange={e => handleEditingFieldChange(sale.id, 'screenPin', e.target.value)}
+                        style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 900, color: '#0e7490', outline: 'none', textAlign: 'center' }}
+                      />
+                    ) : (
+                      <span style={{ fontSize: '13px', fontWeight: 900, color: '#0e7490' }}>{sale.screenPin}</span>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Row 5: Activation Date, Expiry Date & Amount side-by-side with Headings ABOVE & Colored Boxes */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px', marginBottom: '8px' }}>
@@ -981,7 +1041,9 @@ Expiry: ${sale.expiryDate}`;
                   />
                 </div>
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 900, color: '#7c3aed' }}>₹{sale.amount || 199}</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#7c3aed' }}>
+                  ₹{sale.amount !== undefined && sale.amount !== null && String(sale.amount).trim() !== '' ? sale.amount : 0}
+                </span>
               )}
             </div>
           </div>
@@ -1242,6 +1304,7 @@ Expiry: ${sale.expiryDate}`;
         }}>
           {/* Horizontally Scrollable Dates Strip with month/weekday/day number */}
           <div
+            ref={dateStripContainerRef}
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -1291,6 +1354,7 @@ Expiry: ${sale.expiryDate}`;
               return (
                 <button
                   key={item.dateStr}
+                  ref={isSelected ? selectedDateBtnRef : null}
                   type="button"
                   onClick={() => {
                     setFilterDate(item.dateStr);
@@ -1747,81 +1811,88 @@ Expiry: ${sale.expiryDate}`;
                 </div>
               </div>
 
-              {/* Row 4: Validity, Screen No, Screen PIN */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '8px' }}>
-                <div>
-                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
-                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                    <select
-                      value={addSaleForm.validity}
-                      onChange={e => handleAddSaleChange('validity', e.target.value)}
-                      style={{
-                        width: '100%',
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        color: '#0f172a',
-                        outline: 'none',
-                        textAlign: 'center'
-                      }}
-                    >
-                      <option value="01 Month">01 Month</option>
-                      <option value="03 Months">03 Months</option>
-                      <option value="06 Months">06 Months</option>
-                      <option value="12 Months">12 Months</option>
-                    </select>
-                  </div>
-                </div>
+              {/* Row 4: Validity, Screen No, Screen PIN (Conditional per brand settings) */}
+              {(() => {
+                const addSalePinEnabled = activeBrand?.showScreenPin !== false && activeBrand?.pinEnabled !== false;
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: addSalePinEnabled ? '1.2fr 1fr 1fr' : '1.2fr 1fr', gap: '8px' }}>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Validity</div>
+                      <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                        <select
+                          value={addSaleForm.validity}
+                          onChange={e => handleAddSaleChange('validity', e.target.value)}
+                          style={{
+                            width: '100%',
+                            border: 'none',
+                            background: 'transparent',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            color: '#0f172a',
+                            outline: 'none',
+                            textAlign: 'center'
+                          }}
+                        >
+                          <option value="01 Month">01 Month</option>
+                          <option value="03 Months">03 Months</option>
+                          <option value="06 Months">06 Months</option>
+                          <option value="12 Months">12 Months</option>
+                        </select>
+                      </div>
+                    </div>
 
-                <div>
-                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
-                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                    <select
-                      value={addSaleForm.screenNumber}
-                      onChange={e => handleAddSaleChange('screenNumber', e.target.value)}
-                      style={{
-                        width: '100%',
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: '12px',
-                        fontWeight: 800,
-                        color: '#0f172a',
-                        outline: 'none',
-                        textAlign: 'center'
-                      }}
-                    >
-                      {Array.from({ length: activeBrand.screensCount || 5 }, (_, i) => {
-                        const num = String(i + 1).padStart(2, '0');
-                        return <option key={num} value={num}>Screen {num}</option>;
-                      })}
-                    </select>
-                  </div>
-                </div>
+                    <div>
+                      <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
+                      <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                        <select
+                          value={addSaleForm.screenNumber}
+                          onChange={e => handleAddSaleChange('screenNumber', e.target.value)}
+                          style={{
+                            width: '100%',
+                            border: 'none',
+                            background: 'transparent',
+                            fontSize: '12px',
+                            fontWeight: 800,
+                            color: '#0f172a',
+                            outline: 'none',
+                            textAlign: 'center'
+                          }}
+                        >
+                          {Array.from({ length: activeBrand?.screensCount || 5 }, (_, i) => {
+                            const num = String(i + 1).padStart(2, '0');
+                            return <option key={num} value={num}>Screen {num}</option>;
+                          })}
+                        </select>
+                      </div>
+                    </div>
 
-                <div>
-                  <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
-                  <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
-                    <input
-                      type="text"
-                      maxLength={6}
-                      placeholder=""
-                      value={addSaleForm.screenPin}
-                      onChange={e => handleAddSaleChange('screenPin', e.target.value)}
-                      style={{
-                        width: '100%',
-                        border: 'none',
-                        background: 'transparent',
-                        fontSize: '13px',
-                        fontWeight: 900,
-                        color: '#0f172a',
-                        outline: 'none',
-                        textAlign: 'center'
-                      }}
-                    />
+                    {addSalePinEnabled && (
+                      <div>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>PIN</div>
+                        <div style={{ background: '#f8fafc', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #cbd5e1', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                          <input
+                            type="text"
+                            maxLength={6}
+                            placeholder=""
+                            value={addSaleForm.screenPin}
+                            onChange={e => handleAddSaleChange('screenPin', e.target.value)}
+                            style={{
+                              width: '100%',
+                              border: 'none',
+                              background: 'transparent',
+                              fontSize: '13px',
+                              fontWeight: 900,
+                              color: '#0f172a',
+                              outline: 'none',
+                              textAlign: 'center'
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {/* Row 5: Activation Date, Expiry Date & Amount (3 columns matching Image 63) */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
