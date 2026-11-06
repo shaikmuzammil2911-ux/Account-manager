@@ -679,6 +679,86 @@ export default function FormBuilderCanvas({
     showToast('Added Customer Details section', 'success');
   };
 
+  // Add Individual Screen & PIN Components (Field-level editing upgrade)
+  const handleAddScreenPinRow = (count = 5) => {
+    const nextY = Math.max(...elements.map(e => e.y + (e.height || 44)), 100) + 15;
+    const newItems = [];
+    const itemWidth = 64;
+    const gap = 8;
+
+    // 1. PIN Slots Row
+    for (let i = 1; i <= count; i++) {
+      newItems.push({
+        id: `pin_slot_${i}_${Date.now()}`,
+        type: 'field',
+        label: `PIN ${i}`,
+        placeholder: '1234',
+        fieldType: 'text',
+        fieldBinding: 'screenPin',
+        screenNumber: i,
+        x: 20 + (i - 1) * (itemWidth + gap),
+        y: nextY,
+        width: itemWidth,
+        height: 38,
+        badgeColor: '#0284c7',
+        bgColor: '#f0f9ff',
+        borderColor: '#bae6fd',
+        textColor: '#0369a1',
+        fontSize: 11
+      });
+    }
+
+    // 2. Screen Slots Row
+    for (let i = 1; i <= count; i++) {
+      newItems.push({
+        id: `screen_slot_${i}_${Date.now()}`,
+        type: 'field',
+        label: `Screen-${String(i).padStart(2, '0')}`,
+        placeholder: `0${i}`,
+        fieldType: 'text',
+        fieldBinding: 'screenNumber',
+        screenNumber: i,
+        deviceIcon: 'tv',
+        x: 20 + (i - 1) * (itemWidth + gap),
+        y: nextY + 46,
+        width: itemWidth,
+        height: 42,
+        badgeColor: '#ea580c',
+        bgColor: '#ea580c',
+        borderColor: '#c2410c',
+        textColor: '#ffffff',
+        fontSize: 11,
+        fontWeight: '900'
+      });
+    }
+
+    setElements(prev => [...prev, ...newItems]);
+    showToast(`Added ${count} Screen & PIN slots`, 'success');
+  };
+
+  // Add Functional WhatsApp Action Button
+  const handleAddWhatsAppButton = () => {
+    const nextY = Math.max(...elements.map(e => e.y + (e.height || 44)), 100) + 15;
+    const waBtn = {
+      id: `btn_wa_${Date.now()}`,
+      type: 'button',
+      label: 'Send via WhatsApp',
+      btnType: 'whatsapp',
+      functionAction: 'open_whatsapp',
+      x: 20,
+      y: nextY,
+      width: 350,
+      height: 46,
+      bgColor: '#16a34a',
+      textColor: '#ffffff',
+      icon: 'whatsapp'
+    };
+    setElements(prev => [...prev, waBtn]);
+    setSelectedElementId(waBtn.id);
+    setActiveToolTab('button');
+    showToast('Added WhatsApp Action Button', 'success');
+  };
+
   // Save the customized form layout
   const handleSave = async () => {
     if (!formName.trim()) {
@@ -806,6 +886,47 @@ export default function FormBuilderCanvas({
             <Save size={16} strokeWidth={2.5} />
             <span>Save Form</span>
           </button>
+        </div>
+      </div>
+
+      {/* 3-Step Creation Flow Bar (Prompts 2 & 3 requirement: Design -> Connect Data -> Save & Publish) */}
+      <div style={{
+        background: '#ffffff',
+        borderBottom: '1px solid #e2e8f0',
+        padding: '8px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        fontSize: '12px',
+        fontWeight: 800,
+        overflowX: 'auto',
+        userSelect: 'none'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#2563eb' }}>
+          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#2563eb', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>1</span>
+          <span>Design Layout</span>
+        </div>
+        <span style={{ color: '#cbd5e1', fontWeight: 900 }}>→</span>
+        <div
+          onClick={() => {
+            setShowToolsPanel(true);
+            setActiveToolTab('field');
+          }}
+          style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#64748b', cursor: 'pointer' }}
+          title="Click to map data fields"
+        >
+          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#e2e8f0', color: '#475569', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>2</span>
+          <span>Connect / Link Data</span>
+        </div>
+        <span style={{ color: '#cbd5e1', fontWeight: 900 }}>→</span>
+        <div
+          onClick={handleSave}
+          style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#16a34a', cursor: 'pointer' }}
+          title="Click to publish form"
+        >
+          <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#16a34a', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>3</span>
+          <span>Save & Publish</span>
         </div>
       </div>
 
@@ -1648,6 +1769,48 @@ export default function FormBuilderCanvas({
                     >
                       <span>+ Add Customer Details</span>
                       <User size={16} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddScreenPinRow(5)}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #fed7aa',
+                        background: '#fff7ed',
+                        color: '#ea580c',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span>+ Add Screen & PIN Row (1-5)</span>
+                      <Tv size={16} />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleAddWhatsAppButton}
+                      style={{
+                        padding: '10px 14px',
+                        borderRadius: '10px',
+                        border: '1.5px solid #bbf7d0',
+                        background: '#f0fdf4',
+                        color: '#15803d',
+                        fontWeight: 800,
+                        fontSize: '12.5px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      <span>+ Add WhatsApp Button</span>
+                      <Smartphone size={16} />
                     </button>
                   </div>
                 </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft, Plus, ChevronRight, CheckCircle2,
   Lock, Unlock, Check, Tv, X, AlertTriangle, Sparkles,
-  Sliders, PenTool, ClipboardList, Database, ShoppingBag, Eye, EyeOff
+  Sliders, PenTool, ClipboardList, Database, ShoppingBag, Eye, EyeOff, Copy
 } from 'lucide-react';
 import FormBuilderCanvas from './FormBuilderCanvas';
 import SaleScreen from './SaleScreen';
@@ -210,15 +210,35 @@ export default function FormsManagementScreen({
     }
   };
 
-  // Save Brand Assignment (either All Brands or individual selection)
-  const handleSaveBrandAssignment = async (formId, { brands: newBrands, isAllBrands }) => {
+  // Duplicate Form Template with new unique form_id (Image copy 217 requirement)
+  const handleDuplicateForm = async (form) => {
     try {
-      await api.updateCustomForm(formId, { brands: newBrands, isAllBrands });
-      setCustomForms(prev => prev.map(f => f.id === formId ? { ...f, brands: newBrands, isAllBrands } : f));
-      setBrandAssignForm(null);
-      showToast(isAllBrands ? 'Assigned to All Brands!' : 'Brand selection saved!', 'success');
-    } catch (err) {
-      showToast('Failed to update brand assignment', 'error');
+      const clonedId = `form_custom_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const clonedTitle = `${form.name || form.title || 'Custom Form'} (Copy)`;
+      const clonedTemplate = {
+        ...JSON.parse(JSON.stringify(form)),
+        id: clonedId,
+        form_id: clonedId,
+        name: clonedTitle,
+        title: clonedTitle,
+        isDefault: false,
+        isLocked: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      await api.createCustomForm(clonedTemplate);
+      setCustomForms(prev => [...prev, clonedTemplate]);
+      showToast(`Form duplicated as "${clonedTitle}" and opened in builder!`, 'success');
+
+      // Immediately open duplicate directly in Visual Form Builder
+      setOpenedForm({
+        type: activeSection,
+        template: clonedTemplate,
+        mode: 'builder'
+      });
+    } catch (e) {
+      showToast('Failed to duplicate form: ' + (e.message || 'Error'), 'error');
     }
   };
 
@@ -996,6 +1016,34 @@ export default function FormsManagementScreen({
                   <span>Unlock</span>
                 </>
               )}
+            </button>
+
+            {/* Middle: Copy / Duplicate Button (Image copy 217 requirement) */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDuplicateForm(form);
+              }}
+              id={`copy-form-btn-${form.id}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '8px 14px',
+                borderRadius: '10px',
+                background: '#f8fafc',
+                border: '1.5px solid #cbd5e1',
+                color: '#334155',
+                fontSize: '12.5px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+              }}
+              title="Duplicate this form template"
+            >
+              <Copy size={14} color="#0284c7" strokeWidth={2.5} />
+              <span>Copy</span>
             </button>
 
             {/* Right: Open Button */}

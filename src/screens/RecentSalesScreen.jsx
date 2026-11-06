@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Calendar, Search, ArrowUpDown, Phone, User, Mail, Lock, Unlock, Save, Tv,
   Key, Share2, Check, ArrowLeft, ChevronRight, Layers, Clock, AlertTriangle, Plus, X, FileText,
-  RefreshCw, CheckCircle2, Trash2, Edit3
+  RefreshCw, CheckCircle2, Trash2, Edit3, Smartphone, Laptop, Tablet, Copy
 } from 'lucide-react';
 import { api } from '../api/client';
 import { formatDate, parseDate, calculateExpiryDate, formatTimelineDateBadge } from '../utils/dateUtils';
@@ -491,6 +491,39 @@ Expiry: ${sale.expiryDate}`;
     showToast(`Opening WhatsApp for ${sale.customerName}...`, 'success');
   };
 
+  // Copy complete formatted WhatsApp message to clipboard (Image copy 211 requirement)
+  const copyWhatsAppMessage = (sale) => {
+    const brandObj = brands.find(b => b.id === (sale.brandId || activeBrand?.id)) || activeBrand;
+    const isPinEnabled = brandObj?.showScreenPin !== false && brandObj?.pinEnabled !== false;
+    const savedTemplate = localStorage.getItem('accounts_whatsapp_sale_template');
+
+    const credentialsMessage = formatSaleConfirmationMessage({
+      customerName: sale.customerName,
+      customerNumber: sale.customerNumber,
+      customerPhone: sale.customerNumber,
+      brandName: sale.brandName || activeBrand?.displayName || 'Netflix',
+      pricingPlan: sale.pricingPlan || sale.planVariant || 'General',
+      accountEmail: sale.accountEmail,
+      accountPassword: sale.accountPassword,
+      screenNumber: sale.screenNumber,
+      screenPin: isPinEnabled ? sale.screenPin : '',
+      deviceName: sale.deviceName,
+      validity: sale.validity,
+      activationDate: sale.activationDate,
+      expiryDate: sale.expiryDate,
+      amount: sale.amount,
+      referenceName: sale.referenceName || '',
+      referenceNumber: sale.referenceNumber || sale.referencePhone || ''
+    }, savedTemplate);
+
+    try {
+      navigator.clipboard.writeText(credentialsMessage);
+      showToast('WhatsApp message copied to clipboard!', 'success');
+    } catch (e) {
+      showToast('Copied to clipboard', 'success');
+    }
+  };
+
   // Handle Add Sale Form field changes
   const handleAddSaleChange = (field, value) => {
     setAddSaleForm(prev => {
@@ -957,7 +990,14 @@ Expiry: ${sale.expiryDate}`;
 
               <div>
                 <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, textAlign: 'center', marginBottom: '3px' }}>Screen No</div>
-                <div style={{ background: '#fefce8', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #facc15', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+                <div style={{ background: '#fefce8', padding: '6px 6px', borderRadius: '8px', border: '1.5px solid #facc15', textAlign: 'center', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', boxSizing: 'border-box' }}>
+                  {(() => {
+                    const dev = String(sale.deviceType || sale.deviceName || 'tv').toLowerCase();
+                    if (dev.includes('mobile')) return <Smartphone size={14} color="#854d0e" />;
+                    if (dev.includes('laptop') || dev.includes('pc')) return <Laptop size={14} color="#854d0e" />;
+                    if (dev.includes('tablet')) return <Tablet size={14} color="#854d0e" />;
+                    return <Tv size={14} color="#854d0e" />;
+                  })()}
                   {isEditing ? (
                     <input
                       type="text"
@@ -1081,34 +1121,68 @@ Expiry: ${sale.expiryDate}`;
         <div>
           <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '3px' }}>Device Name</div>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {/* Device Name Box */}
+            {/* Device Name Box (Image copy 211, 213, 214) */}
             <div style={{
               flex: 1,
               height: '44px',
               background: '#f8fafc',
               border: '1.5px solid #94a3b8',
               borderRadius: '10px',
-              padding: '0 10px',
+              padding: '0 8px',
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '6px',
               minWidth: 0,
               boxSizing: 'border-box'
             }}>
-              <Tv size={17} color="#64748b" style={{ flexShrink: 0 }} />
+              {(() => {
+                const dev = String(sale.deviceType || sale.deviceName || 'tv').toLowerCase();
+                if (dev.includes('mobile')) return <Smartphone size={17} color="#64748b" style={{ flexShrink: 0 }} />;
+                if (dev.includes('laptop') || dev.includes('pc')) return <Laptop size={17} color="#64748b" style={{ flexShrink: 0 }} />;
+                if (dev.includes('tablet')) return <Tablet size={17} color="#64748b" style={{ flexShrink: 0 }} />;
+                return <Tv size={17} color="#64748b" style={{ flexShrink: 0 }} />;
+              })()}
               {isEditing ? (
                 <input
                   type="text"
-                  value={editState.deviceName}
+                  placeholder="Custom device"
+                  value={editState.deviceName && !['tv', 'mobile', 'laptop', 'pc', 'tablet'].includes(editState.deviceName.toLowerCase().trim()) ? editState.deviceName : ''}
                   onChange={e => handleEditingFieldChange(sale.id, 'deviceName', e.target.value)}
                   style={{ width: '100%', border: 'none', background: 'transparent', fontSize: '13px', fontWeight: 800, color: '#0f172a', outline: 'none' }}
                 />
               ) : (
-                <span style={{ fontSize: '13px', fontWeight: 800, color: sale.deviceName ? '#0f172a' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {sale.deviceName || '-'}
+                <span style={{ fontSize: '13px', fontWeight: 800, color: (sale.deviceName && !['tv', 'mobile', 'laptop', 'pc', 'tablet'].includes(sale.deviceName.toLowerCase().trim())) ? '#0f172a' : '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {(sale.deviceName && !['tv', 'mobile', 'laptop', 'pc', 'tablet'].includes(sale.deviceName.toLowerCase().trim())) ? sale.deviceName.trim() : '-'}
                 </span>
               )}
             </div>
+
+            {/* Copy WhatsApp message button (Image copy 211) */}
+            <button
+              type="button"
+              onClick={() => copyWhatsAppMessage(sale)}
+              title="Copy formatted WhatsApp message"
+              style={{
+                height: '44px',
+                padding: '0 10px',
+                borderRadius: '10px',
+                background: '#f1f5f9',
+                border: '1.5px solid #cbd5e1',
+                color: '#334155',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '4px',
+                cursor: 'pointer',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                flexShrink: 0,
+                fontSize: '12px',
+                fontWeight: 800
+              }}
+            >
+              <Copy size={15} color="#0284c7" />
+              <span>Copy</span>
+            </button>
 
             {/* Direct WhatsApp Chat Icon Button with Crisp Official WhatsApp Icon (image copy 71) */}
             <button

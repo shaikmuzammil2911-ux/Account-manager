@@ -38,7 +38,8 @@ export default function SaleScreen({
   const [screenPin, setScreenPin] = useState(prefillData?.pin || '');
   const [amount, setAmount] = useState(prefillData?.amount !== undefined && prefillData?.amount !== null ? String(prefillData.amount) : '');
   const [isAmountManuallyEdited, setIsAmountManuallyEdited] = useState(Boolean(prefillData?.amount !== undefined && prefillData?.amount !== null));
-  const [deviceName, setDeviceName] = useState(prefillData?.deviceName || '');
+  const [deviceType, setDeviceType] = useState(prefillData?.deviceType || (prefillData?.deviceName && ['tv', 'mobile', 'laptop', 'tablet', 'pc'].includes(String(prefillData.deviceName).toLowerCase()) ? prefillData.deviceName : 'TV'));
+  const [deviceName, setDeviceName] = useState(prefillData?.customDeviceName || (prefillData?.deviceName && !['tv', 'mobile', 'laptop', 'tablet', 'pc'].includes(String(prefillData.deviceName).toLowerCase()) ? prefillData.deviceName : ''));
 
   const [customerName, setCustomerName] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
@@ -283,7 +284,9 @@ export default function SaleScreen({
         screenNumber: screenNumber.trim() || '01',
         screenPin: showPin ? screenPin.trim() : '',
         amount: finalAmount,
+        deviceType: showDev ? (deviceType || 'TV') : 'TV',
         deviceName: showDev ? deviceName.trim() : '',
+        customDeviceName: showDev ? deviceName.trim() : '',
         customerName: customerName.trim(),
         customerNumber: customerNumber.trim(),
         referenceName: referenceName.trim(),
@@ -859,8 +862,8 @@ export default function SaleScreen({
                     <div className="sale-label-compact">Device</div>
                     <select
                       className="sale-input-compact"
-                      value={deviceName}
-                      onChange={e => setDeviceName(e.target.value)}
+                      value={deviceType}
+                      onChange={e => setDeviceType(e.target.value)}
                       id="sale-device-name"
                       style={{
                         background: '#f8fafc',
@@ -871,7 +874,6 @@ export default function SaleScreen({
                         cursor: 'pointer'
                       }}
                     >
-                      <option value="">Select Device</option>
                       <option value="TV">TV</option>
                       <option value="Mobile">Mobile</option>
                       <option value="Laptop">Laptop</option>

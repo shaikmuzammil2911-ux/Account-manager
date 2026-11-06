@@ -41,6 +41,67 @@ export default function InventoryScreen({
   const [screenDateModal, setScreenDateModal] = useState(null); // { itemId, screenIndex, currentDate }
   const [userDetailsModal, setUserDetailsModal] = useState(null); // { name, number, sold, plan, activation, expiry, amount, device, refName, refNumber }
   const [starModalItem, setStarModalItem] = useState(null);
+  const [planLabels, setPlanLabels] = useState([]);
+  const [showBadgeDesignerModal, setShowBadgeDesignerModal] = useState(false);
+  const [selectedAccountForBadge, setSelectedAccountForBadge] = useState(null);
+  const [newBadgeForm, setNewBadgeForm] = useState({
+    name: '',
+    icon: '✨',
+    bgColor: '#7c3aed',
+    textColor: '#ffffff',
+    borderColor: '#a855f7'
+  });
+
+  useEffect(() => {
+    if (api && api.getPlanLabels) {
+      api.getPlanLabels().then(labels => {
+        if (Array.isArray(labels)) setPlanLabels(labels);
+      }).catch(() => {});
+    }
+  }, []);
+
+  const handleCyclePlanBadge = (item) => {
+    if (planLabels.length === 0) return;
+    const currentVal = editingCards[item.id]?.planBadge || item.planBadge || editingCards[item.id]?.planVariant || item.planVariant || '';
+    const curIdx = planLabels.findIndex(l => l.name?.toLowerCase() === String(currentVal).toLowerCase() || l.id === currentVal);
+    const nextIdx = (curIdx + 1) % (planLabels.length + 1);
+    const nextBadge = nextIdx === planLabels.length ? '' : planLabels[nextIdx].name;
+
+    setEditingCards(prev => ({
+      ...prev,
+      [item.id]: {
+        ...prev[item.id],
+        planBadge: nextBadge,
+        planVariant: nextBadge || 'General'
+      }
+    }));
+  };
+
+  const handleSaveNewBadge = async () => {
+    if (!newBadgeForm.name.trim()) {
+      showToast('Please enter a badge name', 'error');
+      return;
+    }
+    try {
+      const saved = await api.savePlanLabel(newBadgeForm);
+      setPlanLabels(prev => [...prev.filter(l => l.id !== saved.id), saved]);
+      if (selectedAccountForBadge) {
+        setEditingCards(prev => ({
+          ...prev,
+          [selectedAccountForBadge.id]: {
+            ...prev[selectedAccountForBadge.id],
+            planBadge: saved.name,
+            planVariant: saved.name
+          }
+        }));
+      }
+      showToast(`Badge "${saved.name}" saved and applied!`, 'success');
+      setShowBadgeDesignerModal(false);
+      setNewBadgeForm({ name: '', icon: '✨', bgColor: '#7c3aed', textColor: '#ffffff', borderColor: '#a855f7' });
+    } catch (e) {
+      showToast('Failed to save badge', 'error');
+    }
+  };
 
   const handleOpenSoldScreenDetails = async (item, screen, sIdx) => {
     try {
@@ -579,6 +640,7 @@ export default function InventoryScreen({
         password: editState.password,
         validity: editState.validity,
         planVariant: editState.planVariant || item.planVariant || 'General',
+        planBadge: editState.planBadge !== undefined ? editState.planBadge : (item.planBadge || null),
         passwordChangeRequired: false,
         manualStatus: editState.status !== undefined ? editState.status : (item.manualStatus || null),
         screens: updatedScreens
@@ -1134,6 +1196,71 @@ export default function InventoryScreen({
                 </div>
               </div>
 
+              {/* Custom Plan Badge / Label (Image copy 222 & Master Implementation Prompt) */}
+              {(() => {
+                const badgeVal = isEditing ? (editState.planBadge !== undefined ? editState.planBadge : (item.planBadge || editState.planVariant || item.planVariant)) : (item.planBadge || item.planVariant);
+                const matchedBadge = planLabels.find(l => l.name?.toLowerCase() === String(badgeVal || '').toLowerCase() || l.id === badgeVal);
+                if (!matchedBadge && (!badgeVal || badgeVal === 'General')) return null;
+
+                const badgeObj = matchedBadge || {
+                  name: badgeVal,
+                  icon: '✨',
+                  bgColor: '#7c3aed',
+                  textColor: '#ffffff',
+                  borderColor: '#a855f7'
+                };
+
+                return (
+                  <div style={{ marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div
+                      onClick={isEditing ? () => handleCyclePlanBadge(item) : undefined}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '6px',
+                        padding: '4px 12px',
+                        borderRadius: badgeObj.borderRadius || '16px',
+                        background: badgeObj.bgColor || '#7c3aed',
+                        color: badgeObj.textColor || '#ffffff',
+                        border: `1.5px solid ${badgeObj.borderColor || '#a855f7'}`,
+                        fontSize: badgeObj.size === 'small' ? '10px' : (badgeObj.size === 'large' ? '13px' : '11.5px'),
+                        fontWeight: 800,
+                        cursor: isEditing ? 'pointer' : 'default',
+                        boxShadow: '0 2px 6px rgba(124, 58, 237, 0.25)',
+                        userSelect: 'none'
+                      }}
+                      title={isEditing ? 'Click to cycle badge' : undefined}
+                    >
+                      {badgeObj.icon && <span>{badgeObj.icon}</span>}
+                      <span>{badgeObj.name}</span>
+                      {isEditing && <span style={{ fontSize: '9px', opacity: 0.8, marginLeft: '2px' }}>▼</span>}
+                    </div>
+
+                    {isEditing && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedAccountForBadge(item);
+                          setShowBadgeDesignerModal(true);
+                        }}
+                        style={{
+                          padding: '2px 8px',
+                          borderRadius: '6px',
+                          border: '1px solid #cbd5e1',
+                          background: '#f8fafc',
+                          color: '#475569',
+                          fontSize: '10.5px',
+                          fontWeight: 700,
+                          cursor: 'pointer'
+                        }}
+                      >
+                        + New Badge
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* ID Row with Copy button */}
               <div className="credential-row">
                 <div className="credential-label-badge blue">
@@ -1286,9 +1413,15 @@ export default function InventoryScreen({
                       {/* 2. Screen Buttons row (Screen number/button) */}
                       <div style={gridStyle}>
                         {groupScreens.map(({ screen, globalIdx }) => {
-                          const devType = isEditing
-                            ? (editState.deviceTypes?.[globalIdx] || screen.deviceType || 'tv')
-                            : (screen.deviceType || 'tv');
+                          const matchingSale = (invSales || []).find(s =>
+                            (s.id === screen.saleId) ||
+                            (!s.isDeleted && s.inventoryId === item.id && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1)) ||
+                            (!s.isDeleted && item.email && String(s.accountEmail || '').toLowerCase().trim() === String(item.email || '').toLowerCase().trim() && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1))
+                          );
+                          const rawDev = isEditing
+                            ? (editState.deviceTypes?.[globalIdx] || screen.deviceType || matchingSale?.deviceType || matchingSale?.deviceName || 'tv')
+                            : (screen.deviceType || matchingSale?.deviceType || matchingSale?.deviceName || 'tv');
+                          const devType = String(rawDev).toLowerCase();
 
                           const currentExpDate = isEditing
                             ? (editState.dates?.[globalIdx] !== undefined ? editState.dates[globalIdx] : screen.expiryDate)
@@ -1355,10 +1488,12 @@ export default function InventoryScreen({
                                 borderRadius: '4px',
                                 background: isEditing ? 'rgba(0,0,0,0.2)' : 'transparent'
                               }}>
-                                {devType === 'mobile' ? (
+                                {devType.includes('mobile') ? (
                                   <Smartphone size={15} strokeWidth={2.5} />
-                                ) : devType === 'laptop' ? (
+                                ) : (devType.includes('laptop') || devType.includes('pc')) ? (
                                   <Laptop size={15} strokeWidth={2.5} />
+                                ) : devType.includes('tablet') ? (
+                                  <Smartphone size={15} strokeWidth={2.5} />
                                 ) : (
                                   <Tv size={15} strokeWidth={2.5} />
                                 )}
@@ -1476,9 +1611,12 @@ export default function InventoryScreen({
                               (!s.isDeleted && s.inventoryId === item.id && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1)) ||
                               (!s.isDeleted && item.email && String(s.accountEmail || '').toLowerCase().trim() === String(item.email || '').toLowerCase().trim() && parseInt(String(s.screenNumber).replace(/\D/g, '') || '0', 10) === (globalIdx + 1))
                             );
-                            const devNameVal = isEditing
+                            const rawDevName = isEditing
                               ? (editState.deviceNames?.[globalIdx] !== undefined ? editState.deviceNames[globalIdx] : (screen.deviceName || matchingSale?.deviceName || ''))
                               : (screen.deviceName || matchingSale?.deviceName || '');
+                            const devNameVal = (rawDevName && !['tv', 'mobile', 'laptop', 'pc', 'tablet'].includes(rawDevName.toLowerCase().trim()))
+                              ? rawDevName.trim()
+                              : '';
 
                             return (
                               <div key={globalIdx} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box' }}>
@@ -2978,6 +3116,214 @@ export default function InventoryScreen({
                   {sellerSaving ? 'Saving...' : 'Save Details'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Plan Label / Badge Designer Modal (Image 222 & Master Implementation Prompt) */}
+      {showBadgeDesignerModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(15, 23, 42, 0.65)',
+            backdropFilter: 'blur(4px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '16px'
+          }}
+        >
+          <div
+            style={{
+              background: '#ffffff',
+              borderRadius: '20px',
+              width: '100%',
+              maxWidth: '420px',
+              padding: '20px',
+              boxShadow: '0 20px 25px -5px rgba(0,0,0,0.2)',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '14px'
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f1f5f9', paddingBottom: '12px' }}>
+              <div style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Sparkles size={18} color="#7c3aed" />
+                <span>Create Custom Plan Badge</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBadgeDesignerModal(false)}
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#64748b' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Live Preview */}
+            <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', textAlign: 'center', border: '1.5px dashed #cbd5e1' }}>
+              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 800, marginBottom: '8px' }}>LIVE CARD PREVIEW</div>
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 14px',
+                borderRadius: '16px',
+                background: newBadgeForm.bgColor || '#7c3aed',
+                color: newBadgeForm.textColor || '#ffffff',
+                border: `1.5px solid ${newBadgeForm.borderColor || '#a855f7'}`,
+                fontSize: '12px',
+                fontWeight: 800,
+                boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
+              }}>
+                <span>{newBadgeForm.icon || '✨'}</span>
+                <span>{newBadgeForm.name || "Ad's Free"}</span>
+              </div>
+            </div>
+
+            {/* Badge Name */}
+            <div>
+              <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Badge Label Text (e.g. Ad's Free, 4K UHD, VIP)
+              </label>
+              <input
+                type="text"
+                value={newBadgeForm.name}
+                onChange={e => setNewBadgeForm(prev => ({ ...prev, name: e.target.value }))}
+                placeholder="e.g. Ad's Free"
+                style={{
+                  width: '100%',
+                  padding: '9px 12px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  boxSizing: 'border-box',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* Icon Quick Picker */}
+            <div>
+              <label style={{ fontSize: '11.5px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Select Icon
+              </label>
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {['✨', '★', '👑', '💎', '🔥', '⚡', '📢', '🎬', '🍿', '🛡️'].map(ic => (
+                  <button
+                    key={ic}
+                    type="button"
+                    onClick={() => setNewBadgeForm(prev => ({ ...prev, icon: ic }))}
+                    style={{
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: '8px',
+                      border: newBadgeForm.icon === ic ? '2px solid #7c3aed' : '1px solid #cbd5e1',
+                      background: newBadgeForm.icon === ic ? '#f3e8ff' : '#ffffff',
+                      fontSize: '16px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    {ic}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Color Pickers: Background, Text, Border */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                  Background
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="color"
+                    value={newBadgeForm.bgColor}
+                    onChange={e => setNewBadgeForm(prev => ({ ...prev, bgColor: e.target.value }))}
+                    style={{ width: '34px', height: '34px', border: 'none', cursor: 'pointer', borderRadius: '6px' }}
+                  />
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a' }}>{newBadgeForm.bgColor}</span>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                  Text Color
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="color"
+                    value={newBadgeForm.textColor}
+                    onChange={e => setNewBadgeForm(prev => ({ ...prev, textColor: e.target.value }))}
+                    style={{ width: '34px', height: '34px', border: 'none', cursor: 'pointer', borderRadius: '6px' }}
+                  />
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a' }}>{newBadgeForm.textColor}</span>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                  Border Color
+                </label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <input
+                    type="color"
+                    value={newBadgeForm.borderColor}
+                    onChange={e => setNewBadgeForm(prev => ({ ...prev, borderColor: e.target.value }))}
+                    style={{ width: '34px', height: '34px', border: 'none', cursor: 'pointer', borderRadius: '6px' }}
+                  />
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a' }}>{newBadgeForm.borderColor}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+              <button
+                type="button"
+                onClick={() => setShowBadgeDesignerModal(false)}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveNewBadge}
+                style={{
+                  flex: 1.5,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 10px rgba(124, 58, 237, 0.35)'
+                }}
+              >
+                Save & Apply Badge
+              </button>
             </div>
           </div>
         </div>

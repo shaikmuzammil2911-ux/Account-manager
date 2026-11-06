@@ -662,23 +662,47 @@ export const api = {
       throw new Error(`Account not found for id: ${id}`);
     }
 
-    // Merge screens cleanly
+    // Merge screens cleanly using stable screen identity & real screen_number (Formula ↔ Database Sync)
     let mergedScreens = existing.screens || [];
     if (updates.screens && Array.isArray(updates.screens)) {
+      // Uniqueness validation: Prevent duplicate screen numbers on the same account
+      const screenNumCounts = {};
+      updates.screens.forEach(s => {
+        const num = Number(s.screenNumber);
+        if (!isNaN(num) && num > 0) {
+          screenNumCounts[num] = (screenNumCounts[num] || 0) + 1;
+          if (screenNumCounts[num] > 1) {
+            throw new Error(`Screen conflict: Screen-${String(num).padStart(2, '0')} is assigned multiple times to this account.`);
+          }
+        }
+      });
+
       mergedScreens = updates.screens.map((newS, sIdx) => {
-        const oldS = existing.screens ? existing.screens[sIdx] : null;
+        // Find existing screen by ID or screenNumber or fallback to index
+        const oldS = (existing.screens || []).find(os =>
+          (newS.id && os.id && String(os.id) === String(newS.id)) ||
+          (newS.screenNumber && Number(os.screenNumber) === Number(newS.screenNumber))
+        ) || (existing.screens ? existing.screens[sIdx] : null);
+
+        const targetScreenNum = Number(newS.screenNumber) || Number(oldS?.screenNumber) || (sIdx + 1);
         const pin = newS.pin !== undefined ? String(newS.pin) : (oldS?.pin || '1234');
         const expiryDate = newS.expiryDate !== undefined ? newS.expiryDate : (oldS?.expiryDate || null);
         const status = newS.status !== undefined ? newS.status : (expiryDate ? 'occupied' : (oldS?.status || 'empty'));
+        const deviceType = newS.deviceType || oldS?.deviceType || 'tv';
         const deviceName = newS.deviceName !== undefined ? String(newS.deviceName).trim() : (oldS?.deviceName || '');
+        const saleId = newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null);
+
         return {
-          screenNumber: sIdx + 1,
-          name: newS.name || oldS?.name || `Screen-${String(sIdx + 1).padStart(2, '0')}`,
+          id: newS.id || oldS?.id || `${existing.id}_scr_${targetScreenNum}`,
+          screenNumber: targetScreenNum,
+          name: newS.name || oldS?.name || `Screen-${String(targetScreenNum).padStart(2, '0')}`,
           pin,
-          deviceType: newS.deviceType || oldS?.deviceType || 'tv',
+          deviceType,
           deviceName,
           status,
-          saleId: newS.saleId !== undefined ? newS.saleId : (oldS?.saleId || null),
+          saleId,
+          customerName: newS.customerName || oldS?.customerName || null,
+          customerNumber: newS.customerNumber || oldS?.customerNumber || null,
           expiryDate
         };
       });
@@ -842,20 +866,26 @@ export const api = {
       }
 
       if (updates.screens && Array.isArray(updates.screens)) {
-        await supabase.from('screens').delete().eq('account_id', id);
         const sbScreens = mergedScreens.map(s => ({
           account_id: id,
           screen_number: s.screenNumber,
           name: s.name,
           pin: String(s.pin),
           device_type: s.deviceType || 'tv',
+          device_name: s.deviceName || '',
           status: s.status || 'empty',
           sale_id: s.saleId || null,
-          expiry_date: s.expiryDate || null
+          expiry_date: s.expiryDate || null,
+          updated_at: new Date().toISOString()
         }));
-        const { error: scrErr } = await supabase.from('screens').insert(sbScreens);
-        if (scrErr) {
-          console.warn('[Supabase updateScreens error]:', scrErr);
+
+        try {
+          const { error: scrErr } = await supabase.from('screens').upsert(sbScreens, { onConflict: 'account_id, screen_number' });
+          if (scrErr) {
+            console.warn('[Supabase updateScreens error]:', scrErr);
+          }
+        } catch (scErr) {
+          console.warn('[Supabase updateScreens caught]:', scErr);
         }
       }
     } catch (e) {
@@ -1243,6 +1273,16 @@ export const api = {
       ? Math.max(0, Number(saleData.amount))
       : (brand?.prices?.[saleData.validity] !== undefined ? Number(brand.prices[saleData.validity]) : 199);
 
+    const detectedDevType = (saleData.deviceType || (['tv', 'mobile', 'laptop', 'tablet', 'pc'].includes(String(saleData.deviceName || '').toLowerCase()) ? String(saleData.deviceName).toLowerCase() : 'tv'));
+    const cleanDeviceName = saleData.customDeviceName !== undefined
+      ? String(saleData.customDeviceName || '').trim()
+      : (['tv', 'mobile', 'laptop', 'tablet', 'pc'].includes(String(saleData.deviceName || '').toLowerCase()) ? '' : String(saleData.deviceName || '').trim());
+
+    if (assignedScreen) {
+      assignedScreen.deviceType = detectedDevType;
+      assignedScreen.deviceName = cleanDeviceName;
+    }
+
     const newSale = {
       id: saleId,
       recordNumber: nextRecordNum,
@@ -1259,6 +1299,8 @@ export const api = {
       pricingPlan: saleData.pricingPlan || 'General',
       screenNumber: saleData.screenNumber || (assignedScreen ? `0${assignedScreen.screenNumber}` : '01'),
       screenPin: finalPin,
+      deviceType: detectedDevType,
+      deviceName: cleanDeviceName,
       activationDate: saleData.activationDate,
       expiryDate: calculatedExpiry,
       amount: finalAmount,
@@ -1295,6 +1337,7 @@ export const api = {
         pricing_plan: newSale.pricingPlan,
         screen_number: newSale.screenNumber,
         screen_pin: newSale.screenPin,
+        device_type: newSale.deviceType,
         device_name: newSale.deviceName,
         activation_date: newSale.activationDate,
         expiry_date: newSale.expiryDate,
@@ -1318,6 +1361,8 @@ export const api = {
             .update({
               status: 'occupied',
               sale_id: saleId,
+              device_type: newSale.deviceType || 'tv',
+              device_name: newSale.deviceName || '',
               expiry_date: calculatedExpiry,
               updated_at: new Date().toISOString()
             })
@@ -3037,5 +3082,150 @@ export const api = {
 
   async uploadLogoToCloudinary(file) {
     return await uploadToCloudinary(file);
+  },
+
+  // Atomic single screen database synchronization (Screen Number Formula ↔ Database Sync)
+  async updateScreen(accountId, screenId, updates) {
+    const local = getLocalData();
+    const acc = (local.inventory || []).find(i => i.id === accountId);
+    if (!acc) throw new Error('Account not found in inventory');
+    
+    // Find screen by stable ID, screen_number, or name
+    const scr = (acc.screens || []).find(s =>
+      (s.id && screenId && String(s.id) === String(screenId)) ||
+      (s.screenNumber && Number(s.screenNumber) === Number(screenId)) ||
+      (s.name && String(s.name) === String(screenId))
+    );
+    if (!scr) throw new Error(`Screen record ${screenId} not found`);
+
+    // Screen number conflict validation
+    if (updates.screenNumber !== undefined && Number(updates.screenNumber) !== Number(scr.screenNumber)) {
+      const targetNum = Number(updates.screenNumber);
+      const conflict = (acc.screens || []).find(s =>
+        s !== scr &&
+        (Number(s.screenNumber) === targetNum || (s.id && updates.screenId && s.id !== updates.screenId && Number(s.screenNumber) === targetNum))
+      );
+      if (conflict) {
+        throw new Error(`Screen conflict: Screen-${String(targetNum).padStart(2, '0')} already exists on this account.`);
+      }
+      scr.screenNumber = targetNum;
+      scr.name = `Screen-${String(targetNum).padStart(2, '0')}`;
+    }
+
+    if (updates.pin !== undefined) scr.pin = String(updates.pin);
+    if (updates.deviceType !== undefined) scr.deviceType = updates.deviceType;
+    if (updates.deviceName !== undefined) scr.deviceName = String(updates.deviceName).trim();
+    if (updates.expiryDate !== undefined) scr.expiryDate = updates.expiryDate;
+    if (updates.status !== undefined) scr.status = updates.status;
+
+    acc.updatedAt = new Date().toISOString();
+    saveLocalData(local);
+
+    // Direct Supabase update preserving screen primary keys
+    try {
+      await supabase
+        .from('screens')
+        .update({
+          screen_number: scr.screenNumber,
+          pin: scr.pin,
+          device_type: scr.deviceType || 'tv',
+          device_name: scr.deviceName || '',
+          status: scr.status || 'empty',
+          expiry_date: scr.expiryDate || null,
+          updated_at: new Date().toISOString()
+        })
+        .match({ account_id: accountId, screen_number: scr.screenNumber });
+    } catch (e) {
+      console.warn('[Supabase updateScreen error]:', e.message);
+    }
+
+    // Cascade update to linked sale if screen was already sold
+    if (scr.saleId) {
+      this.updateSale(scr.saleId, {
+        screenNumber: String(scr.screenNumber).padStart(2, '0'),
+        screenPin: scr.pin,
+        deviceType: scr.deviceType,
+        deviceName: scr.deviceName
+      }).catch(() => {});
+    }
+
+    return scr;
+  },
+
+  // Custom Plan Label / Badge System (Image 222 & Master Implementation Prompt)
+  async getPlanLabels() {
+    const DEFAULT_LABELS = [
+      { id: 'lbl_ads_free', name: "Ad's Free", icon: '✨', bgColor: '#7c3aed', textColor: '#ffffff', borderColor: '#a855f7', borderRadius: '16px', size: 'medium' },
+      { id: 'lbl_with_ads', name: 'With Ads', icon: '📢', bgColor: '#ea580c', textColor: '#ffffff', borderColor: '#f97316', borderRadius: '16px', size: 'medium' },
+      { id: 'lbl_4k_uhd', name: '4K UHD', icon: '★', bgColor: '#0284c7', textColor: '#ffffff', borderColor: '#38bdf8', borderRadius: '16px', size: 'medium' },
+      { id: 'lbl_vip', name: 'VIP Pass', icon: '👑', bgColor: '#ca8a04', textColor: '#ffffff', borderColor: '#eab308', borderRadius: '16px', size: 'medium' }
+    ];
+
+    try {
+      const raw = localStorage.getItem('accounts_plan_labels');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+
+    try {
+      const { data } = await supabase.from('plan_labels').select('*');
+      if (data && data.length > 0) {
+        const mapped = data.map(d => ({
+          id: d.id,
+          name: d.name,
+          icon: d.icon || '✨',
+          bgColor: d.bg_color || d.bgColor || '#7c3aed',
+          textColor: d.text_color || d.textColor || '#ffffff',
+          borderColor: d.border_color || d.borderColor || '#a855f7',
+          borderRadius: d.border_radius || '16px',
+          size: d.size || 'medium'
+        }));
+        localStorage.setItem('accounts_plan_labels', JSON.stringify(mapped));
+        return mapped;
+      }
+    } catch (e) {}
+
+    localStorage.setItem('accounts_plan_labels', JSON.stringify(DEFAULT_LABELS));
+    return DEFAULT_LABELS;
+  },
+
+  async savePlanLabel(label) {
+    const current = await this.getPlanLabels();
+    const id = label.id || `lbl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const fullLabel = {
+      ...label,
+      id,
+      updatedAt: new Date().toISOString()
+    };
+    const exists = current.some(l => l.id === id);
+    const updated = exists ? current.map(l => l.id === id ? fullLabel : l) : [...current, fullLabel];
+    localStorage.setItem('accounts_plan_labels', JSON.stringify(updated));
+
+    try {
+      await supabase.from('plan_labels').upsert({
+        id: fullLabel.id,
+        name: fullLabel.name,
+        icon: fullLabel.icon || '✨',
+        bg_color: fullLabel.bgColor || '#7c3aed',
+        text_color: fullLabel.textColor || '#ffffff',
+        border_color: fullLabel.borderColor || '#a855f7',
+        size: fullLabel.size || 'medium',
+        border_radius: fullLabel.borderRadius || '16px',
+        updated_at: new Date().toISOString()
+      });
+    } catch (e) {}
+    return fullLabel;
+  },
+
+  async deletePlanLabel(id) {
+    const current = await this.getPlanLabels();
+    const filtered = current.filter(l => l.id !== id);
+    localStorage.setItem('accounts_plan_labels', JSON.stringify(filtered));
+    try {
+      await supabase.from('plan_labels').delete().eq('id', id);
+    } catch (e) {}
+    return true;
   }
 };

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   ShoppingCart, Database, History, ChevronRight, ChevronLeft,
   TrendingUp, Users, Tv, AlertCircle, RefreshCw, Calendar,
-  Link, Settings, Copy, Check, X, FileSpreadsheet, ExternalLink
+  Link, Settings, Copy, Check, X, FileSpreadsheet, ExternalLink,
+  Edit, Pencil, Save
 } from 'lucide-react';
 import { api } from '../api/client';
 import { GOOGLE_APPS_SCRIPT_TEMPLATE, DEFAULT_SPREADSHEET_ID } from '../utils/googleSheets';
@@ -15,7 +16,8 @@ export default function HomeScreen({
   brands = [],
   onSyncSheets,
   currentUser,
-  userPermissions = {}
+  userPermissions = {},
+  showToast = (msg) => { try { alert(msg); } catch(e){} }
 }) {
   const isAdmin = currentUser?.role === 'admin';
   const [activeDate, setActiveDate] = useState(new Date());
@@ -40,6 +42,9 @@ export default function HomeScreen({
   });
   const [loadingData, setLoadingData] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showDateEditModal, setShowDateEditModal] = useState(false);
+  const [editSaleAmounts, setEditSaleAmounts] = useState({});
+  const [isSavingAmounts, setIsSavingAmounts] = useState(false);
 
   const formatDisplayDate = (d) => {
     if (!d || isNaN(d.getTime())) return 'Today';
@@ -222,6 +227,52 @@ export default function HomeScreen({
     };
   }, [activeDate, allSales, inventoryList, stats]);
 
+  // Active sales on selected date for the Edit modal (Image copy 210 requirement)
+  const activeDateSales = useMemo(() => {
+    const validSales = (allSales || []).filter(s => s && !s.isDeleted && s.status !== 'deleted' && s.status !== 'Deleted');
+    return validSales.filter(s => isSaleOnBusinessDate(s, activeDate, 'Asia/Kolkata'));
+  }, [allSales, activeDate]);
+
+  useEffect(() => {
+    if (showDateEditModal) {
+      const initial = {};
+      activeDateSales.forEach(s => {
+        initial[s.id] = s.amount !== undefined ? s.amount : 0;
+      });
+      setEditSaleAmounts(initial);
+    }
+  }, [showDateEditModal, activeDateSales]);
+
+  const handleSaveDateSalesAmounts = async () => {
+    try {
+      setIsSavingAmounts(true);
+      const updates = [];
+      for (const sale of activeDateSales) {
+        const newAmt = editSaleAmounts[sale.id];
+        if (newAmt !== undefined && Number(newAmt) !== Number(sale.amount)) {
+          updates.push(api.updateSale(sale.id, { amount: Math.max(0, Number(newAmt)) }));
+        }
+      }
+      if (updates.length > 0) {
+        await Promise.all(updates);
+        setAllSales(prev => prev.map(s => {
+          if (editSaleAmounts[s.id] !== undefined) {
+            return { ...s, amount: Math.max(0, Number(editSaleAmounts[s.id])) };
+          }
+          return s;
+        }));
+        showToast(`Saved updated amounts for ${formatDisplayDate(activeDate)}!`, 'success');
+      } else {
+        showToast('No amount changes detected', 'info');
+      }
+      setShowDateEditModal(false);
+    } catch (err) {
+      showToast('Failed to update amounts: ' + err.message, 'error');
+    } finally {
+      setIsSavingAmounts(false);
+    }
+  };
+
   const isInitialLoading = loadingData && allSales.length === 0 && inventoryList.length === 0 && !stats;
 
   return (
@@ -401,6 +452,7 @@ export default function HomeScreen({
           <div
             onClick={() => onNavigate('revenue-mgmt')}
             style={{
+              position: 'relative',
               background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               borderRadius: '16px',
               padding: '12px 8px',
@@ -412,8 +464,37 @@ export default function HomeScreen({
               transition: 'transform 0.15s ease'
             }}
             id="home-top-card-amount"
-            title="View Revenue Management & Profit"
+            title="View Revenue Management & Profit (Click Edit to modify sales for this date)"
           >
+            {/* Quick Edit Button in this section (image copy 210 requirement) */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowDateEditModal(true);
+              }}
+              style={{
+                position: 'absolute',
+                top: '5px',
+                right: '5px',
+                padding: '2px 6px',
+                borderRadius: '6px',
+                background: 'rgba(255, 255, 255, 0.28)',
+                border: 'none',
+                color: '#ffffff',
+                fontSize: '9.5px',
+                fontWeight: 900,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+                lineHeight: 1
+              }}
+              title="Edit sales and amounts for this date"
+            >
+              <Pencil size={9} strokeWidth={2.8} />
+              <span>Edit</span>
+            </button>
             <div style={{
               display: 'flex',
               alignItems: 'center',
@@ -580,6 +661,239 @@ export default function HomeScreen({
           }}
           onClose={() => setShowDatePicker(false)}
         />
+      )}
+
+      {/* Date Sales & Amount Quick-Edit Modal (Matching Image 210 requirement) */}
+      {showDateEditModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(15, 23, 42, 0.65)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '16px'
+        }}>
+          <div style={{
+            background: '#ffffff',
+            borderRadius: '20px',
+            width: '100%',
+            maxWidth: '480px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.2)',
+            overflow: 'hidden'
+          }}>
+            {/* Modal Header */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid #f1f5f9',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: '#0284c7',
+              color: '#ffffff'
+            }}>
+              <div>
+                <div style={{ fontSize: '16px', fontWeight: 900, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Pencil size={18} />
+                  <span>Edit Sales & Amount</span>
+                </div>
+                <div style={{ fontSize: '12px', opacity: 0.9, marginTop: '2px' }}>
+                  Viewing Date: <strong>{formatDisplayDate(activeDate)}</strong>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDateEditModal(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.2)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: '32px',
+                  height: '32px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ffffff',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1 }}>
+              <div style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                background: '#f0f9ff',
+                border: '1.5px solid #bae6fd',
+                borderRadius: '12px',
+                padding: '10px 14px',
+                marginBottom: '14px'
+              }}>
+                <div>
+                  <div style={{ fontSize: '11px', color: '#0369a1', fontWeight: 800 }}>Total Accounts Sold</div>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#0c4a6e' }}>{activeDateSales.length}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '11px', color: '#0369a1', fontWeight: 800 }}>Calculated Total Amount</div>
+                  <div style={{ fontSize: '18px', fontWeight: 900, color: '#0284c7' }}>
+                    ₹{Object.values(editSaleAmounts).reduce((a, b) => a + (Number(b) || 0), 0).toLocaleString('en-IN')}
+                  </div>
+                </div>
+              </div>
+
+              {activeDateSales.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '30px 10px', color: '#64748b' }}>
+                  <AlertCircle size={36} color="#94a3b8" style={{ margin: '0 auto 8px' }} />
+                  <p style={{ margin: 0, fontWeight: 700, fontSize: '14px' }}>No sales recorded on {formatDisplayDate(activeDate)}</p>
+                  <p style={{ margin: '4px 0 16px', fontSize: '12px', color: '#94a3b8' }}>
+                    Click below to create a sale or navigate to Recent Sales
+                  </p>
+                  <button
+                    type="button"
+                    className="glossy-btn glossy-btn-orange"
+                    onClick={() => {
+                      setShowDateEditModal(false);
+                      onNavigate('sale', { defaultSaleDate: formatDate(activeDate) });
+                    }}
+                    style={{ padding: '8px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: 800 }}
+                  >
+                    + Add Sale for this Date
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 800, color: '#475569' }}>
+                    Edit sale amount per account:
+                  </div>
+                  {activeDateSales.map((sale) => (
+                    <div
+                      key={sale.id}
+                      style={{
+                        background: '#f8fafc',
+                        border: '1.5px solid #e2e8f0',
+                        borderRadius: '12px',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '10px'
+                      }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+                          <span style={{
+                            background: '#ea580c',
+                            color: '#ffffff',
+                            padding: '1px 6px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 900
+                          }}>
+                            {sale.brandName || 'OTT'}
+                          </span>
+                          <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {sale.customerName || 'Customer'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 700 }}>
+                          Screen {sale.screenNumber || '01'} • {sale.customerNumber || sale.accountEmail || 'No number'}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ fontSize: '14px', fontWeight: 900, color: '#0284c7' }}>₹</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={editSaleAmounts[sale.id] !== undefined ? editSaleAmounts[sale.id] : (sale.amount || 0)}
+                          onChange={(e) => setEditSaleAmounts(prev => ({ ...prev, [sale.id]: e.target.value }))}
+                          style={{
+                            width: '80px',
+                            padding: '6px 8px',
+                            borderRadius: '8px',
+                            border: '1.5px solid #0284c7',
+                            background: '#ffffff',
+                            fontSize: '14px',
+                            fontWeight: 900,
+                            color: '#0f172a',
+                            textAlign: 'right',
+                            outline: 'none'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div style={{
+              padding: '12px 20px',
+              borderTop: '1px solid #f1f5f9',
+              display: 'flex',
+              gap: '10px',
+              background: '#ffffff'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDateEditModal(false);
+                  onNavigate('recent-sales', { initialDate: formatDate(activeDate) });
+                }}
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: '1.5px solid #cbd5e1',
+                  background: '#f8fafc',
+                  color: '#475569',
+                  fontSize: '13px',
+                  fontWeight: 800,
+                  cursor: 'pointer'
+                }}
+              >
+                Go to Recent Sales
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveDateSalesAmounts}
+                disabled={isSavingAmounts || activeDateSales.length === 0}
+                style={{
+                  flex: 1.2,
+                  padding: '10px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
+                  color: '#ffffff',
+                  fontSize: '13px',
+                  fontWeight: 900,
+                  cursor: (isSavingAmounts || activeDateSales.length === 0) ? 'not-allowed' : 'pointer',
+                  opacity: (isSavingAmounts || activeDateSales.length === 0) ? 0.6 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '6px',
+                  boxShadow: '0 4px 10px rgba(2, 132, 199, 0.35)'
+                }}
+              >
+                <Save size={16} />
+                <span>{isSavingAmounts ? 'Saving...' : 'Save Changes'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Quick Connect Google Sheets Modal */}
